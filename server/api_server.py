@@ -8,10 +8,13 @@ from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 
 from dotenv import load_dotenv
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 
 import mongo_store
+from reports import config as report_config
+from reports import db_service as report_db
+from reports import report_generator, scheduler
 
 load_dotenv()
 
@@ -162,9 +165,82 @@ def health():
     return jsonify({"status": "ok"})
 
 
+@app.route("/api/reports/history", methods=["GET"])
+def reports_history():
+    """Return the daily report delivery history (newest first)."""
+    try:
+        limit = int(request.args.get("limit", "60"))
+        return jsonify({"reports": report_db.history(limit=limit)})
+    except Exception as exc:
+        logger.exception("Failed to fetch report history: %s", exc)
+        return jsonify({"error": str(exc), "reports": []}), 500
+
+
+@app.route("/api/reports/<report_id>", methods=["GET"])
+def reports_detail(report_id: str):
+    """Return a single report record by _id or report_date."""
+    try:
+        doc = report_db.get_by_id(report_id)
+        if not doc:
+            return jsonify({"error": "Report not found"}), 404
+        return jsonify(doc)
+    except Exception as exc:
+        logger.exception("Failed to fetch report %s: %s", report_id, exc)
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/reports/send-now", methods=["POST"])
+def reports_send_now():
+    """Generate and send the report (dedup applies unless force=true)."""
+    payload = request.get_json(silent=True) or {}
+    target = _parse_report_date(payload.get("date"))
+    force = bool(payload.get("force", False))
+    try:
+        result = report_generator.generate_and_send(target, force=force)
+        status_code = 200 if result.get("status") in ("sent", "skipped") else 502
+        return jsonify(result), status_code
+    except Exception as exc:
+        logger.exception("send-now failed: %s", exc)
+        return jsonify({"status": "error", "error": str(exc)}), 500
+
+
+@app.route("/api/reports/regenerate", methods=["POST"])
+def reports_regenerate():
+    """Force regeneration and resend of a report for a given date."""
+    payload = request.get_json(silent=True) or {}
+    target = _parse_report_date(payload.get("date"))
+    try:
+        result = report_generator.generate_and_send(target, force=True)
+        status_code = 200 if result.get("status") == "sent" else 502
+        return jsonify(result), status_code
+    except Exception as exc:
+        logger.exception("regenerate failed: %s", exc)
+        return jsonify({"status": "error", "error": str(exc)}), 500
+
+
+def _parse_report_date(value):
+    if not value:
+        return None
+    try:
+        return datetime.strptime(str(value), "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def _start_scheduler() -> None:
+    """Start the daily report scheduler unless running under the reloader parent."""
+    if os.getenv("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
+        try:
+            scheduler.start()
+        except Exception as exc:
+            logger.exception("Failed to start report scheduler: %s", exc)
+
+
 if __name__ == "__main__":
     host = os.getenv("API_HOST", "0.0.0.0")
     port = int(os.getenv("API_PORT", "5000"))
     debug = os.getenv("API_DEBUG", "false").lower() == "true"
+    app.debug = debug
     logger.info("Starting MediaSphere API on http://%s:%s (debug=%s)", host, port, debug)
-    app.run(host=host, port=port, debug=debug)
+    _start_scheduler()
+    app.run(host=host, port=port, debug=debug, use_reloader=debug)

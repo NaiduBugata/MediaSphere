@@ -154,6 +154,7 @@ def upsert_articles(
     inserted = 0
     updated = 0
     matched = 0
+    inserted_post_ids: list[Any] = []
 
     for article in news_articles:
         title = article.get("title", "")
@@ -179,14 +180,17 @@ def upsert_articles(
         result = collection.update_one(
             {"post_id": post_id},
             {
+                # New articles start un-emailed so the incremental notifier picks
+                # them up exactly once. Never reset the flag on updates.
                 "$set": document,
-                "$setOnInsert": {"first_seen_at": now},
+                "$setOnInsert": {"first_seen_at": now, "email_sent": False},
             },
             upsert=True,
         )
 
         if result.upserted_id is not None:
             inserted += 1
+            inserted_post_ids.append(post_id)
         elif result.modified_count > 0:
             updated += 1
         else:
@@ -197,6 +201,7 @@ def upsert_articles(
         "updated": updated,
         "matched": matched,
         "total": len(news_articles),
+        "inserted_post_ids": inserted_post_ids,
     }
 
 

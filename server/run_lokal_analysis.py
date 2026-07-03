@@ -176,6 +176,31 @@ def validate_news_output() -> list:
     return payload
 
 
+def send_incremental_email() -> None:
+    """Email newly collected articles after a successful store.
+
+    Failures are logged and swallowed so the pipeline cycle never crashes on
+    email issues; un-emailed articles remain pending and are retried next cycle.
+    """
+    try:
+        from reports import incremental
+
+        result = incremental.send_incremental_report()
+        status = result.get("status")
+        if status == "sent":
+            logger.info(
+                "Incremental email sent | new articles: %s | batch: %s",
+                result.get("count"),
+                result.get("batch_id"),
+            )
+        elif status == "skipped":
+            logger.info("Incremental email skipped (%s).", result.get("reason"))
+        else:
+            logger.warning("Incremental email not sent | %s", result)
+    except Exception as exc:
+        logger.error("Incremental email step failed (cycle continues): %s", exc)
+
+
 def run_cycle() -> int:
     """
     Execute one full Lokal JSON to analyzer pipeline cycle.
@@ -210,8 +235,10 @@ def run_cycle() -> int:
 
         news_output = validate_news_output()
 
+        stored_ok = False
         try:
             stats = mongo_store.upsert_articles(news_output, json_path)
+            stored_ok = True
             logger.info(
                 "MongoDB upsert | inserted: %s | updated: %s | matched: %s | total: %s",
                 stats["inserted"],
@@ -221,6 +248,9 @@ def run_cycle() -> int:
             )
         except Exception as exc:
             logger.error("MongoDB store failed (JSON output still written): %s", exc)
+
+        if stored_ok:
+            send_incremental_email()
 
         elapsed = time.perf_counter() - started_at
         logger.info(

@@ -14,8 +14,11 @@ env/
 # ---- Secrets / environment ----
 .env
 .env.local
-dashboard/.env
-dashboard/.env.local
+.env.*.local
+server/.env
+server/.env.local
+client/.env
+client/.env.local
 
 # ---- Logs ----
 *.log
@@ -25,6 +28,7 @@ logs/
 output/
 output_audit/
 runtime_outputs/
+reports_output/
 data/
 checkpoint*.json
 pipeline_status.json
@@ -35,8 +39,8 @@ narasaraopet_news.csv
 
 # ---- Node / frontend ----
 node_modules/
-dashboard/node_modules/
-dashboard/dist/
+client/node_modules/
+client/dist/
 dist/
 .vite/
 *.local
