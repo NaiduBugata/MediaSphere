@@ -15,7 +15,7 @@ Lokal source  ->  Collector  ->  AI Analyzer  ->  MongoDB (MediaSphere)  ->  Fla
 5. **Dashboard** (`client/`) is a Vite + React + Tailwind + Recharts SPA that computes stats client-side.
 6. **Reports** (`server/reports/`) generate and email the daily 07:00 IST executive report and the incremental per-cycle updates.
 
-The pipeline runner (`server/run_lokal_analysis.py`) chains collection -> analysis -> storage and can run once or continuously every 4 hours.
+The pipeline runner (`server/run_lokal_analysis.py`) chains collection -> analysis -> storage and can run once or continuously every hour.
 
 ## Project Structure
 
@@ -67,7 +67,7 @@ copy .env.example .env   # Windows  (use `cp` on macOS/Linux); then fill in GROQ
 
 ```bash
 python run_lokal_analysis.py --once   # single cycle (collect -> analyze -> store -> incremental email)
-python run_lokal_analysis.py          # continuous, every 4 hours
+python run_lokal_analysis.py          # continuous, every 1 hour
 ```
 
 ### Run the API server
@@ -116,7 +116,7 @@ python -m reports history                  # show delivery history
 
 > For multi-worker WSGI deployments (e.g. gunicorn), run the scheduler as a single dedicated process rather than per worker to avoid concurrent generation. De-duplication still protects the database record either way.
 
-### Incremental 4-hour update emails
+### Incremental hourly update emails
 
 After every pipeline cycle (collect → categorize → store), an email is sent containing **only the newly inserted articles** that have not been emailed before. This is separate from — and does not replace — the 07:00 daily executive report.
 

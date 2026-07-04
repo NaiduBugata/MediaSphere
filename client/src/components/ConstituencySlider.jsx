@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { FiChevronLeft, FiChevronRight, FiBarChart2 } from 'react-icons/fi';
-import { formatDateTime } from '../utils/format';
+import { formatDateTime, formatRelativeTime } from '../utils/format';
 
 const ROTATE_INTERVAL = 3500;
 
@@ -14,7 +14,11 @@ export default function ConstituencySlider({ stats }) {
     { label: 'Most Affected Mandal', value: stats.topMandal },
     { label: 'Most Affected Village', value: stats.topVillage },
     { label: 'Most Common Category', value: stats.topCategory },
-    { label: 'Latest News Time', value: formatDateTime(stats.latestTime) },
+    {
+      label: 'Latest News Time',
+      value: stats.latestTime ? formatRelativeTime(stats.latestTime) : '—',
+      detail: stats.latestTime ? formatDateTime(stats.latestTime) : null,
+    },
   ];
 
   const [index, setIndex] = useState(0);
@@ -66,7 +70,17 @@ export default function ConstituencySlider({ stats }) {
         </div>
 
         <div className="flex flex-1 flex-col items-center justify-center px-6 py-8 text-center">
-          <p className="text-5xl font-bold text-primary leading-none">{current.value}</p>
+          <p
+            className={`font-bold text-primary leading-tight ${
+              current.detail ? 'text-3xl sm:text-4xl' : 'text-5xl'
+            }`}
+            title={current.detail || undefined}
+          >
+            {current.value}
+          </p>
+          {current.detail && (
+            <p className="mt-2 text-xs text-gray-400">{current.detail}</p>
+          )}
           <p className="mt-3 text-sm font-medium text-gray-500">{current.label}</p>
         </div>
 

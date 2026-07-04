@@ -177,10 +177,10 @@ def validate_news_output() -> list:
 
 
 def send_incremental_email() -> None:
-    """Email newly collected articles after a successful store.
+    """Email each pending article individually after a successful store.
 
-    Failures are logged and swallowed so the pipeline cycle never crashes on
-    email issues; un-emailed articles remain pending and are retried next cycle.
+    Sends one email per article with email_sent=false (new inserts and retries
+    from prior failed sends). Successfully emailed articles are marked email_sent=true.
     """
     from reports import config as report_config
 
@@ -193,16 +193,17 @@ def send_incremental_email() -> None:
 
         result = incremental.send_incremental_report()
         status = result.get("status")
-        if status == "sent":
+        if status in ("sent", "partial"):
             logger.info(
-                "Incremental email sent | new articles: %s | batch: %s",
-                result.get("count"),
+                "Incremental emails | sent: %s | failed: %s | batch: %s",
+                result.get("sent"),
+                result.get("failed"),
                 result.get("batch_id"),
             )
         elif status == "skipped":
             logger.info("Incremental email skipped (%s).", result.get("reason"))
         else:
-            logger.warning("Incremental email not sent | %s", result)
+            logger.warning("Incremental email issues | %s", result)
     except Exception as exc:
         logger.error("Incremental email step failed (cycle continues): %s", exc)
 

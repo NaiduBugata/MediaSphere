@@ -25,7 +25,7 @@ TAG_ID = 374
 POST_TYPES = "1,2"
 PAGE_SIZE = 100
 LOOKBACK_HOURS = 24 * 7  # 7 days
-CHECK_INTERVAL = 4 * 60 * 60  # 4 hours
+CHECK_INTERVAL = 1 * 60 * 60  # 1 hour
 
 OUTPUT_DIRECTORY = "data/lokal"
 OUTPUT_FILENAME = "narasaraopet_news.json"

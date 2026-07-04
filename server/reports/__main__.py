@@ -14,7 +14,7 @@ import argparse
 import json
 from datetime import date, datetime
 
-from . import config, db_service, incremental, report_generator
+from . import config, db_service, email_service, incremental, report_generator
 from .logger import get_logger
 
 logger = get_logger("reports.cli")
@@ -40,6 +40,9 @@ def main() -> int:
     sub.add_parser("history", help="Show report history")
 
     sub.add_parser("send-incremental", help="Email newly collected (not-yet-emailed) articles")
+
+    test = sub.add_parser("test-email", help="Diagnose email config and optionally send a test message")
+    test.add_argument("--send", action="store_true", help="Actually send a test email (not just diagnose)")
 
     backfill = sub.add_parser("backfill-flags", help="Initialise email_sent on legacy documents")
     backfill.add_argument(
@@ -78,6 +81,18 @@ def main() -> int:
         result = incremental.send_incremental_report()
         print(json.dumps(result, indent=2, default=str))
         return 0 if result.get("status") in ("sent", "skipped") else 1
+
+    if args.command == "test-email":
+        diag = email_service.diagnose()
+        print(json.dumps(diag, indent=2))
+        if args.send:
+            ok, attempts, err = email_service.send_report(
+                subject="MediaSphere Email Test",
+                html_body="<p>If you received this, email delivery is working.</p>",
+            )
+            print(json.dumps({"sent": ok, "attempts": attempts, "error": err}, indent=2))
+            return 0 if ok else 1
+        return 0
 
     if args.command == "backfill-flags":
         count = incremental.backfill_flags(mark_as_sent=not args.pending)

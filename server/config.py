@@ -3,7 +3,7 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
 
-CHECK_INTERVAL_SECONDS = 4 * 60 * 60
+CHECK_INTERVAL_SECONDS = 1 * 60 * 60  # 1 hour
 LOOKBACK_HOURS = 24
 
 API_BASE_URL = "https://lokalnews.in/wp-json/wp/v2/posts"

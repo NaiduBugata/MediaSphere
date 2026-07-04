@@ -329,6 +329,45 @@ def build_incremental_html(
 </html>"""
 
 
+def build_single_article_html(article: dict, generated_at: datetime) -> str:
+    """HTML email for a single newly collected article."""
+    gen_time = generated_at.astimezone(config.REPORT_TIMEZONE).strftime("%d %b %Y, %I:%M %p IST")
+    card = _article_card(article)
+    sentiment = article.get("sentiment", "")
+    label = "Action Required" if article.get("is_problem") else "News Update"
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MediaSphere News Alert</title>
+</head>
+<body style="margin:0;padding:0;background:{SECONDARY};font-family:Arial,Helvetica,sans-serif;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:{SECONDARY};padding:16px 0;">
+<tr><td align="center">
+<table role="presentation" width="640" cellpadding="0" cellspacing="0" style="max-width:640px;width:100%;background:#ffffff;border:1px solid {BORDER};border-radius:12px;overflow:hidden;">
+
+<tr><td style="background:{PRIMARY};padding:24px;">
+<div style="font-size:20px;font-weight:800;color:#ffffff;letter-spacing:0.5px;">MediaSphere</div>
+<div style="font-size:12px;color:#C7D2FE;margin-top:2px;">AI Powered MP Constituency Monitoring System</div>
+<div style="font-size:15px;color:#ffffff;font-weight:600;margin-top:10px;">{label} &middot; {sentiment or "News"}</div>
+<div style="font-size:12px;color:#C7D2FE;margin-top:4px;"><strong style="color:#ffffff;">Generated:</strong> {gen_time}</div>
+</td></tr>
+
+{card}
+
+<tr><td style="background:{PRIMARY};padding:16px 24px;">
+<div style="font-size:12px;color:#C7D2FE;">Automated alert for {_e(config.CONSTITUENCY_NAME)} constituency &middot; collected during the latest monitoring cycle.</div>
+</td></tr>
+
+</table>
+</td></tr>
+</table>
+</body>
+</html>"""
+
+
 def build_email_html(
     target: date,
     generated_at: datetime,

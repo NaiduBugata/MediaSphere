@@ -1,4 +1,4 @@
-import { getDateKey, parseDate, uniqueSorted } from './format';
+import { getDateKey, sortByDateDesc, uniqueSorted } from './format';
 import { enrichArticles, isProblem, sortByPriority } from './derive';
 
 function countBy(items, getter) {
@@ -100,10 +100,9 @@ export function computeStats(articles) {
   const [topVillage] = topEntry(problemVillageCounts);
   const [topCategory] = topEntry(categoryCounts);
 
-  const dates = enriched
-    .map((a) => parseDate(a.created_on))
-    .filter(Boolean)
-    .sort((a, b) => a - b);
+  const sortedByDate = sortByDateDesc(enriched);
+  const latestArticle = sortedByDate[0];
+  const oldestArticle = sortedByDate[sortedByDate.length - 1];
 
   const filterOptions = {
     categories: uniqueSorted(enriched.map((a) => a.category)),
@@ -137,8 +136,8 @@ export function computeStats(articles) {
     districtsCovered: Object.keys(districtCounts).filter((k) => k && k !== 'Unknown').length,
     mandalsCovered: Object.keys(mandalCounts).filter((k) => k && k !== 'Unknown').length,
     villagesCovered: Object.keys(villageCounts).filter((k) => k && k !== 'Unknown').length,
-    latestTime: dates.length ? dates[dates.length - 1].toISOString() : null,
-    oldestTime: dates.length ? dates[0].toISOString() : null,
+    latestTime: latestArticle?.created_on || null,
+    oldestTime: oldestArticle?.created_on || null,
     changeSinceYesterday: {
       total: countOnDate(enriched, todayKey) - countOnDate(enriched, yesterdayKey),
       positive:

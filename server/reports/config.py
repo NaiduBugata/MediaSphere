@@ -41,6 +41,10 @@ REPORT_SCHEDULER_ON_API = _get_bool("REPORT_SCHEDULER_ON_API", False)
 REPORT_CATCHUP_ON_START = _get_bool("REPORT_CATCHUP_ON_START", False)
 # When false (default), all email sending is skipped (reports still generate).
 EMAIL_ENABLED = _get_bool("EMAIL_ENABLED", False)
+# Email transport: "smtp" (local/VPS), "resend" (Render/production HTTPS), or "auto".
+EMAIL_PROVIDER = os.getenv("EMAIL_PROVIDER", "auto").strip().lower()
+# Resend API key — works on Render free tier (HTTPS, not blocked like SMTP ports).
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "").strip()
 REPORT_TIMEZONE_NAME = os.getenv("REPORT_TIMEZONE", "Asia/Kolkata")
 REPORT_TIMEZONE = ZoneInfo(REPORT_TIMEZONE_NAME)
 REPORT_HOUR = _get_int("REPORT_HOUR", 7)
