@@ -83,6 +83,10 @@ def send_report(
 
     Returns (success, attempts_used, error_message).
     """
+    if not config.EMAIL_ENABLED:
+        logger.info("Email delivery disabled (EMAIL_ENABLED=false); skipping send.")
+        return True, 0, None
+
     _validate()
     to = recipients or config.REPORT_RECIPIENTS
     msg = _build_message(subject, html_body, to, pdf_path)

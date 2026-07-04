@@ -128,6 +128,10 @@ def send_incremental_report(recipients: list[str] | None = None) -> dict[str, An
         logger.info("No new articles collected during this cycle.")
         return {"status": "skipped", "reason": "no_new_articles", "count": 0}
 
+    if not config.EMAIL_ENABLED:
+        logger.info("Incremental email disabled (EMAIL_ENABLED=false); skipping.")
+        return {"status": "skipped", "reason": "email_disabled", "count": len(pending)}
+
     stats = data_service.compute_stats(pending)
     now = datetime.now(config.REPORT_TIMEZONE)
     batch_id = uuid.uuid4().hex

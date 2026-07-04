@@ -35,6 +35,12 @@ def _get_list(name: str) -> list[str]:
 
 # ---- Scheduler ----
 REPORT_ENABLED = _get_bool("REPORT_ENABLED", True)
+# When false (default), the API web process does not start the 07:00 scheduler.
+REPORT_SCHEDULER_ON_API = _get_bool("REPORT_SCHEDULER_ON_API", False)
+# When false (default), skip the missed-report catch-up on startup.
+REPORT_CATCHUP_ON_START = _get_bool("REPORT_CATCHUP_ON_START", False)
+# When false (default), all email sending is skipped (reports still generate).
+EMAIL_ENABLED = _get_bool("EMAIL_ENABLED", False)
 REPORT_TIMEZONE_NAME = os.getenv("REPORT_TIMEZONE", "Asia/Kolkata")
 REPORT_TIMEZONE = ZoneInfo(REPORT_TIMEZONE_NAME)
 REPORT_HOUR = _get_int("REPORT_HOUR", 7)

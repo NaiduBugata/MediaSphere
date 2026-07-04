@@ -8,12 +8,18 @@ services:
     plan: free
     rootDir: server
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn --workers 1 --bind 0.0.0.0:$PORT wsgi:app
+    startCommand: gunicorn --workers 1 --timeout 120 --bind 0.0.0.0:$PORT wsgi:app
     healthCheckPath: /api/health
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
       - key: API_DEBUG
+        value: false
+      - key: EMAIL_ENABLED
+        value: false
+      - key: REPORT_SCHEDULER_ON_API
+        value: false
+      - key: REPORT_CATCHUP_ON_START
         value: false
 
   - type: worker
@@ -26,3 +32,5 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
+      - key: EMAIL_ENABLED
+        value: false

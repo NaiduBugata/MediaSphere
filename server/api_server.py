@@ -229,9 +229,13 @@ def _parse_report_date(value):
 
 def _start_scheduler() -> None:
     """Start the daily report scheduler unless running under the reloader parent."""
+    if os.getenv("REPORT_SCHEDULER_ON_API", "false").lower() not in ("1", "true", "yes", "on"):
+        logger.info("Report scheduler not started on API (REPORT_SCHEDULER_ON_API=false).")
+        return
     if os.getenv("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
         try:
-            scheduler.start()
+            catch_up = os.getenv("REPORT_CATCHUP_ON_START", "false").lower() in ("1", "true", "yes", "on")
+            scheduler.start(run_catch_up=catch_up)
         except Exception as exc:
             logger.exception("Failed to start report scheduler: %s", exc)
 

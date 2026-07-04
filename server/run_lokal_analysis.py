@@ -182,6 +182,12 @@ def send_incremental_email() -> None:
     Failures are logged and swallowed so the pipeline cycle never crashes on
     email issues; un-emailed articles remain pending and are retried next cycle.
     """
+    from reports import config as report_config
+
+    if not report_config.EMAIL_ENABLED:
+        logger.info("Incremental email disabled (EMAIL_ENABLED=false); skipping.")
+        return
+
     try:
         from reports import incremental
 

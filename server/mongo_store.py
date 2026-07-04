@@ -9,6 +9,7 @@ import logging
 import os
 import re
 import sys
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -16,7 +17,7 @@ from typing import Any
 from dotenv import load_dotenv
 from pymongo import MongoClient
 from pymongo.collection import Collection
-from pymongo.errors import DuplicateKeyError
+from pymongo.errors import DuplicateKeyError, ServerSelectionTimeoutError
 
 from config import OUTPUT_PATH
 
@@ -30,6 +31,14 @@ MONGODB_COLLECTION = os.getenv("MONGODB_COLLECTION", "articles")
 ARCHIVE_DIR = OUTPUT_PATH / "archive"
 
 _client: MongoClient | None = None
+_client_lock = threading.Lock()
+
+# Pre-import dnspython for mongodb+srv URIs so concurrent first-use does not
+# race on the import lock inside pymongo (seen as gunicorn worker timeouts).
+try:
+    import dns  # noqa: F401
+except ImportError:
+    logger.warning("dnspython not installed; mongodb+srv URIs may fail.")
 
 
 def _current_timestamp() -> str:
@@ -56,9 +65,27 @@ def get_client() -> MongoClient:
         raise ValueError("MONGODB_URI is not set in environment or .env")
 
     if _client is None:
-        _client = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=10000)
+        with _client_lock:
+            if _client is None:
+                _client = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=10000)
 
     return _client
+
+
+def warmup() -> None:
+    """Verify MongoDB connectivity at startup (call once from wsgi.py)."""
+    if not MONGODB_URI:
+        logger.warning("MONGODB_URI not set; skipping MongoDB warmup.")
+        return
+    try:
+        get_client().admin.command("ping")
+        logger.info("MongoDB connection verified.")
+    except ServerSelectionTimeoutError as exc:
+        logger.error("MongoDB warmup failed (server selection timeout): %s", exc)
+        raise
+    except Exception as exc:
+        logger.error("MongoDB warmup failed: %s", exc)
+        raise
 
 
 def get_collection() -> Collection:

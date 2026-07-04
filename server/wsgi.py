@@ -1,22 +1,32 @@
 """WSGI entry point for production servers (gunicorn / waitress / uWSGI).
 
-Exposes the Flask ``app`` and starts the daily-report scheduler once at import
-time (the ``__main__`` block in api_server.py does not run under a WSGI server).
+Exposes the Flask ``app``. By default the API web service does NOT start the
+report scheduler or send emails — those belong on a separate worker process.
 
 Run with, e.g.:
-    gunicorn --workers 1 --bind 0.0.0.0:5000 wsgi:app
-
-Keep the API to a single worker when REPORT_ENABLED=true so exactly one
-scheduler instance runs. De-duplication (daily_reports.report_date) still
-protects against duplicate emails if multiple workers are used.
+    gunicorn --workers 1 --timeout 120 --bind 0.0.0.0:5000 wsgi:app
 """
 
 from __future__ import annotations
 
-from api_server import app, scheduler
+import os
 
-# Boot the daily-report scheduler (07:00 IST + missed-run catch-up).
-scheduler.start()
+import mongo_store
+from api_server import app
+
+# Warm up MongoDB before accepting requests (avoids SRV/dns import races).
+try:
+    mongo_store.warmup()
+except Exception:
+    # Logged inside warmup(); allow boot so health checks still respond.
+    pass
+
+# Only start the daily-report scheduler on the API process when explicitly
+# enabled. Keep this false on Render's web service; use a worker for reports.
+if os.getenv("REPORT_SCHEDULER_ON_API", "false").lower() in ("1", "true", "yes", "on"):
+    from reports import scheduler
+
+    scheduler.start(run_catch_up=os.getenv("REPORT_CATCHUP_ON_START", "false").lower() in ("1", "true", "yes", "on"))
 
 if __name__ == "__main__":
     app.run()
