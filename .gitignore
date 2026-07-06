@@ -1,0 +1,17 @@
+output/
+output_audit/
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+coverage/
+*.log
+*.tmp
+*.bak
+.env
+.venv/
+.venv-release/
+checkpoint*.json
+runtime_outputs/

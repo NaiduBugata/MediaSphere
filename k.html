@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>News Dashboard · Andhra Pradesh</title>
+    <script src="https://cdn.tailwindcss.com">
+    </script>
+    <style>
+        /* ── only 2 colours ── */
+        :root {
+            --primary: #1B2A4A;
+            --secondary: #D4A84B;
+            --bg: #f6f6f6;
+            --card: #ffffff;
+            --text: #1a1a1a;
+            --text-light: #5a5a5a;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            letter-spacing: -0.01em;
+        }
+
+        /* scrollbar */
+        ::-webkit-scrollbar {
+            width: 5px;
+            height: 5px;
+        }
+        ::-webkit-scrollbar-track {
+            background: var(--bg);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: var(--secondary);
+            border-radius: 10px;
+        }
+
+        .bg-primary {
+            background: var(--primary);
+        }
+        .bg-secondary {
+            background: var(--secondary);
+        }
+        .text-primary {
+            color: var(--primary);
+        }
+        .text-secondary {
+            color: var(--secondary);
+        }
+        .border-secondary {
+            border-color: var(--secondary);
+        }
+        .border-primary {
+            border-color: var(--primary);
+        }
+
+        .card {
+            background: var(--card);
+            border-radius: 14px;
+            box-shadow: 0 2px 12px rgba(27, 42, 74, 0.05);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            border: 1px solid rgba(27, 42, 74, 0.04);
+        }
+        .card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 28px rgba(27, 42, 74, 0.08);
+        }
+
+        .sentiment-badge {
+            font-size: 0.6rem;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            padding: 0.2rem 0.7rem;
+            border-radius: 40px;
+            text-transform: uppercase;
+            background: var(--primary);
+            color: #fff;
+        }
+        .sentiment-badge.positive {
+            background: var(--secondary);
+            color: var(--primary);
+        }
+        .sentiment-badge.negative {
+            background: var(--primary);
+            color: #fff;
+        }
+        .sentiment-badge.statement {
+            background: #eaeaea;
+            color: var(--text-light);
+        }
+
+        .category-tag {
+            font-size: 0.6rem;
+            font-weight: 500;
+            letter-spacing: 0.03em;
+            padding: 0.15rem 0.6rem;
+            border-radius: 30px;
+            border: 1px solid rgba(27, 42, 74, 0.12);
+            color: var(--text-light);
+            background: transparent;
+        }
+
+        .filter-select {
+            background: var(--card);
+            border: 1px solid rgba(27, 42, 74, 0.08);
+            border-radius: 40px;
+            padding: 0.45rem 1.2rem 0.45rem 1rem;
+            font-size: 0.8rem;
+            color: var(--text);
+            outline: none;
+            cursor: pointer;
+            transition: border 0.2s;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%231B2A4A'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 0.9rem center;
+            padding-right: 2.2rem;
+        }
+        .filter-select:focus {
+            border-color: var(--secondary);
+        }
+
+        .search-input {
+            background: var(--card);
+            border: 1px solid rgba(27, 42, 74, 0.08);
+            border-radius: 40px;
+            padding: 0.45rem 1.2rem;
+            font-size: 0.8rem;
+            color: var(--text);
+            outline: none;
+            transition: border 0.2s;
+            width: 100%;
+        }
+        .search-input:focus {
+            border-color: var(--secondary);
+        }
+        .search-input::placeholder {
+            color: #b0b0b0;
+        }
+
+        .stat-number {
+            font-size: 1.6rem;
+            font-weight: 600;
+            color: var(--primary);
+            letter-spacing: -0.02em;
+        }
+        .stat-label {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--text-light);
+        }
+
+        .title-line {
+            width: 40px;
+            height: 2.5px;
+            background: var(--secondary);
+            border-radius: 4px;
+            margin-top: 4px;
+        }
+
+        /* responsive grid */
+        .news-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 1.25rem;
+        }
+        @media (min-width: 640px) {
+            .news-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+        @media (min-width: 1024px) {
+            .news-grid {
+                grid-template-columns: 1fr 1fr 1fr;
+            }
+        }
+
+        .location-chip {
+            font-size: 0.65rem;
+            color: var(--text-light);
+            background: rgba(27, 42, 74, 0.04);
+            padding: 0.15rem 0.6rem;
+            border-radius: 30px;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.2rem;
+        }
+
+        /* fade in */
+        .fade-in {
+            animation: fade 0.5s ease forwards;
+            opacity: 0;
+        }
+        @keyframes fade {
+            to {
+                opacity: 1;
+            }
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 4rem 1rem;
+            color: var(--text-light);
+        }
+        .empty-state svg {
+            opacity: 0.2;
+            margin-bottom: 1rem;
+        }
+
+        /* header accent */
+        .header-accent {
+            height: 3px;
+            background: linear-gradient(to right, var(--secondary), var(--primary));
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="root"></div>
+
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js">
+    </script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js">
+    </script>
+
+    <script>
+        // ─── DATA ──────────────────────────────────────────────────────────────
+        const articles = [{
+            "title": "శ్రీ చక్ర సిమెంట్ ఫ్యాక్టరీ లాకౌట్ ఎత్తివేయాలి: ప్రజాసంఘాలు",
+            "sentiment": "Negative",
+            "category": "Employment",
+            "subcategory": "worker rights",
+            "summary": "నరసరావుపేటలోని శ్రీ చక్ర సిమెంట్ ఫ్యాక్టరీ యాజమాన్యం ప్రకటించిన లాకౌట్‌ను ఎత్తివేయాలని ప్రజాసంఘాలు డిమాండ్ చేశాయి. దీంతో 400 మంది కార్మికులు, వారి కుటుంబాలు ఇబ్బందులు ఎదుర్కొంటున్నారు.",
+            "location": { "town": "Narasaraopet", "district": "Palnadu", "state": "Andhra Pradesh" },
+            "keywords": ["labour issues", "lockout"]
+        }, {
+            "title": "శ్రీ చక్ర సిమెంట్ ఫ్యాక్టరీపై నిరసనలకు దిగిన కార్మికులు",
+            "sentiment": "Negative",
+            "category": "Employment",
+            "subcategory": "worker rights",
+            "summary": "నరసరావుపేట బస్టాండ్ సమీపంలోని శ్రీ చక్ర సిమెంట్ ఫ్యాక్టరీలో లాకౌట్ విధించడంపై కార్మికులు నిరసనలు తెలిపారు. 400 మంది కార్మికులు, వారి కుటుంబాల జీవనం ప్రశ్నార్థకంగా మారింది.",
+            "location": { "town": "Narasaraopet", "district": "Palnadu", "state": "Andhra Pradesh" },
+            "keywords": ["labor dispute", "lockout"]
+        }, {
+            "title": "పల్నాడు వైద్యశాఖలో ఉద్యోగాల నోటిఫికేషన్ విడుదల",
+            "sentiment": "Statement",
+            "category": "Employment",
+            "subcategory": "government jobs",
+            "summary": "పల్నాడు జిల్లా ప్రభుత్వ ఆసుపత్రుల్లోని ఖాళీ ఉద్యోగాలకు నోటిఫికేషన్ విడుదలైంది. ల్యాబ్ అటెండెంట్, డైట్ అసిస్టెంట్, జనరల్ డ్యూటీ అటెండెంట్, పోస్టుమార్టం అసిస్టెంట్, ఔట్సోర్సింగ్ సెక్యూరిటీ సిబ్బంది పోస్టులకు జులై 1 నుంచి 7 వరకు దరఖాస్తులు సమర్పించవచ్చు.",
+            "location": { "district": "Palnadu", "state": "Andhra Pradesh" },
+            "keywords": ["government jobs", "notification"]
+        }, {
+            "title": "కేసనపల్లి ఘర్షణ: నిందితులను వెంటనే అరెస్ట్ చేయాలని డిమాండ్",
+            "sentiment": "Negative",
+            "category": "Crime",
+            "subcategory": "assault",
+            "summary": "కేసనపల్లిలో జరిగిన ఘర్షణలో బాధితుడి భార్య తన భర్తపై వీఆర్వో నాగరాజుతో పాటు మరో నలుగురు కర్రలతో దాడి చేశారని ఆరోపించారు. నిందితులను వెంటనే అరెస్ట్ చేసి కఠిన చర్యలు తీసుకోవాలని కోరుతూ నిరసన చేపట్టారు.",
+            "location": { "village": "కేసనపల్లి", "state": "Andhra Pradesh" },
+            "keywords": ["arrest", "assault"]
+        }, {
+            "title": "కేసానుపల్లి వద్ద ఉద్రిక్తత.. రోడ్డెక్కిన మహిళలు",
+            "sentiment": "Negative",
+            "category": "Politics",
+            "subcategory": "Protest",
+            "summary": "నరసరావుపేట మండలం కేసానుపల్లి ఎల్టీ నగర్లో రాజకీయ విభేదాల నేపథ్యంలో మహిళలు రోడ్డుపైకి వచ్చి నిరసన చేపట్టారు. గ్రామంలో నెలకొన్న రాజకీయ విభేదాలకు వీఆర్వో కారణమని ఆరోపిస్తూ వారు ఆందోళన చేశారు.",
+            "location": { "village": "కేసానుపల్లి", "mandal": "Palnadu", "state": "Andhra Pradesh" },
+            "keywords": ["protest", "politics"]
+        }, {
+            "title": "ఆయిల్ పామ్ సాగుకు సువర్ణావకాశం, రైతుల కోసం ప్రభుత్వ పథకం",
+            "sentiment": "Positive",
+            "category": "Agriculture",
+            "subcategory": "government schemes",
+            "summary": "పల్నాడు, నరసరావుపేట ప్రాంతాల్లో ఆయిల్ పామ్ సాగుకు ప్రభుత్వం పథకం అమలు చేస్తోంది. 2026 జూన్ 29 నాటికి ఈ పథకం అందుబాటులో ఉంటుంది.",
+            "location": { "town": "Narasaraopet", "district": "Palnadu", "state": "Andhra Pradesh" },
+            "keywords": ["oil palm", "government scheme"]
+        }, {
+            "title": "లాటరీ టికెట్ల వ్యాపారి శ్రీనివాసరెడ్డిపై చర్యలు తీసుకోవాలి: ప్రజల విజ్ఞప్తి",
+            "sentiment": "Negative",
+            "category": "Crime",
+            "subcategory": "illegal activities",
+            "summary": "నరసరావుపేటలో లాటరీ టికెట్ల వ్యాపారి శ్రీనివాసరెడ్డిపై చర్యలు తీసుకోవాలని ప్రజలు విజ్ఞప్తి చేస్తున్నారు.",
+            "location": { "town": "Narasaraopet", "district": "Guntur", "state": "Andhra Pradesh" },
+            "keywords": ["lottery", "illegal"]
+        }, {
+            "title": "నరసరావుపేటలో లాటరీ టికెట్ల విక్రయంపై ప్రజా సంఘాల ఆగ్రహం",
+            "sentiment": "Negative",
+            "category": "Crime",
+            "subcategory": "gambling",
+            "summary": "నరసరావుపేటలో లాటరీ టికెట్ల విక్రయంపై ప్రజా సంఘాలు ఆగ్రహం వ్యక్తం చేశాయి, ప్రభుత్వం చట్టవ్యతిరేక కార్యకలాపాలను అరికట్టాలని డిమాండ్ చేశాయి.",
+            "location": { "town": "Narasaraopeta", "district": "Guntur", "state": "Andhra Pradesh" },
+            "keywords": ["gambling", "lottery"]
+        }, {
+            "title": "యువతను మోసం చేసిన గోల్డ్ శేఖర్పై పీడీ యాక్ట్ నమోదు చేయాలి",
+            "sentiment": "Negative",
+            "category": "Crime",
+            "subcategory": "fraud",
+            "summary": "గోల్డ్ శేఖర్ పేరుతో ఒక వ్యక్తి యువతను మోసం చేసి, వారి ఆస్తులను కొల్లగొట్టడంతోపాటు ఆత్మహత్యలకు కారణమైనట్టు తెలుస్తోంది. బాధితులు గోల్డ్ శేఖర్‌పై పీడీ యాక్ట్ కేసు నమోదు చేయాలని డిమాండ్ చేశారు.",
+            "location": { "town": "Narasaraopeta", "district": "Guntur", "state": "Andhra Pradesh" },
+            "keywords": ["fraud", "PD Act"]
+        }, {
+            "title": "కస్తూర్బా బాలికా విద్యాలయంలో సీటు రద్దు: జిల్లా కలెక్టర్కు ఫిర్యాదు",
+            "sentiment": "Negative",
+            "category": "Education",
+            "subcategory": "school administration",
+            "summary": "దాచేపల్లి కస్తూర్బా గాంధీ బాలికా విద్యాలయంలో 6వ తరగతి సీటును అధికారులు రద్దు చేశారని, దీంతో కుమార్తె విద్యా అవకాశం కోల్పోయిందని చాట్ల తేజ జిల్లా కలెక్టర్కు ఫిర్యాదు చేశారు.",
+            "location": { "village": "తంగెడ", "mandal": "దాచేపల్లి", "district": "Guntur", "state": "Andhra Pradesh" },
+            "keywords": ["education", "seat cancellation"]
+        }, {
+            "title": "చిట్ డబ్బులు ఇవ్వడం లేదంటూ కలెక్టర్, ఎస్పీకి ఫిర్యాదు",
+            "sentiment": "Negative",
+            "category": "Crime",
+            "subcategory": "financial fraud",
+            "summary": "ఫిరంగిపురానికి చెందిన షేక్ మొహమ్మద్ జాఫర్ అలి ఈశ్వర్ చిట్స్‌లో రూ. 25 లక్షల చిట్ పూర్తి చేసినప్పటికీ, నిర్వాహకులు అతనికి రూ. 21 లక్షలు చెల్లించకుండా వేధిస్తున్నారని ఆరోపించారు.",
+            "location": { "village": "ఫిరంగిపురానికి", "town": "Narasaraopet", "state": "Andhra Pradesh" },
+            "keywords": ["chit funds", "fraud"]
+        }, {
+            "title": "ఎక్సైజ్ ఆకస్మిక తనిఖీలు.. మద్యం శాంపిల్స్ సేకరణ",
+            "sentiment": "Statement",
+            "category": "Crime",
+            "subcategory": "law enforcement",
+            "summary": "ఈపూరు ప్రొహిబిషన్ అండ్ ఎక్సైజ్ స్టేషన్ పరిధిలోని రొంపిచర్ల, బొల్లాపల్లి మండలాల్లో ఎక్సైజ్ శాఖ అధికారులు ఆకస్మిక తనిఖీలు నిర్వహించి, మద్యం శాంపిల్స్‌ను సేకరించారు.",
+            "location": { "village": "రొంపిచర్ల, బొల్లాపల్లి", "state": "Andhra Pradesh" },
+            "keywords": ["excise", "raids"]
+        }];
+
+        // ─── REACT ────────────────────────────────────────────────────────────
+        const { useState, useMemo, useCallback } = React;
+
+        // helper: get unique values
+        const unique = (arr) => [...new Set(arr)];
+
+        // ─── COMPONENTS ──────────────────────────────────────────────────────
+
+        function StatCard({ number, label }) {
+            return ( <
+                div className = "text-center" >
+                <
+                div className = "stat-number" > { number } < /div> <
+                div className = "stat-label" > { label } < /div> <
+                /div>
+            );
+        }
+
+        function LocationChip({ location }) {
+            const parts = [];
+            if (location.village) parts.push(location.village);
+            if (location.town) parts.push(location.town);
+            if (location.mandal) parts.push(location.mandal);
+            if (location.district) parts.push(location.district);
+            const label = parts.length ? parts.join(' · ') : 'Andhra Pradesh';
+            return ( <
+                span className = "location-chip" >
+                <
+                svg width = "10"
+                height = "10"
+                viewBox = "0 0 24 24"
+                fill = "none"
+                stroke = "currentColor"
+                strokeWidth = "2"
+                strokeLinecap = "round"
+                strokeLinejoin = "round" >
+                <
+                path d = "M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" / >
+                <
+                circle cx = "12"
+                cy = "10"
+                r = "3" / >
+                <
+                /svg> { label } <
+                /span>
+            );
+        }
+
+        function NewsCard({ article }) {
+            const sentimentClass = article.sentiment.toLowerCase();
+            return ( <
+                div className = "card p-4 md:p-5 flex flex-col h-full fade-in"
+                style = { { animationDelay: '0.05s' } } >
+                <
+                div className = "flex items-start justify-between gap-3 mb-2" >
+                <
+                div className = "flex flex-wrap items-center gap-1.5" >
+                <
+                span className = { `sentiment-badge ${sentimentClass}` } > { article.sentiment } < /span> <
+                span className = "category-tag" > { article.category } < /span> <
+                span className = "category-tag" > { article.subcategory } < /span> <
+                /div> <
+                /div>
+
+                <
+                h3 className = "text-sm md:text-base font-semibold leading-snug text-primary mb-1.5 line-clamp-2" >
+                { article.title } <
+                /h3>
+
+                <
+                p className = "text-xs md:text-sm text-[#3a3a3a] leading-relaxed flex-1 line-clamp-4" >
+                { article.summary } <
+                /p>
+
+                <
+                div className = "mt-3 pt-3 border-t border-[#f0f0f0] flex items-center justify-between flex-wrap gap-2" >
+                <
+                LocationChip location = { article.location }
+                /> {
+                    article.keywords && article.keywords.length > 0 && ( <
+                        div className = "flex flex-wrap gap-1" > {
+                            article.keywords.slice(0, 2).map((k, i) => ( <
+                                span key = { i }
+                                className = "text-[0.55rem] uppercase tracking-wider text-[#8a8a8a] bg-[#f4f4f4] px-2 py-0.5 rounded-full" >
+                                { k } <
+                                /span>
+                            ))
+                        } <
+                        /div>
+                    )
+                } <
+                /div> <
+                /div>
+            );
+        }
+
+        function EmptyState() {
+            return ( <
+                div className = "empty-state" >
+                <
+                svg width = "48"
+                height = "48"
+                viewBox = "0 0 24 24"
+                fill = "none"
+                stroke = "currentColor"
+                strokeWidth = "1"
+                strokeLinecap = "round"
+                strokeLinejoin = "round" >
+                <
+                circle cx = "12"
+                cy = "12"
+                r = "10" / >
+                <
+                line x1 = "12"
+                y1 = "8"
+                x2 = "12"
+                y2 = "12" / >
+                <
+                line x1 = "12"
+                y1 = "16"
+                x2 = "12.01"
+                y2 = "16" / >
+                <
+                /svg> <
+                p className = "text-sm" > No articles match your filters. < /p> <
+                /div>
+            );
+        }
+
+        function App() {
+            const [categoryFilter, setCategoryFilter] = useState('All');
+            const [sentimentFilter, setSentimentFilter] = useState('All');
+            const [searchQuery, setSearchQuery] = useState('');
+
+            // computed
+            const categories = useMemo(() => ['All', ...unique(articles.map(a => a.category))], []);
+            const sentiments = useMemo(() => ['All', ...unique(articles.map(a => a.sentiment))], []);
+
+            const filtered = useMemo(() => {
+                return articles.filter(a => {
+                    const matchCategory = categoryFilter === 'All' || a.category === categoryFilter;
+                    const matchSentiment = sentimentFilter === 'All' || a.sentiment === sentimentFilter;
+                    const matchSearch = !searchQuery.trim() ||
+                        a.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                        a.summary.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                        a.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                        a.subcategory.toLowerCase().includes(searchQuery.toLowerCase());
+                    return matchCategory && matchSentiment && matchSearch;
+                });
+            }, [categoryFilter, sentimentFilter, searchQuery]);
+
+            const stats = useMemo(() => ({
+                total: articles.length,
+                categories: unique(articles.map(a => a.category)).length,
+                districts: unique(articles.map(a => a.location?.district).filter(Boolean)).length,
+            }), []);
+
+            const handleSearch = useCallback((e) => {
+                setSearchQuery(e.target.value);
+            }, []);
+
+            return ( <
+                    div className = "min-h-screen" >
+
+                    { /* header accent */ } <
+                    div className = "header-accent" > < /div>
+
+                    { /* header */ } <
+                    header className = "bg-primary px-5 py-5 md:py-7" >
+                    <
+                    div className = "max-w-6xl mx-auto" >
+                    <
+                    div className = "flex flex-col md:flex-row md:items-center md:justify-between gap-3" >
+                    <
+                    div >
+                    <
+                    h1 className = "text-xl md:text-2xl font-semibold tracking-tight text-white" >
+                    <
+                    span className = "text-secondary" > ⟨ < /span> News Dashboard <
+                    span className = "text-secondary" > ⟩ < /span> <
+                    span className = "text-white/60 text-sm font-normal ml-2" > Andhra Pradesh < /span> <
+                    /h1> <
+                    div className = "title-line" > < /div> <
+                    /div> <
+                    div className = "flex flex-wrap items-center gap-5 md:gap-7" >
+                    <
+                    StatCard number = { stats.total }
+                    label = "Articles" / >
+                    <
+                    StatCard number = { stats.categories }
+                    label = "Categories" / >
+                    <
+                    StatCard number = { stats.districts }
+                    label = "Districts" / >
+                    <
+                    /div> <
+                    /div> <
+                    /div> <
+                    /header>
+
+                    { /* filters */ } <
+                    div className = "sticky top-0 z-10 bg-white/80 backdrop-blur-sm border-b border-[#f0f0f0] px-5 py-3" >
+                    <
+                    div className = "max-w-6xl mx-auto flex flex-wrap items-center gap-2 md:gap-3" >
+                    <
+                    select className = "filter-select"
+                    value = { categoryFilter }
+                    onChange = { (e) => setCategoryFilter(e.target.value) } >
+                    {
+                        categories.map(c => ( <
+                            option key = { c }
+                            value = { c } > { c } < /option>
+                        ))
+                    } <
+                    /select>
+
+                    <
+                    select className = "filter-select"
+                    value = { sentimentFilter }
+                    onChange = { (e) => setSentimentFilter(e.target.value) } >
+                    {
+                        sentiments.map(s => ( <
+                            option key = { s }
+                            value = { s } > { s } < /option>
+                        ))
+                    } <
+                    /select>
+
+                    <
+                    div className = "flex-1 min-w-[140px]" >
+                    <
+                    input className = "search-input"
+                    type = "text"
+                    placeholder = "Search articles…"
+                    value = { searchQuery }
+                    onChange = { handleSearch }
+                    /> <
+                    /div>
+
+                    <
+                    div className = "text-xs text-[#8a8a8a] ml-auto whitespace-nowrap" >
+                    { filtered.length } { filtered.length === 1 ? 'article' : 'articles' } <
+                    /div> <
+                    /div> <
+                    /div>
+
+                    { /* grid */ } <
+                    main className = "max-w-6xl mx-auto px-5 py-6" > {
+                        filtered.length === 0 ? < EmptyState / > : <
+                        div className = "news-grid" > {
+                            filtered.map((a, i) => ( <
+                                NewsCard key = { i }
+                                article = { a }
+                                />
+                            ))
+                        } <
+                        /div>
+                    } <
+                    /main>
+
+                    { /* footer */ } <
+                    footer className = "border-t border-[#f0f0f0] px-5 py-4 text-center text-[0.6rem] uppercase tracking-[0.08em] text-[#b0b0b0]" >
+                    <
+                    span className = "text-secondary" > ● < /span> Andhra Pradesh · { new Date().getFullYear() } <
+                    span className = "text-secondary" > ● < /span> <
+                    /footer> <
+                    /div>
+                );
+            }
+
+            // ─── MOUNT ────────────────────────────────────────────────────────────
+            const root = ReactDOM.createRoot(document.getElementById('root'));
+            root.render( < App / > );
+    </script>
+</body>
+</html>
