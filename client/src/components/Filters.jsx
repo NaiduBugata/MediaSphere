@@ -1,4 +1,5 @@
 import { FiFilter, FiX } from 'react-icons/fi';
+import { formatSourceLabel } from '../utils/format';
 
 function FilterSelect({ label, value, onChange, options, formatOption }) {
   return (
@@ -63,7 +64,7 @@ export default function Filters({ filters, setFilter, resetFilters, filterOption
             value={filters.source}
             onChange={(v) => setFilter('source', v)}
             options={filterOptions.sources}
-            formatOption={(v) => (v === 'youtube' ? 'YouTube' : v === 'lokal' ? 'Lokal' : v)}
+            formatOption={(v) => formatSourceLabel(v)}
           />
           <FilterSelect
             label="Category"

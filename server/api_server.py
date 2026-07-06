@@ -72,6 +72,19 @@ def _parse_date(value: str) -> datetime | None:
         return None
 
 
+def _article_sort_timestamp(article: dict) -> float:
+    """Newest-first ordering across Lokal and YouTube (mixed date formats)."""
+    for field in ("created_on", "first_seen_at", "last_updated_at"):
+        parsed = _parse_date(article.get(field) or "")
+        if parsed:
+            return parsed.timestamp()
+    return 0.0
+
+
+def _sort_articles_newest_first(articles: list[dict]) -> list[dict]:
+    return sorted(articles, key=_article_sort_timestamp, reverse=True)
+
+
 def _date_key(value: str) -> str | None:
     parsed = _parse_date(value)
     if not parsed:
@@ -143,8 +156,9 @@ def get_news():
         source_filter = (request.args.get("source") or "all").lower()
 
         collection = mongo_store.get_collection()
-        cursor = collection.find({}).sort("created_on", -1)
+        cursor = collection.find({})
         articles = [_normalize_article(doc) for doc in cursor]
+        articles = _sort_articles_newest_first(articles)
 
         if source_filter == "lokal":
             articles = [a for a in articles if a.get("source", "lokal") == "lokal"]

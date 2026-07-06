@@ -113,11 +113,31 @@ export function truncate(text, max = 120) {
   return `${text.slice(0, max).trim()}…`;
 }
 
+/** Best timestamp for ordering (newest first across Lokal + YouTube). */
+export function getArticleSortTime(article) {
+  for (const field of ['created_on', 'first_seen_at', 'last_updated_at']) {
+    const t = parseDate(article?.[field])?.getTime();
+    if (t) return t;
+  }
+  return 0;
+}
+
+export function isYoutubeSource(source) {
+  return (source || '').toLowerCase() === 'youtube';
+}
+
+export function formatSourceLabel(source) {
+  return isYoutubeSource(source) ? 'YT' : 'Lokal Telugu';
+}
+
 export function sortByDateDesc(articles) {
   return [...articles].sort((a, b) => {
-    const da = parseDate(a.created_on)?.getTime() || 0;
-    const db = parseDate(b.created_on)?.getTime() || 0;
-    return db - da;
+    const da = getArticleSortTime(a);
+    const db = getArticleSortTime(b);
+    if (db !== da) return db - da;
+    const sa = formatSourceLabel(a.source);
+    const sb = formatSourceLabel(b.source);
+    return sa.localeCompare(sb);
   });
 }
 

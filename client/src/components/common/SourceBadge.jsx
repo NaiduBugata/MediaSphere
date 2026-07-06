@@ -1,11 +1,13 @@
+import { formatSourceLabel, isYoutubeSource } from '../../utils/format';
+
 const STYLES = {
   lokal: 'bg-emerald-100 text-emerald-800',
   youtube: 'bg-red-100 text-red-800',
 };
 
 export default function SourceBadge({ source }) {
-  const key = (source || 'lokal').toLowerCase();
-  const label = key === 'youtube' ? 'YouTube' : 'Lokal';
+  const key = isYoutubeSource(source) ? 'youtube' : 'lokal';
+  const label = formatSourceLabel(source);
   const style = STYLES[key] || STYLES.lokal;
 
   return (

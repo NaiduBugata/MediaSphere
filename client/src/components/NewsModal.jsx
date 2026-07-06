@@ -4,7 +4,7 @@ import SentimentBadge from './common/SentimentBadge';
 import CategoryChip from './common/CategoryChip';
 import PriorityBadge from './common/PriorityBadge';
 import SourceBadge from './common/SourceBadge';
-import { formatDateTime, formatLocation, safeString } from '../utils/format';
+import { formatDateTime, formatLocation, isYoutubeSource, safeString } from '../utils/format';
 
 function HighlightBlock({ title, content, variant = 'primary' }) {
   const styles =
@@ -125,7 +125,7 @@ export default function NewsModal({ article, isOpen, onClose }) {
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 transition-colors"
             >
-              Open {article.source === 'youtube' ? 'YouTube Video' : 'Original Article'}
+              Open {isYoutubeSource(article.source) ? 'YouTube Video' : 'Original Article'}
               <FiExternalLink className="h-4 w-4" />
             </a>
           )}

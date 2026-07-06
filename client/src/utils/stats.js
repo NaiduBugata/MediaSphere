@@ -153,8 +153,8 @@ export function computeStats(articles) {
         countOnDate(statements, todayKey) - countOnDate(statements, yesterdayKey),
     },
     actionRequired: sortByPriority(problems).slice(0, 10),
-    positiveDevelopments: positive.slice(0, 8),
-    recentActivity: enriched.slice(0, 5),
+    positiveDevelopments: sortByDateDesc(positive).slice(0, 8),
+    recentActivity: sortByDateDesc(enriched).slice(0, 8),
     filterOptions,
     enriched,
   };

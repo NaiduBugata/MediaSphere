@@ -4,7 +4,7 @@ import SentimentBadge from './common/SentimentBadge';
 import CategoryChip from './common/CategoryChip';
 import SourceBadge from './common/SourceBadge';
 import EmptyState from './common/EmptyState';
-import { formatDate, safeString } from '../utils/format';
+import { formatDate, getArticleSortTime, safeString } from '../utils/format';
 
 const PAGE_SIZE = 10;
 const SORTABLE = ['title', 'category', 'sentiment', 'created_on'];
@@ -50,14 +50,14 @@ export default function NewsTable({ articles, onViewDetails }) {
 
   const sorted = useMemo(() => {
     return [...articles].sort((a, b) => {
-      let av = a[sortField];
-      let bv = b[sortField];
+      let av;
+      let bv;
       if (sortField === 'created_on') {
-        av = new Date(av || 0).getTime();
-        bv = new Date(bv || 0).getTime();
+        av = getArticleSortTime(a);
+        bv = getArticleSortTime(b);
       } else {
-        av = String(av || '').toLowerCase();
-        bv = String(bv || '').toLowerCase();
+        av = String(a[sortField] || '').toLowerCase();
+        bv = String(b[sortField] || '').toLowerCase();
       }
       if (av < bv) return sortDir === 'asc' ? -1 : 1;
       if (av > bv) return sortDir === 'asc' ? 1 : -1;
@@ -92,7 +92,7 @@ export default function NewsTable({ articles, onViewDetails }) {
             <thead className="bg-secondary">
               <tr>
                 <SortHeader field="title" label="Title" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
-                <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Source</th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Channel</th>
                 <SortHeader field="category" label="Category" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
                 <SortHeader field="sentiment" label="Sentiment" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
                 <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider hidden md:table-cell">District</th>
@@ -105,11 +105,16 @@ export default function NewsTable({ articles, onViewDetails }) {
             <tbody className="divide-y divide-gray-100 bg-white">
               {paginated.map((article) => (
                 <tr key={article._id || article.post_id} className="hover:bg-secondary/50 transition-colors">
-                  <td className="px-4 py-3 text-sm font-medium text-gray-900 max-w-xs truncate">
-                    {safeString(article.title, 'Untitled')}
+                  <td className="px-4 py-3 text-sm font-medium text-gray-900 max-w-xs">
+                    <div className="flex items-start gap-2 min-w-0">
+                      <SourceBadge source={article.source} />
+                      <span className="truncate">{safeString(article.title, 'Untitled')}</span>
+                    </div>
                   </td>
-                  <td className="px-4 py-3">
-                    <SourceBadge source={article.source} />
+                  <td className="px-4 py-3 text-sm text-gray-600 max-w-[140px] truncate hidden sm:table-cell">
+                    {article.source === 'youtube'
+                      ? safeString(article.channel, '—')
+                      : 'Lokal News'}
                   </td>
                   <td className="px-4 py-3">
                     <CategoryChip category={article.category} />

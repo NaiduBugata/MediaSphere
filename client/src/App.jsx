@@ -1,5 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { FiClock } from 'react-icons/fi';
+import SourceBadge from './components/common/SourceBadge';
+import { formatRelativeTime } from './utils/format';
 import Navbar from './components/Navbar';
 import SummaryCards from './components/SummaryCards';
 import PriorityProblems from './components/PriorityProblems';
@@ -58,6 +60,10 @@ function RecentActivity({ articles, onViewDetails }) {
                 onClick={() => onViewDetails(article)}
                 className="w-full text-left py-3 hover:text-primary transition-colors"
               >
+                <div className="flex items-center gap-2 mb-1">
+                  <SourceBadge source={article.source} />
+                  <span className="text-xs text-gray-400">{formatRelativeTime(article.created_on)}</span>
+                </div>
                 <p className="text-sm font-medium text-gray-800 truncate">{article.title}</p>
                 <p className="text-xs text-gray-500 mt-0.5">
                   {article.category} · {article.sentiment}

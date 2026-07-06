@@ -1,5 +1,6 @@
 import { FiAlertTriangle } from 'react-icons/fi';
 import CategoryChip from './common/CategoryChip';
+import SourceBadge from './common/SourceBadge';
 import EmptyState from './common/EmptyState';
 import { formatLocation, formatRelativeTime, truncate } from '../utils/format';
 
@@ -41,6 +42,7 @@ function ProblemRow({ article, onViewDetails }) {
             {truncate(article.title, 90)}
           </p>
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <SourceBadge source={article.source} />
             <CategoryChip category={article.category} />
             <span className="text-xs text-gray-400">·</span>
             <span className="text-xs text-gray-500">{formatLocation(article.location)}</span>

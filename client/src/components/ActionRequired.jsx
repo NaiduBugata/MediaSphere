@@ -1,5 +1,6 @@
 import { FiAlertCircle } from 'react-icons/fi';
 import CategoryChip from './common/CategoryChip';
+import SourceBadge from './common/SourceBadge';
 import PriorityBadge from './common/PriorityBadge';
 import EmptyState from './common/EmptyState';
 import { formatDateTime, formatLocation, truncate } from '../utils/format';
@@ -25,6 +26,7 @@ function ActionCard({ article, onViewDetails }) {
       )}
 
       <div className="flex flex-wrap items-center gap-2">
+        <SourceBadge source={article.source} />
         <CategoryChip category={article.category} />
         <span className="text-xs text-gray-500">{formatLocation(article.location)}</span>
       </div>

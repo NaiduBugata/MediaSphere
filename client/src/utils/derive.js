@@ -81,13 +81,13 @@ export function enrichArticles(articles) {
 
 export const PRIORITY_ORDER = { High: 0, Medium: 1, Low: 2 };
 
+import { getArticleSortTime } from './format';
+
 export function sortByPriority(articles) {
   return [...articles].sort((a, b) => {
     const pa = PRIORITY_ORDER[a.priority] ?? 3;
     const pb = PRIORITY_ORDER[b.priority] ?? 3;
     if (pa !== pb) return pa - pb;
-    const da = new Date(a.created_on || 0).getTime();
-    const db = new Date(b.created_on || 0).getTime();
-    return db - da;
+    return getArticleSortTime(b) - getArticleSortTime(a);
   });
 }
