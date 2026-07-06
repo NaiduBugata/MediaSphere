@@ -98,6 +98,7 @@ def get_collection() -> Collection:
     client = get_client()
     collection = client[MONGODB_DB_NAME][MONGODB_COLLECTION]
     collection.create_index("post_id", unique=True)
+    collection.create_index([("source", 1), ("created_on", -1)])
     return collection
 
 
@@ -189,6 +190,7 @@ def upsert_articles(
 
         document = {
             "post_id": post_id,
+            "source": "lokal",
             "title": title,
             "sentiment": article.get("sentiment"),
             "category": article.get("category"),
@@ -230,6 +232,169 @@ def upsert_articles(
         "total": len(news_articles),
         "inserted_post_ids": inserted_post_ids,
     }
+
+
+YOUTUBE_POST_ID_PREFIX = "yt_"
+
+
+def youtube_post_id(video_id: str) -> str:
+    return f"{YOUTUBE_POST_ID_PREFIX}{video_id}"
+
+
+def get_existing_youtube_video_ids() -> set[str]:
+    """Return video_ids already stored from YouTube (post_id yt_*)."""
+    collection = get_collection()
+    ids: set[str] = set()
+    cursor = collection.find({"source": "youtube"}, {"post_id": 1})
+    for doc in cursor:
+        post_id = doc.get("post_id")
+        if isinstance(post_id, str) and post_id.startswith(YOUTUBE_POST_ID_PREFIX):
+            ids.add(post_id[len(YOUTUBE_POST_ID_PREFIX):])
+    return ids
+
+
+def build_youtube_postid_map(collector_json_path: Path | str) -> dict[str, dict[str, Any]]:
+    """Build title-to-metadata map from YouTube collector JSON."""
+    payload = json.loads(Path(collector_json_path).read_text(encoding="utf-8"))
+    articles = payload.get("articles", [])
+
+    title_map: dict[str, dict[str, Any]] = {}
+    for article in articles:
+        title = article.get("title", "")
+        video_id = article.get("video_id") or article.get("id")
+        if not title or not video_id:
+            continue
+
+        entry = {
+            "post_id": youtube_post_id(str(video_id)),
+            "video_id": str(video_id),
+            "url": article.get("url"),
+            "created_on": article.get("created_on"),
+            "channel": article.get("channel"),
+            "raw_title": title,
+        }
+        title_map[title] = entry
+        normalized = _normalize_title(title)
+        if normalized not in title_map:
+            title_map[normalized] = entry
+        title_map[str(video_id)] = entry
+
+    return title_map
+
+
+def _resolve_youtube_post_id(
+    title: str,
+    title_map: dict[str, dict[str, Any]],
+) -> tuple[str, str | None, str | None, str | None]:
+    normalized = _normalize_title(title)
+
+    if title in title_map:
+        meta = title_map[title]
+    elif normalized in title_map:
+        meta = title_map[normalized]
+    else:
+        digest = hashlib.sha1(normalized.encode("utf-8")).hexdigest()[:12]
+        logger.warning("No YouTube collector match for title %r; using hash post_id", title)
+        return f"{YOUTUBE_POST_ID_PREFIX}hash_{digest}", None, None, None
+
+    return (
+        meta["post_id"],
+        meta.get("url"),
+        meta.get("created_on"),
+        meta.get("channel"),
+    )
+
+
+def upsert_youtube_articles(
+    news_articles: list[dict[str, Any]],
+    collector_json_path: Path | str,
+) -> dict[str, int]:
+    """Upsert categorized YouTube articles into MongoDB."""
+    collection = get_collection()
+    title_map = build_youtube_postid_map(collector_json_path)
+    now = _current_timestamp()
+
+    inserted = 0
+    updated = 0
+    matched = 0
+    inserted_post_ids: list[Any] = []
+
+    for article in news_articles:
+        title = article.get("title", "")
+        post_id, source_url, created_on, channel = _resolve_youtube_post_id(title, title_map)
+
+        document = {
+            "post_id": post_id,
+            "source": "youtube",
+            "title": title,
+            "sentiment": article.get("sentiment"),
+            "category": article.get("category"),
+            "subcategory": article.get("subcategory"),
+            "summary": article.get("summary"),
+            "problem": article.get("problem"),
+            "problem_id": article.get("problem_id"),
+            "location": article.get("location"),
+            "entities": article.get("entities"),
+            "keywords": article.get("keywords"),
+            "source_url": source_url,
+            "channel": channel,
+            "created_on": created_on,
+            "last_updated_at": now,
+        }
+
+        result = collection.update_one(
+            {"post_id": post_id},
+            {
+                "$set": document,
+                "$setOnInsert": {"first_seen_at": now, "email_sent": False},
+            },
+            upsert=True,
+        )
+
+        if result.upserted_id is not None:
+            inserted += 1
+            inserted_post_ids.append(post_id)
+        elif result.modified_count > 0:
+            updated += 1
+        else:
+            matched += 1
+
+    return {
+        "inserted": inserted,
+        "updated": updated,
+        "matched": matched,
+        "total": len(news_articles),
+        "inserted_post_ids": inserted_post_ids,
+    }
+
+
+def filter_new_youtube_articles(
+    collector_json_path: Path | str,
+    max_count: int | None = None,
+) -> tuple[Path, list[dict[str, Any]]]:
+    """
+    Return collector path and articles whose video_ids are not yet in MongoDB.
+
+    Writes a filtered envelope to youtube_news_new.json for the analyzer batch.
+    """
+    payload = json.loads(Path(collector_json_path).read_text(encoding="utf-8"))
+    existing = get_existing_youtube_video_ids()
+    new_articles = [
+        a for a in payload.get("articles", [])
+        if str(a.get("video_id") or a.get("id")) not in existing
+    ]
+
+    if max_count is not None and max_count > 0:
+        new_articles = new_articles[:max_count]
+
+    filtered_path = Path(collector_json_path).parent / "youtube_news_new.json"
+    filtered_envelope = {
+        **{k: v for k, v in payload.items() if k != "articles"},
+        "articles": new_articles,
+        "new_count": len(new_articles),
+    }
+    filtered_path.write_text(json.dumps(filtered_envelope, ensure_ascii=False, indent=2), encoding="utf-8")
+    return filtered_path, new_articles
 
 
 def get_stats() -> dict[str, Any]:

@@ -54,6 +54,8 @@ def _normalize_article(doc: dict) -> dict:
         "problem": doc.get("problem"),
         "problem_id": doc.get("problem_id"),
         "source_url": doc.get("source_url") or "",
+        "source": doc.get("source") or "lokal",
+        "channel": doc.get("channel") or "",
         "created_on": doc.get("created_on") or "",
         "first_seen_at": doc.get("first_seen_at") or "",
         "last_updated_at": doc.get("last_updated_at") or "",
@@ -113,8 +115,11 @@ def _compute_stats(articles: list[dict]) -> dict:
         1 for a in articles if (a.get("sentiment") or "") in ("Negative", "Problem")
     )
 
+    source_counts = Counter(a.get("source") or "lokal" for a in articles)
+
     return {
         "total": total,
+        "by_source": dict(source_counts),
         "sentiment": dict(sentiment_counts),
         "category": dict(category_counts),
         "district": dict(district_counts),
@@ -133,11 +138,19 @@ def _compute_stats(articles: list[dict]) -> dict:
 
 @app.route("/api/news", methods=["GET"])
 def get_news():
-    """Return all categorized articles, newest first."""
+    """Return categorized articles, newest first. Optional ?source=lokal|youtube|all."""
     try:
+        source_filter = (request.args.get("source") or "all").lower()
+
         collection = mongo_store.get_collection()
         cursor = collection.find({}).sort("created_on", -1)
         articles = [_normalize_article(doc) for doc in cursor]
+
+        if source_filter == "lokal":
+            articles = [a for a in articles if a.get("source", "lokal") == "lokal"]
+        elif source_filter == "youtube":
+            articles = [a for a in articles if a.get("source") == "youtube"]
+
         return jsonify({"articles": articles, "count": len(articles)})
     except Exception as exc:
         logger.exception("Failed to fetch news: %s", exc)

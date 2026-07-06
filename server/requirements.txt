@@ -8,3 +8,6 @@ flask-cors>=4.0
 apscheduler>=3.10
 reportlab>=4.0
 gunicorn==23.0.0
+google-api-python-client==2.175.0
+youtube-transcript-api==1.1.1
+tqdm==4.67.1

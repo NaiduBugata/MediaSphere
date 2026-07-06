@@ -1,5 +1,11 @@
-# Render Blueprint — MediaSphere backend API
+# Render Blueprint — MediaSphere
 # Docs: https://render.com/docs/blueprint-spec
+#
+# You need TWO services:
+#   1. mediasphere-api (Web) — dashboard API
+#   2. mediasphere-pipeline (Background Worker) — Lokal + YouTube every hour + emails
+#
+# Set secrets in Render Dashboard → Environment (not in this file).
 
 services:
   - type: web
@@ -28,9 +34,12 @@ services:
     plan: free
     rootDir: server
     buildCommand: pip install -r requirements.txt
-    startCommand: python run_lokal_analysis.py
+    # Runs Lokal + YouTube every hour; sends one email per new article
+    startCommand: python run_all_pipelines.py
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
+      - key: YOUTUBE_ENABLED
+        value: true
       - key: EMAIL_ENABLED
         value: false

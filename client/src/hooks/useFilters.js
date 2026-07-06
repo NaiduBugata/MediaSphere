@@ -3,6 +3,7 @@ import { getDateKey } from '../utils/format';
 
 const DEFAULT_FILTERS = {
   search: '',
+  source: '',
   category: '',
   subcategory: '',
   sentiment: '',
@@ -50,6 +51,8 @@ export function useFilters(articles) {
 
   const filteredArticles = useMemo(() => {
     return articles.filter((article) => {
+      const articleSource = article.source || 'lokal';
+      if (filters.source && articleSource !== filters.source) return false;
       if (filters.category && article.category !== filters.category) return false;
       if (filters.subcategory && article.subcategory !== filters.subcategory) return false;
       if (filters.sentiment && article.sentiment !== filters.sentiment) return false;

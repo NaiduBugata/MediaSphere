@@ -108,6 +108,8 @@ def _normalize(doc: dict) -> dict:
         "problem": doc.get("problem"),
         "problem_id": doc.get("problem_id"),
         "source_url": doc.get("source_url") or "",
+        "source": doc.get("source") or "lokal",
+        "channel": doc.get("channel") or "",
         "created_on": doc.get("created_on") or "",
     }
 

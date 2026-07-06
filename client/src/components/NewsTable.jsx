@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { FiChevronDown, FiChevronUp, FiExternalLink } from 'react-icons/fi';
 import SentimentBadge from './common/SentimentBadge';
 import CategoryChip from './common/CategoryChip';
+import SourceBadge from './common/SourceBadge';
 import EmptyState from './common/EmptyState';
 import { formatDate, safeString } from '../utils/format';
 
@@ -91,6 +92,7 @@ export default function NewsTable({ articles, onViewDetails }) {
             <thead className="bg-secondary">
               <tr>
                 <SortHeader field="title" label="Title" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Source</th>
                 <SortHeader field="category" label="Category" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
                 <SortHeader field="sentiment" label="Sentiment" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
                 <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider hidden md:table-cell">District</th>
@@ -105,6 +107,9 @@ export default function NewsTable({ articles, onViewDetails }) {
                 <tr key={article._id || article.post_id} className="hover:bg-secondary/50 transition-colors">
                   <td className="px-4 py-3 text-sm font-medium text-gray-900 max-w-xs truncate">
                     {safeString(article.title, 'Untitled')}
+                  </td>
+                  <td className="px-4 py-3">
+                    <SourceBadge source={article.source} />
                   </td>
                   <td className="px-4 py-3">
                     <CategoryChip category={article.category} />

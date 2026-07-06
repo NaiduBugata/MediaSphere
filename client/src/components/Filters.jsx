@@ -1,6 +1,6 @@
 import { FiFilter, FiX } from 'react-icons/fi';
 
-function FilterSelect({ label, value, onChange, options }) {
+function FilterSelect({ label, value, onChange, options, formatOption }) {
   return (
     <div className="flex flex-col gap-1">
       <label className="text-xs font-medium text-gray-500">{label}</label>
@@ -12,7 +12,7 @@ function FilterSelect({ label, value, onChange, options }) {
         <option value="">All</option>
         {options.map((opt) => (
           <option key={opt} value={opt}>
-            {opt}
+            {formatOption ? formatOption(opt) : opt}
           </option>
         ))}
       </select>
@@ -57,7 +57,14 @@ export default function Filters({ filters, setFilter, resetFilters, filterOption
           )}
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-9 gap-3">
+          <FilterSelect
+            label="Source"
+            value={filters.source}
+            onChange={(v) => setFilter('source', v)}
+            options={filterOptions.sources}
+            formatOption={(v) => (v === 'youtube' ? 'YouTube' : v === 'lokal' ? 'Lokal' : v)}
+          />
           <FilterSelect
             label="Category"
             value={filters.category}

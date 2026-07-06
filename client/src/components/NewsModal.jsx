@@ -3,6 +3,7 @@ import Modal from './common/Modal';
 import SentimentBadge from './common/SentimentBadge';
 import CategoryChip from './common/CategoryChip';
 import PriorityBadge from './common/PriorityBadge';
+import SourceBadge from './common/SourceBadge';
 import { formatDateTime, formatLocation, safeString } from '../utils/format';
 
 function HighlightBlock({ title, content, variant = 'primary' }) {
@@ -67,6 +68,16 @@ export default function NewsModal({ article, isOpen, onClose }) {
 
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
           <div>
+            <p className="text-xs text-gray-500 mb-1">Source</p>
+            <SourceBadge source={article.source} />
+          </div>
+          {article.channel && (
+            <div>
+              <p className="text-xs text-gray-500 mb-1">Channel</p>
+              <p className="text-sm font-medium text-gray-800">{article.channel}</p>
+            </div>
+          )}
+          <div>
             <p className="text-xs text-gray-500 mb-1">Category</p>
             <CategoryChip category={article.category} />
           </div>
@@ -114,7 +125,7 @@ export default function NewsModal({ article, isOpen, onClose }) {
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 transition-colors"
             >
-              Open Original Article
+              Open {article.source === 'youtube' ? 'YouTube Video' : 'Original Article'}
               <FiExternalLink className="h-4 w-4" />
             </a>
           )}

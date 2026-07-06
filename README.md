@@ -6,16 +6,18 @@ MediaSphere is an end-to-end system that collects local Telugu news for the Nara
 
 ```
 Lokal source  ->  Collector  ->  AI Analyzer  ->  MongoDB (MediaSphere)  ->  Flask API  ->  React Dashboard
+YouTube source ->  Collector  ->  (same analyzer)  ->  (same MongoDB/API/dashboard)
 ```
 
-1. **Collector** (`server/lokal_collector.py`) fetches the rolling 7-day news window from the Lokal API.
-2. **Analyzer** (`server/telugu_ai_news_analyzer.py`) performs Groq-backed multi-stage categorization.
-3. **Storage** (`server/mongo_store.py`) upserts categorized articles into MongoDB by Lokal `post_id` (no duplicates).
-4. **API** (`server/api_server.py`) serves the dashboard and report endpoints.
-5. **Dashboard** (`client/`) is a Vite + React + Tailwind + Recharts SPA that computes stats client-side.
-6. **Reports** (`server/reports/`) generate and email the daily 07:00 IST executive report and the incremental per-cycle updates.
+1. **Lokal collector** (`server/lokal_collector.py`) fetches the rolling 7-day news window from the Lokal API.
+2. **YouTube collector** (`server/youtube/`) searches YouTube by constituency keywords, fetches Telugu captions, and filters news content.
+3. **Analyzer** (`server/telugu_ai_news_analyzer.py`) performs Groq-backed multi-stage categorization (shared by both sources).
+4. **Storage** (`server/mongo_store.py`) upserts categorized articles into MongoDB by `post_id` (`lokal` numeric id or `yt_{video_id}`) with a `source` field.
+5. **API** (`server/api_server.py`) serves the dashboard and report endpoints (`?source=lokal|youtube|all`).
+6. **Dashboard** (`client/`) is a Vite + React + Tailwind + Recharts SPA with source filters and badges.
+7. **Reports** (`server/reports/`) generate and email the daily 07:00 IST executive report and incremental per-article alerts.
 
-The pipeline runner (`server/run_lokal_analysis.py`) chains collection -> analysis -> storage and can run once or continuously every hour.
+The combined pipeline runner (`server/run_all_pipelines.py`) runs Lokal then YouTube every hour when `YOUTUBE_ENABLED=true`.
 
 ## Project Structure
 
@@ -31,7 +33,11 @@ The pipeline runner (`server/run_lokal_analysis.py`) chains collection -> analys
 │   └── .env.example        #   VITE_API_BASE_URL
 ├── server/                 # Backend — Python (Flask API, AI pipeline, scheduler)
 │   ├── api_server.py       #   Flask API + report admin routes + scheduler boot
-│   ├── run_lokal_analysis.py  # pipeline runner (collect -> analyze -> store -> email)
+│   ├── run_lokal_analysis.py  # Lokal pipeline runner
+│   ├── run_youtube_analysis.py  # YouTube pipeline runner
+│   ├── run_all_pipelines.py   # Combined Lokal + YouTube worker entry
+│   ├── youtube/            #   Integrated YouTube collector (MediaSphere pipeline)
+│   ├── youtube-sagebot/    #   Standalone Sagebot tools (export, dedup, CLI)
 │   ├── lokal_collector.py  #   Lokal news collector
 │   ├── telugu_ai_news_analyzer.py  # Groq categorization
 │   ├── mongo_store.py      #   MongoDB persistence + admin CLI
@@ -52,6 +58,7 @@ The pipeline runner (`server/run_lokal_analysis.py`) chains collection -> analys
 - Node.js 18+
 - A MongoDB Atlas cluster
 - One or more Groq API keys
+- YouTube Data API v3 key (for YouTube pipeline; separate from Lokal)
 
 ## Backend Setup
 
@@ -66,8 +73,18 @@ copy .env.example .env   # Windows  (use `cp` on macOS/Linux); then fill in GROQ
 ### Run the pipeline
 
 ```bash
-python run_lokal_analysis.py --once   # single cycle (collect -> analyze -> store -> incremental email)
-python run_lokal_analysis.py          # continuous, every 1 hour
+python run_all_pipelines.py --once   # Lokal + YouTube (if YOUTUBE_ENABLED=true)
+python run_all_pipelines.py          # continuous, every 1 hour
+
+python run_lokal_analysis.py --once   # Lokal only
+python run_youtube_analysis.py --once # YouTube only (requires YOUTUBE_API_KEY)
+```
+
+Set in `.env`:
+
+```
+YOUTUBE_ENABLED=true
+YOUTUBE_API_KEY=your_youtube_data_api_key
 ```
 
 ### Run the API server
@@ -77,7 +94,7 @@ python api_server.py
 ```
 
 Endpoints:
-- `GET /api/news` — all categorized articles, newest first
+- `GET /api/news` — all categorized articles, newest first (`?source=lokal|youtube|all`)
 - `GET /api/news/stats` — aggregated statistics
 - `GET /api/health` — health check
 - `GET /api/reports/history` — daily report delivery history (newest first)

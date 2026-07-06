@@ -68,5 +68,31 @@ def generate_article_txt_from_json(json_path: Path, article_path: Path = ARTICLE
     return article_path
 
 
+def generate_article_txt_from_youtube_json(
+    json_path: Path,
+    article_path: Path,
+    min_chars: int = 100,
+) -> Path:
+    """Build analyzer input from YouTube collector JSON (news-only articles)."""
+    data = json.loads(json_path.read_text(encoding="utf-8"))
+    articles = data.get("articles", [])
+    blocks: list[str] = []
+
+    for item in articles:
+        title = (item.get("title") or "").strip()
+        content = (item.get("content") or "").strip()
+        if not title or len(content) < min_chars:
+            continue
+        blocks.append(
+            "----------------------------------------\n"
+            f"TITLE: {title}\n\n"
+            f"CONTENT: {content}"
+        )
+
+    article_path.parent.mkdir(parents=True, exist_ok=True)
+    article_path.write_text("\n".join(blocks), encoding="utf-8")
+    return article_path
+
+
 if __name__ == "__main__":
     generate_article_txt()

@@ -74,12 +74,16 @@ GROQ_TIMEOUT_SECONDS = _get_int("GROQ_TIMEOUT_SECONDS", 120)
 
 
 def groq_api_keys() -> list[str]:
-    """Collect all configured GROQ_API_KEY_* values."""
-    keys = []
-    for i in range(1, 11):
-        value = os.getenv(f"GROQ_API_KEY_{i}", "").strip()
-        if value:
-            keys.append(value)
+    """Collect all configured GROQ_API_KEY_* values (any index, e.g. _1 or _5)."""
+    import re
+
+    numbered: list[tuple[int, str]] = []
+    for env_key, env_value in os.environ.items():
+        match = re.fullmatch(r"GROQ_API_KEY_(\d+)", env_key)
+        if match and env_value.strip():
+            numbered.append((int(match.group(1)), env_value.strip()))
+    numbered.sort(key=lambda item: item[0])
+    keys = [value for _, value in numbered]
     single = os.getenv("GROQ_API_KEY", "").strip()
     if single:
         keys.append(single)

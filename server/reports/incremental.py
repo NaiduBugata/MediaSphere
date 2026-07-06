@@ -71,7 +71,8 @@ def _subject_for_article(article: dict, now: datetime) -> str:
     if len(title) > 55:
         title = title[:52] + "..."
     category = article.get("category") or "News"
-    return f"MediaSphere Alert | {category} | {local.strftime('%d %b %Y %I:%M %p')} IST | {title}"
+    source = (article.get("source") or "lokal").capitalize()
+    return f"MediaSphere Alert | {source} | {category} | {local.strftime('%d %b %Y %I:%M %p')} IST | {title}"
 
 
 def mark_emailed(post_id: Any, batch_id: str, sent_at: str) -> bool:

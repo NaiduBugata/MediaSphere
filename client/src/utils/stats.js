@@ -103,8 +103,10 @@ export function computeStats(articles) {
   const sortedByDate = sortByDateDesc(enriched);
   const latestArticle = sortedByDate[0];
   const oldestArticle = sortedByDate[sortedByDate.length - 1];
+  const bySource = countBy(enriched, (a) => a.source || 'lokal');
 
   const filterOptions = {
+    sources: uniqueSorted(enriched.map((a) => a.source || 'lokal')),
     categories: uniqueSorted(enriched.map((a) => a.category)),
     subcategories: uniqueSorted(enriched.map((a) => a.subcategory)),
     sentiments: uniqueSorted(enriched.map((a) => a.sentiment)),
@@ -120,6 +122,7 @@ export function computeStats(articles) {
     neutral: neutral.length,
     statements: statements.length,
     problems: problems.length,
+    bySource,
     highPriorityProblems: highPriority.length,
     problemPriorityCounts,
     sentimentCounts,
