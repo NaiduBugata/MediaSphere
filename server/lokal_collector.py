@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -25,7 +26,9 @@ TAG_ID = 374
 POST_TYPES = "1,2"
 PAGE_SIZE = 100
 LOOKBACK_HOURS = 24 * 7  # 7 days
-CHECK_INTERVAL = 1 * 60 * 60  # 1 hour
+# Combined pipeline interval (Lokal + YouTube worker). Override via env on Render/local.
+PIPELINE_INTERVAL_HOURS = float(os.getenv("PIPELINE_INTERVAL_HOURS", "1"))
+CHECK_INTERVAL = int(PIPELINE_INTERVAL_HOURS * 60 * 60)
 
 OUTPUT_DIRECTORY = "data/lokal"
 OUTPUT_FILENAME = "narasaraopet_news.json"

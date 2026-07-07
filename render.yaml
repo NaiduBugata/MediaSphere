@@ -39,6 +39,8 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
+      - key: PIPELINE_INTERVAL_HOURS
+        value: "1"
       - key: YOUTUBE_ENABLED
         value: true
       - key: EMAIL_ENABLED

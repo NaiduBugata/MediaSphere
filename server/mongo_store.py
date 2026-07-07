@@ -46,7 +46,8 @@ def _current_timestamp() -> str:
 
 
 def _normalize_title(title: str) -> str:
-    return re.sub(r"\s+", " ", title.strip())
+    text = title.strip().replace("…", "...")
+    return re.sub(r"\s+", " ", text)
 
 
 def get_client() -> MongoClient:
@@ -293,9 +294,20 @@ def _resolve_youtube_post_id(
     elif normalized in title_map:
         meta = title_map[normalized]
     else:
-        digest = hashlib.sha1(normalized.encode("utf-8")).hexdigest()[:12]
-        logger.warning("No YouTube collector match for title %r; using hash post_id", title)
-        return f"{YOUTUBE_POST_ID_PREFIX}hash_{digest}", None, None, None
+        # Analyzer may truncate long titles with "..." — match collector prefix.
+        prefix = normalized.rstrip(".")
+        meta = None
+        for collector_title, entry in title_map.items():
+            if not isinstance(collector_title, str) or collector_title.startswith("yt_"):
+                continue
+            collector_norm = _normalize_title(collector_title)
+            if collector_norm.startswith(prefix) or prefix.startswith(collector_norm[: min(len(prefix), len(collector_norm))]):
+                meta = entry
+                break
+        if meta is None:
+            digest = hashlib.sha1(normalized.encode("utf-8")).hexdigest()[:12]
+            logger.warning("No YouTube collector match for title %r; using hash post_id", title)
+            return f"{YOUTUBE_POST_ID_PREFIX}hash_{digest}", None, None, None
 
     return (
         meta["post_id"],
@@ -383,6 +395,8 @@ def filter_new_youtube_articles(
         a for a in payload.get("articles", [])
         if str(a.get("video_id") or a.get("id")) not in existing
     ]
+    # Newest published first so latest constituency news is analyzed before older backlog.
+    new_articles.sort(key=lambda a: a.get("created_on") or "", reverse=True)
 
     if max_count is not None and max_count > 0:
         new_articles = new_articles[:max_count]

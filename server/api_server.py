@@ -156,6 +156,9 @@ def get_news():
         source_filter = (request.args.get("source") or "all").lower()
 
         collection = mongo_store.get_collection()
+        # Do not use MongoDB .sort("created_on") — Lokal and YouTube store mixed
+        # ISO string formats (+05:30 with microseconds vs Z), so lexicographic sort
+        # misorders across sources. Parse and sort in Python instead.
         cursor = collection.find({})
         articles = [_normalize_article(doc) for doc in cursor]
         articles = _sort_articles_newest_first(articles)

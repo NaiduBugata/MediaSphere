@@ -47,7 +47,12 @@ def configure_logging() -> None:
 
 
 def clear_checkpoint() -> None:
-    for path in (yt_config.CHECKPOINT_FILE, yt_config.OUTPUT_DIR / "failed_articles.json"):
+    for path in (
+        yt_config.CHECKPOINT_FILE,
+        yt_config.OUTPUT_DIR / "checkpoint.json",
+        yt_config.OUTPUT_DIR / "failed_articles.json",
+        yt_config.OUTPUT_DIR / "master_internal.json",
+    ):
         if path.exists():
             path.unlink()
             logger.info("Removed stale file: %s", path)

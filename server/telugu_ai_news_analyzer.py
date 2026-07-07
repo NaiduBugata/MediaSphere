@@ -2889,11 +2889,12 @@ def _parse_args(argv: Sequence[str]) -> AppConfig:
     args = parser.parse_args(argv)
 
     output_dir = Path(args.output_dir)
+    checkpoint_file = Path(os.getenv("CHECKPOINT_FILE", str(output_dir / "checkpoint.json")))
     return AppConfig(
         input_file=Path(args.input_file),
         output_dir=output_dir,
         individual_output_dir=output_dir / "individual_articles",
-        checkpoint_file=Path("checkpoint.json"),
+        checkpoint_file=checkpoint_file,
         all_articles_file=output_dir / "all_articles.json",
         all_articles_csv_file=output_dir / "all_articles.csv",
         failed_articles_file=output_dir / "failed_articles.json",

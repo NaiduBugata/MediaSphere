@@ -78,11 +78,21 @@ def generate_article_txt_from_youtube_json(
     articles = data.get("articles", [])
     blocks: list[str] = []
 
+    max_content_chars = 0
+    try:
+        from youtube import config as yt_config
+
+        max_content_chars = yt_config.YOUTUBE_MAX_CONTENT_CHARS
+    except ImportError:
+        max_content_chars = 12000
+
     for item in articles:
         title = (item.get("title") or "").strip()
         content = (item.get("content") or "").strip()
         if not title or len(content) < min_chars:
             continue
+        if max_content_chars > 0 and len(content) > max_content_chars:
+            content = content[:max_content_chars].rsplit(" ", 1)[0] + "…"
         blocks.append(
             "----------------------------------------\n"
             f"TITLE: {title}\n\n"
