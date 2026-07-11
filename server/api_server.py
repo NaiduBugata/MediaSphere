@@ -15,6 +15,7 @@ import mongo_store
 from reports import config as report_config
 from reports import db_service as report_db
 from reports import report_generator, scheduler
+from whatsapp.routes import whatsapp_bp
 
 load_dotenv()
 
@@ -26,6 +27,7 @@ CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", _DEFAULT_ORIGINS).s
 
 app = Flask(__name__)
 CORS(app, origins=CORS_ORIGINS)
+app.register_blueprint(whatsapp_bp)
 
 
 def _normalize_article(doc: dict) -> dict:

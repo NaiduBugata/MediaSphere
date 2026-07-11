@@ -46,3 +46,9 @@ services:
         value: false
       - key: REPORT_CATCHUP_ON_START
         value: false
+      # WhatsApp Cloud API webhook (secrets set in Render Dashboard only).
+      - key: WHATSAPP_WEBHOOK_ENABLED
+        value: true
+      # Required secrets (add manually in Render Dashboard, do NOT commit):
+      # WHATSAPP_VERIFY_TOKEN, WHATSAPP_ACCESS_TOKEN,
+      # WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_WABA_ID
