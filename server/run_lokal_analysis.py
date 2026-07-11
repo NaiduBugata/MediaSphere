@@ -54,6 +54,13 @@ def configure_logging() -> None:
 
     formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
 
+    # Windows consoles default to cp1252, which crashes the log handler on
+    # Telugu text. Force UTF-8 so the unattended worker logs cleanly.
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
     stream_handler = logging.StreamHandler(sys.stdout)
     stream_handler.setFormatter(formatter)
 

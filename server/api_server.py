@@ -257,17 +257,34 @@ def _parse_report_date(value):
         return None
 
 
+def _truthy(name: str, default: str = "false") -> bool:
+    return os.getenv(name, default).lower() in ("1", "true", "yes", "on")
+
+
 def _start_scheduler() -> None:
-    """Start the daily report scheduler unless running under the reloader parent."""
-    if os.getenv("REPORT_SCHEDULER_ON_API", "false").lower() not in ("1", "true", "yes", "on"):
-        logger.info("Report scheduler not started on API (REPORT_SCHEDULER_ON_API=false).")
+    """Start report + pipeline schedulers unless running under the reloader parent."""
+    # Under Werkzeug's debug reloader, only the child (WERKZEUG_RUN_MAIN=true)
+    # should own the schedulers so jobs are not registered twice.
+    if app.debug and os.getenv("WERKZEUG_RUN_MAIN") != "true":
         return
-    if os.getenv("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
+
+    if _truthy("REPORT_SCHEDULER_ON_API"):
         try:
-            catch_up = os.getenv("REPORT_CATCHUP_ON_START", "false").lower() in ("1", "true", "yes", "on")
-            scheduler.start(run_catch_up=catch_up)
+            scheduler.start(run_catch_up=_truthy("REPORT_CATCHUP_ON_START"))
         except Exception as exc:
             logger.exception("Failed to start report scheduler: %s", exc)
+    else:
+        logger.info("Report scheduler not started on API (REPORT_SCHEDULER_ON_API=false).")
+
+    if _truthy("PIPELINE_ON_API"):
+        try:
+            import pipeline_scheduler
+
+            pipeline_scheduler.start(run_catch_up=_truthy("PIPELINE_CATCHUP_ON_START", "true"))
+        except Exception as exc:
+            logger.exception("Failed to start pipeline scheduler: %s", exc)
+    else:
+        logger.info("Pipeline scheduler not started on API (PIPELINE_ON_API=false).")
 
 
 if __name__ == "__main__":

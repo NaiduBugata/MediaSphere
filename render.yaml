@@ -1,11 +1,20 @@
 # Render Blueprint — MediaSphere
 # Docs: https://render.com/docs/blueprint-spec
 #
-# You need TWO services:
-#   1. mediasphere-api (Web) — dashboard API
-#   2. mediasphere-pipeline (Background Worker) — Lokal + YouTube every hour + emails
+# Render's FREE tier does NOT support background workers (they require a paid
+# instance). So the news pipeline runs INSIDE the free web service via an
+# in-process scheduler (PIPELINE_ON_API=true) instead of a separate worker.
 #
-# Set secrets in Render Dashboard → Environment (not in this file).
+# The web service:
+#   - Serves the dashboard API
+#   - Runs the Lokal + YouTube pipeline every PIPELINE_INTERVAL_HOURS while awake
+#   - Runs one catch-up cycle on startup (collects anything published while asleep)
+#
+# gunicorn MUST stay at --workers 1 so only ONE pipeline scheduler exists.
+# Free web services sleep after ~15 min idle; the dashboard's 5-min polling
+# keeps an open tab awake, and a cold wake triggers the catch-up run.
+#
+# Set secrets (Mongo URI, GROQ keys, etc.) in Render Dashboard → Environment.
 
 services:
   - type: web
@@ -21,27 +30,19 @@ services:
         value: 3.11.9
       - key: API_DEBUG
         value: false
+      # Run the news pipeline in-process (no separate worker on free tier).
+      - key: PIPELINE_ON_API
+        value: true
+      - key: PIPELINE_CATCHUP_ON_START
+        value: true
+      - key: PIPELINE_INTERVAL_HOURS
+        value: "1"
+      - key: YOUTUBE_ENABLED
+        value: true
+      # Emails are handled separately; keep off on the web service by default.
       - key: EMAIL_ENABLED
         value: false
       - key: REPORT_SCHEDULER_ON_API
         value: false
       - key: REPORT_CATCHUP_ON_START
-        value: false
-
-  - type: worker
-    name: mediasphere-pipeline
-    runtime: python
-    plan: free
-    rootDir: server
-    buildCommand: pip install -r requirements.txt
-    # Runs Lokal + YouTube every hour; sends one email per new article
-    startCommand: python run_all_pipelines.py
-    envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.9
-      - key: PIPELINE_INTERVAL_HOURS
-        value: "1"
-      - key: YOUTUBE_ENABLED
-        value: true
-      - key: EMAIL_ENABLED
         value: false

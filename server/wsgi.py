@@ -21,12 +21,24 @@ except Exception:
     # Logged inside warmup(); allow boot so health checks still respond.
     pass
 
+def _flag(name: str, default: str = "false") -> bool:
+    return os.getenv(name, default).lower() in ("1", "true", "yes", "on")
+
+
 # Only start the daily-report scheduler on the API process when explicitly
 # enabled. Keep this false on Render's web service; use a worker for reports.
-if os.getenv("REPORT_SCHEDULER_ON_API", "false").lower() in ("1", "true", "yes", "on"):
+if _flag("REPORT_SCHEDULER_ON_API"):
     from reports import scheduler
 
-    scheduler.start(run_catch_up=os.getenv("REPORT_CATCHUP_ON_START", "false").lower() in ("1", "true", "yes", "on"))
+    scheduler.start(run_catch_up=_flag("REPORT_CATCHUP_ON_START"))
+
+# Run the news pipeline (Lokal + YouTube) inside the web service when enabled.
+# Required on Render's free tier, which does not support background workers.
+# gunicorn must run a single worker so only one scheduler instance exists.
+if _flag("PIPELINE_ON_API"):
+    import pipeline_scheduler
+
+    pipeline_scheduler.start(run_catch_up=_flag("PIPELINE_CATCHUP_ON_START", "true"))
 
 if __name__ == "__main__":
     app.run()
