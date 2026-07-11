@@ -11,13 +11,13 @@ from dotenv import load_dotenv
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
+load_dotenv()
+
 import mongo_store
 from reports import config as report_config
 from reports import db_service as report_db
 from reports import report_generator, scheduler
 from whatsapp.routes import whatsapp_bp
-
-load_dotenv()
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 logger = logging.getLogger("api_server")

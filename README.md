@@ -1,12 +1,14 @@
-# MediaSphere — AI-Powered MP Constituency News Monitoring
+# MediaSphere
 
-MediaSphere is an end-to-end system that collects local Telugu news for the Narasaraopet constituency, categorizes it with an AI pipeline (sentiment, category, location, entities, keywords), stores the results in MongoDB, and surfaces them through an executive, MP-first analytics dashboard.
+MediaSphere is an AI-powered constituency news monitoring platform for Narasaraopet. It collects local Telugu news from Lokal and YouTube, analyzes it with Groq, stores categorized articles in MongoDB, serves the data through a Flask API, displays it in a React dashboard, sends report emails, and exposes a production WhatsApp Cloud API webhook for Meta events.
 
 ## Architecture
 
-```
-Lokal source  ->  Collector  ->  AI Analyzer  ->  MongoDB (MediaSphere)  ->  Flask API  ->  React Dashboard
-YouTube source ->  Collector  ->  (same analyzer)  ->  (same MongoDB/API/dashboard)
+```text
+Lokal source    -> Collector -> AI Analyzer -> MongoDB -> Flask API -> React Dashboard
+YouTube source  -> Collector -> AI Analyzer -> MongoDB -> Flask API -> React Dashboard
+Meta WhatsApp   -> GET/POST /webhook        -> MongoDB webhook event log
+Flask service   -> WhatsApp Graph API       -> outbound WhatsApp messages
 ```
 
 1. **Lokal collector** (`server/lokal_collector.py`) fetches the rolling 7-day news window from the Lokal API.
@@ -16,6 +18,7 @@ YouTube source ->  Collector  ->  (same analyzer)  ->  (same MongoDB/API/dashboa
 5. **API** (`server/api_server.py`) serves the dashboard and report endpoints (`?source=lokal|youtube|all`).
 6. **Dashboard** (`client/`) is a Vite + React + Tailwind + Recharts SPA with source filters and badges.
 7. **Reports** (`server/reports/`) generate and email the daily 07:00 IST executive report and incremental per-article alerts.
+8. **WhatsApp webhook** (`server/whatsapp/`) verifies Meta webhooks, receives message/status events, logs structured JSON, persists events, and provides `send_text_message()`.
 
 The combined pipeline runner (`server/run_all_pipelines.py`) runs Lokal then YouTube every hour when `YOUTUBE_ENABLED=true`.
 
@@ -44,7 +47,8 @@ The combined pipeline runner (`server/run_all_pipelines.py`) runs Lokal then You
 │   ├── generate_article_txt.py
 │   ├── config.py           #   pipeline paths/config
 │   ├── reports/            #   daily + incremental email reports package
-│   ├── tests/              #   unit tests (legacy CSV pipeline)
+│   ├── whatsapp/           #   WhatsApp Cloud API webhook + send service
+│   ├── tests/              #   unit tests
 │   ├── requirements.txt
 │   └── .env.example        #   Groq, MongoDB, SMTP, scheduler config
 ├── README.md
@@ -59,6 +63,7 @@ The combined pipeline runner (`server/run_all_pipelines.py`) runs Lokal then You
 - A MongoDB Atlas cluster
 - One or more Groq API keys
 - YouTube Data API v3 key (for YouTube pipeline; separate from Lokal)
+- Meta WhatsApp Cloud API app credentials (for `/webhook` and outbound messages)
 
 ## Backend Setup
 
@@ -67,8 +72,10 @@ All backend commands run from the `server/` directory.
 ```bash
 cd server
 pip install -r requirements.txt
-copy .env.example .env   # Windows  (use `cp` on macOS/Linux); then fill in GROQ + MONGODB + SMTP values
+copy .env.example .env   # Windows  (use `cp` on macOS/Linux)
 ```
+
+Fill in only real values in `.env`. Never commit `.env`; it is ignored by Git.
 
 ### Run the pipeline
 
@@ -101,8 +108,109 @@ Endpoints:
 - `GET /api/reports/<id>` — a single report record (by `_id` or `YYYY-MM-DD` date)
 - `POST /api/reports/send-now` — generate & send (body: `{"date": "YYYY-MM-DD", "force": false}`; de-dup applies)
 - `POST /api/reports/regenerate` — force regenerate & resend (body: `{"date": "YYYY-MM-DD"}`)
+- `GET /webhook` — Meta WhatsApp webhook verification
+- `POST /webhook` — Meta WhatsApp incoming messages/status callbacks
 
-Starting `api_server.py` also boots the daily report scheduler (07:00 IST) with a one-time catch-up for any missed run.
+`api_server.py` starts report and pipeline schedulers only when the matching environment flags are enabled.
+
+## WhatsApp Cloud API Webhook
+
+The webhook is integrated into the existing Flask app with a Blueprint. It does not create a second Flask app or change any existing `/api/*` route.
+
+### Callback URL
+
+```text
+https://mediasphere-1.onrender.com/webhook
+```
+
+### Meta verification
+
+Set a secret verify token in Render:
+
+```text
+WHATSAPP_VERIFY_TOKEN=<choose-a-random-verify-token>
+```
+
+In Meta Developer Console, use the same value. Meta calls:
+
+```text
+GET /webhook?hub.mode=subscribe&hub.verify_token=<token>&hub.challenge=<challenge>
+```
+
+Expected response: HTTP `200` with the raw challenge body. Wrong tokens return HTTP `403`.
+
+### Events handled
+
+`POST /webhook` returns `EVENT_RECEIVED` with HTTP `200` for valid webhook payloads. Fatal malformed JSON returns HTTP `400`.
+
+Supported parsing includes:
+
+- Incoming text, image, document, audio, video, sticker, contacts, and location messages
+- Interactive replies: button replies, list replies, and legacy button replies
+- Status callbacks: sent, delivered, read, and failed
+- Delivery and read receipts
+- Media IDs
+- Template status updates
+- Webhook-level errors and unknown event types
+
+Webhook events are logged as structured JSON and persisted in MongoDB collection `whatsapp_webhook_events` using the existing `mongo_store` MongoDB client.
+
+### Outbound WhatsApp text message
+
+Use the reusable service:
+
+```python
+from whatsapp import send_text_message
+
+send_text_message("919876543210", "Hello from MediaSphere")
+```
+
+Or use cURL directly:
+
+```bash
+curl -X POST "https://graph.facebook.com/v25.0/$WHATSAPP_PHONE_NUMBER_ID/messages" \
+  -H "Authorization: Bearer $WHATSAPP_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messaging_product": "whatsapp",
+    "recipient_type": "individual",
+    "to": "919876543210",
+    "type": "text",
+    "text": {"preview_url": false, "body": "Hello from MediaSphere"}
+  }'
+```
+
+### Example inbound payload
+
+```json
+{
+  "object": "whatsapp_business_account",
+  "entry": [{
+    "id": "123456789",
+    "changes": [{
+      "value": {
+        "messaging_product": "whatsapp",
+        "metadata": {
+          "display_phone_number": "15551234567",
+          "phone_number_id": "987654321"
+        },
+        "contacts": [{
+          "profile": {"name": "Test User"},
+          "wa_id": "919876543210"
+        }],
+        "messages": [{
+          "from": "919876543210",
+          "id": "wamid.example",
+          "timestamp": "1710000000",
+          "type": "text",
+          "text": {"body": "Hello MediaSphere"}
+        }]
+      },
+      "field": "messages"
+    }]
+  }]
+}
+```
 
 ### MongoDB admin
 
@@ -177,13 +285,64 @@ npm run preview  # preview the production build
 
 See `server/.env.example` (backend) and `client/.env.example` (frontend). Secrets are never committed; `.env` files are gitignored.
 
-- **Backend (`server/.env`):** `GROQ_API_KEY_*`, `MONGODB_URI`, `MONGODB_DB_NAME`, `MONGODB_COLLECTION`, `API_HOST`/`API_PORT`/`API_DEBUG`, `CORS_ORIGINS`, SMTP settings (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, ...), `REPORT_RECIPIENTS`, and scheduler settings (`REPORT_ENABLED`, `REPORT_TIMEZONE`, `REPORT_HOUR`, `REPORT_MINUTE`).
+- **AI:** `GROQ_API_KEY`, `GROQ_API_KEYS`, `GROQ_API_KEY_*`, `GROQ_MODEL`, `GROQ_TIMEOUT_SECONDS`
+- **MongoDB:** `MONGODB_URI`, `MONGODB_DB_NAME`, `MONGODB_COLLECTION`
+- **API:** `API_HOST`, `API_PORT`, `API_DEBUG`, `CORS_ORIGINS`
+- **Pipeline:** `PIPELINE_ON_API`, `PIPELINE_CATCHUP_ON_START`, `PIPELINE_INTERVAL_HOURS`, `YOUTUBE_ENABLED`, `YOUTUBE_API_KEY`
+- **Email/Reports:** `EMAIL_ENABLED`, `EMAIL_PROVIDER`, `RESEND_API_KEY`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`, `REPORT_RECIPIENTS`, `REPORT_ENABLED`, `REPORT_TIMEZONE`, `REPORT_HOUR`, `REPORT_MINUTE`
+- **WhatsApp:** `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_WABA_ID`, `WHATSAPP_GRAPH_API_VERSION`, `WHATSAPP_WEBHOOK_ENABLED`
 - **Frontend (`client/.env`):** `VITE_API_BASE_URL` (defaults to `/api`, proxied to the Flask server in development).
 
-## Deployment
+## Render Deployment
 
-1. **Backend:** from `server/`, install `requirements.txt` and serve `api_server.py` behind a production WSGI server (e.g. `gunicorn api_server:app`). Provide `server/.env`. Run the pipeline (`run_lokal_analysis.py`) as a long-running process or scheduled job. In multi-worker setups, run the report scheduler as a single dedicated process (de-duplication protects the DB record regardless).
-2. **Frontend:** from `client/`, run `npm run build` and serve `client/dist/` as static files (Netlify, Vercel, Nginx, etc.). Set `VITE_API_BASE_URL` to the deployed API origin.
+The repository includes `render.yaml` for the Flask backend.
+
+Backend service settings:
+
+- **Root directory:** `server`
+- **Build command:** `pip install -r requirements.txt`
+- **Start command:** `gunicorn --workers 1 --timeout 120 --bind 0.0.0.0:$PORT wsgi:app`
+- **Health check:** `/api/health`
+- **Python:** `3.11.9`
+
+Render free tier does not support background workers. The news pipeline runs inside the web service when `PIPELINE_ON_API=true`. Keep `--workers 1` so only one scheduler instance exists.
+
+Add secrets in Render Dashboard, not in `render.yaml`:
+
+```text
+GROQ_API_KEY_1
+MONGODB_URI
+YOUTUBE_API_KEY
+RESEND_API_KEY
+SMTP_USERNAME
+SMTP_PASSWORD
+WHATSAPP_VERIFY_TOKEN
+WHATSAPP_ACCESS_TOKEN
+WHATSAPP_PHONE_NUMBER_ID
+WHATSAPP_WABA_ID
+```
+
+Frontend deployment:
+
+```bash
+cd client
+npm install
+npm run build
+```
+
+Serve `client/dist/` on Vercel/Netlify/static hosting and set `VITE_API_BASE_URL` to the deployed Flask API origin plus `/api` if needed.
+
+## Meta Configuration
+
+In Meta Developer Console:
+
+1. Open the WhatsApp app.
+2. Go to WhatsApp → Configuration.
+3. Set callback URL to `https://mediasphere-1.onrender.com/webhook`.
+4. Set verify token to the exact Render value of `WHATSAPP_VERIFY_TOKEN`.
+5. Subscribe to `messages`.
+6. Save and verify.
+7. Send an inbound message to the business number and confirm Render logs plus MongoDB `whatsapp_webhook_events`.
 
 ## Legacy CSV pipeline
 
@@ -195,6 +354,43 @@ See `server/.env.example` (backend) and `client/.env.example` (frontend). Secret
 cd server
 python -m unittest discover -s tests
 ```
+
+Targeted WhatsApp tests:
+
+```bash
+cd server
+python -m unittest tests.test_whatsapp_webhook -v
+```
+
+Manual verification after deployment:
+
+```bash
+curl "https://mediasphere-1.onrender.com/webhook?hub.mode=subscribe&hub.verify_token=$WHATSAPP_VERIFY_TOKEN&hub.challenge=test123"
+```
+
+Expected response body: `test123`.
+
+## Troubleshooting
+
+- **`/webhook` returns 404:** Render is still on an older deploy. Trigger Manual Deploy → Deploy latest commit.
+- **Meta verification returns 403:** `WHATSAPP_VERIFY_TOKEN` in Render does not match Meta.
+- **POST webhook returns 400:** Request body is missing or malformed JSON.
+- **Outbound send returns token error:** Refresh or replace `WHATSAPP_ACCESS_TOKEN`.
+- **Outbound send returns 429/rate limit:** Slow retries and check Meta app quota.
+- **Events are accepted but not stored:** Check `MONGODB_URI` and Render logs for `whatsapp.db` errors. The webhook still returns `EVENT_RECEIVED` so Meta does not retry due to database outages.
+- **Pipeline does not auto-update on Render free:** Keep `PIPELINE_ON_API=true`, `PIPELINE_CATCHUP_ON_START=true`, and a single gunicorn worker.
+
+## Production Checklist
+
+- [ ] `server/.env` and local secrets are not committed
+- [ ] Render has all required AI, MongoDB, email, YouTube, and WhatsApp env vars
+- [ ] `/api/health` returns HTTP 200
+- [ ] `/webhook` passes Meta verification
+- [ ] `POST /webhook` returns `EVENT_RECEIVED`
+- [ ] WhatsApp events appear in `whatsapp_webhook_events`
+- [ ] `python -m unittest discover -s tests` passes
+- [ ] Frontend `npm run build` passes
+- [ ] Render start command uses `gunicorn --workers 1 --timeout 120 --bind 0.0.0.0:$PORT wsgi:app`
 
 ## License
 

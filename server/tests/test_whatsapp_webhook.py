@@ -13,7 +13,7 @@ SERVER_DIR = Path(__file__).resolve().parents[1]
 if str(SERVER_DIR) not in sys.path:
     sys.path.insert(0, str(SERVER_DIR))
 
-os.environ.setdefault("WHATSAPP_VERIFY_TOKEN", "MediaSphereVerify2026")
+os.environ.setdefault("WHATSAPP_VERIFY_TOKEN", "test-verify-token")
 os.environ.setdefault("WHATSAPP_WEBHOOK_ENABLED", "true")
 os.environ.setdefault("WHATSAPP_WABA_ID", "123456789")
 
@@ -95,7 +95,7 @@ class WhatsAppWebhookTests(unittest.TestCase):
             "/webhook",
             query_string={
                 "hub.mode": "subscribe",
-                "hub.verify_token": "MediaSphereVerify2026",
+                "hub.verify_token": "test-verify-token",
                 "hub.challenge": "1234567890",
             },
         )

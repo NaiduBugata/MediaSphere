@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from datetime import datetime, timezone
 from typing import Any
 
@@ -14,15 +15,23 @@ from .logger import get_logger
 logger = get_logger("whatsapp.db")
 
 COLLECTION_NAME = "whatsapp_webhook_events"
+_index_lock = threading.Lock()
+_indexes_ready = False
 
 
 def get_collection() -> Collection:
+    global _indexes_ready
+
     client = mongo_store.get_client()
     collection = client[mongo_store.MONGODB_DB_NAME][COLLECTION_NAME]
-    collection.create_index("message_id")
-    collection.create_index("received_at")
-    collection.create_index("event_category")
-    collection.create_index([("message_id", 1), ("event_category", 1), ("status", 1)])
+    if not _indexes_ready:
+        with _index_lock:
+            if not _indexes_ready:
+                collection.create_index("message_id")
+                collection.create_index("received_at")
+                collection.create_index("event_category")
+                collection.create_index([("message_id", 1), ("event_category", 1), ("status", 1)])
+                _indexes_ready = True
     return collection
 
 
@@ -59,17 +68,18 @@ def save_event(
     """Upsert a parsed webhook event. Failures are logged, never raised to caller."""
     try:
         collection = get_collection()
+        now = _now()
         document = {
             **event,
             "client_ip": client_ip,
             "raw_payload": raw_payload,
-            "received_at": _now(),
-            "updated_at": _now(),
+            "received_at": now,
+            "updated_at": now,
         }
         key = _dedup_key(event)
         collection.update_one(
             key,
-            {"$set": document, "$setOnInsert": {"created_at": _now()}},
+            {"$set": document, "$setOnInsert": {"created_at": now}},
             upsert=True,
         )
     except Exception as exc:
