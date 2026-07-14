@@ -215,27 +215,33 @@ def send_incremental_email() -> None:
         logger.error("Incremental email step failed (cycle continues): %s", exc)
 
 
-def run_cycle() -> int:
+def run_cycle() -> tuple[int, dict]:
     """
     Execute one full Lokal JSON to analyzer pipeline cycle.
 
-    Purpose:
-        Chain collector refresh -> article.txt -> analyzer -> news_output.json.
-
-    Parameters:
-        None.
-
     Returns:
-        Process exit code (0 on success, non-zero on failure).
+        Tuple of (exit_code, stats_dict).
     """
+    from retry_utils import retry_call
+
     started_at = time.perf_counter()
+    stats: dict = {
+        "inserted": 0,
+        "updated": 0,
+        "matched": 0,
+        "duplicates": 0,
+        "total": 0,
+        "articles_fetched": 0,
+        "errors": [],
+    }
 
     try:
-        json_path = refresh_collector()
+        json_path = retry_call(refresh_collector, label="lokal.refresh_collector")
         article_path = generate_article_txt_from_json(json_path, ARTICLE_PATH)
         logger.info("Generated analyzer input: %s", article_path)
 
         clear_checkpoint()
+        logger.info("Categorizing Lokal articles")
         result = run_analyzer()
 
         if result.stdout:
@@ -245,42 +251,61 @@ def run_cycle() -> int:
 
         if result.returncode != 0:
             logger.error("Analyzer failed with exit code %s", result.returncode)
-            return result.returncode
+            stats["errors"].append(f"analyzer_exit_code={result.returncode}")
+            return result.returncode, stats
 
         news_output = validate_news_output()
+        stats["articles_fetched"] = len(news_output)
+        stats["total"] = len(news_output)
 
         stored_ok = False
         try:
-            stats = mongo_store.upsert_articles(news_output, json_path)
+            logger.info("Saving MongoDB (Lokal)")
+            upsert_stats = mongo_store.upsert_articles(news_output, json_path)
             stored_ok = True
+            stats.update(
+                {
+                    "inserted": upsert_stats.get("inserted", 0),
+                    "updated": upsert_stats.get("updated", 0),
+                    "matched": upsert_stats.get("matched", 0),
+                    "duplicates": upsert_stats.get("duplicates", 0),
+                    "total": upsert_stats.get("total", len(news_output)),
+                }
+            )
             logger.info(
-                "MongoDB upsert | inserted: %s | updated: %s | matched: %s | total: %s",
+                "MongoDB upsert | inserted: %s | updated: %s | matched: %s | duplicates: %s | total: %s",
                 stats["inserted"],
                 stats["updated"],
                 stats["matched"],
+                stats["duplicates"],
                 stats["total"],
             )
         except Exception as exc:
             logger.error("MongoDB store failed (JSON output still written): %s", exc)
+            stats["errors"].append(f"mongodb:{exc}")
 
         if stored_ok:
             send_incremental_email()
 
         elapsed = time.perf_counter() - started_at
         logger.info(
-            "Cycle complete | articles: %s | output: %s | elapsed: %.2fs",
+            "Cycle complete | articles: %s | inserted=%s | duplicates=%s | output: %s | elapsed: %.2fs",
             len(news_output),
+            stats["inserted"],
+            stats["duplicates"],
             NEWS_OUTPUT_FILE,
             elapsed,
         )
-        return 0
+        return (0 if stored_ok else 1), stats
 
     except subprocess.TimeoutExpired:
         logger.error("Analyzer timed out after %s seconds", ANALYZER_TIMEOUT_SECONDS)
-        return 1
+        stats["errors"].append("analyzer_timeout")
+        return 1, stats
     except Exception as exc:
         logger.exception("Pipeline cycle failed: %s", exc)
-        return 1
+        stats["errors"].append(str(exc))
+        return 1, stats
 
 
 def run_forever() -> int:
@@ -305,7 +330,7 @@ def run_forever() -> int:
 
     try:
         while True:
-            exit_code = run_cycle()
+            exit_code, _stats = run_cycle()
             if exit_code != 0:
                 logger.warning("Cycle finished with exit code %s; continuing scheduler", exit_code)
 
@@ -357,7 +382,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.once:
         logger.info("Lokal analysis pipeline started (one-shot mode)")
-        return run_cycle()
+        code, _stats = run_cycle()
+        return code
 
     return run_forever()
 

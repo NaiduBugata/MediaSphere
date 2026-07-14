@@ -37,6 +37,9 @@ services:
         value: true
       - key: PIPELINE_INTERVAL_HOURS
         value: "1"
+      # Keep gunicorn --workers 1. Mongo pipeline_lock prevents double runs if misconfigured,
+      # but single worker remains required on Render Free.
+      # Optional secrets (Dashboard only): PIPELINE_ADMIN_TOKEN, PIPELINE_LOCK_TTL_SECONDS
       - key: YOUTUBE_ENABLED
         value: true
       # Emails are handled separately; keep off on the web service by default.

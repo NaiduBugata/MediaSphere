@@ -19,6 +19,13 @@ Flask service   -> WhatsApp Graph API       -> outbound WhatsApp messages
 6. **Dashboard** (`client/`) is a Vite + React + Tailwind + Recharts SPA with source filters and badges.
 7. **Reports** (`server/reports/`) generate and email the daily 07:00 IST executive report and incremental per-article alerts.
 8. **WhatsApp webhook** (`server/whatsapp/`) verifies Meta webhooks, receives message/status events, logs structured JSON, persists events, and provides `send_text_message()`.
+9. **Pipeline reliability** (`server/pipeline_scheduler.py`, `pipeline_state.py`) runs Lokal+YouTube inside the Render Free web process with MongoDB scheduler state, distributed locks, catch-up, and history.
+
+```text
+API boot -> validate config -> self-test -> APScheduler (once)
+         -> catch-up if last_success stale
+         -> acquire Mongo pipeline_lock -> combined cycle -> history + state
+```
 
 The combined pipeline runner (`server/run_all_pipelines.py`) runs Lokal then YouTube every hour when `YOUTUBE_ENABLED=true`.
 
@@ -46,15 +53,56 @@ The combined pipeline runner (`server/run_all_pipelines.py`) runs Lokal then You
 │   ├── mongo_store.py      #   MongoDB persistence + admin CLI
 │   ├── generate_article_txt.py
 │   ├── config.py           #   pipeline paths/config
+│   ├── pipeline_scheduler.py #   Render Free in-process scheduler
+│   ├── pipeline_state.py     #   Mongo scheduler_state / lock / history
+│   ├── pipeline_config.py    #   pipeline env validation
+│   ├── retry_utils.py        #   exponential backoff helper
 │   ├── reports/            #   daily + incremental email reports package
 │   ├── whatsapp/           #   WhatsApp Cloud API webhook + send service
 │   ├── tests/              #   unit tests
 │   ├── requirements.txt
 │   └── .env.example        #   Groq, MongoDB, SMTP, scheduler config
+├── render.yaml             #   Render Free blueprint (gunicorn --workers 1)
 ├── README.md
 ├── LICENSE
 └── .gitignore
 ```
+
+## Pipeline Reliability (Render Free)
+
+Render Free does **not** support background workers and web services sleep after ~15 minutes of idle traffic. MediaSphere keeps the existing architecture and hardens the in-process scheduler:
+
+- **Single scheduler:** APScheduler starts once (`Scheduler initialized successfully.` / `Scheduler already running.`).
+- **Mongo state:** `scheduler_state` stores `last_success` (no ephemeral files).
+- **Distributed lock:** `pipeline_lock` prevents overlapping catch-up and multi-process runs.
+- **Smart catch-up:** on boot, runs once only if `last_success` is missing or older than `PIPELINE_INTERVAL_HOURS`.
+- **History:** every run is recorded in `pipeline_history`.
+- **Health:** `GET /api/pipeline/health`, `GET /api/database/health`, expanded `GET /api/health`.
+- **Dedup:** unique `post_id` plus sparse unique `content_fingerprint`.
+- **Dashboard:** `/api/news` returns `Cache-Control: no-store` and `data_revision`; client polls every 5 minutes and on focus.
+
+### Known limitations
+
+- Sleep still requires an inbound request (dashboard polling helps keep the service awake).
+- gunicorn must stay at `--workers 1` (Mongo lock mitigates mistakes; single worker remains the rule).
+- Catch-up is best-effort on cold start, not continuous collection while asleep.
+
+## Endpoints
+
+- `GET /api/news` — all categorized articles, newest first (`?source=lokal|youtube|all`) + `data_revision`
+- `GET /api/news/stats` — aggregated statistics
+- `GET /api/health` — liveness (+ mongo bool)
+- `GET /api/pipeline/health` — scheduler diagnostics
+- `GET /api/database/health` — Mongo diagnostics (no URI)
+- `POST /api/pipeline/run-now` — admin manual trigger (`X-Pipeline-Admin-Token`) when `PIPELINE_ADMIN_TOKEN` is set
+- `GET /api/reports/history` — daily report delivery history (newest first)
+- `GET /api/reports/<id>` — a single report record (by `_id` or `YYYY-MM-DD` date)
+- `POST /api/reports/send-now` — generate & send (body: `{"date": "YYYY-MM-DD", "force": false}`; de-dup applies)
+- `POST /api/reports/regenerate` — force regenerate & resend (body: `{"date": "YYYY-MM-DD"}`)
+- `GET /webhook` — Meta WhatsApp webhook verification
+- `POST /webhook` — Meta WhatsApp incoming messages/status callbacks
+
+`api_server.py` starts report and pipeline schedulers only when the matching environment flags are enabled.
 
 ## Requirements
 
@@ -92,6 +140,9 @@ Set in `.env`:
 ```
 YOUTUBE_ENABLED=true
 YOUTUBE_API_KEY=your_youtube_data_api_key
+PIPELINE_ON_API=true
+PIPELINE_CATCHUP_ON_START=true
+PIPELINE_INTERVAL_HOURS=1
 ```
 
 ### Run the API server
@@ -99,19 +150,6 @@ YOUTUBE_API_KEY=your_youtube_data_api_key
 ```bash
 python api_server.py
 ```
-
-Endpoints:
-- `GET /api/news` — all categorized articles, newest first (`?source=lokal|youtube|all`)
-- `GET /api/news/stats` — aggregated statistics
-- `GET /api/health` — health check
-- `GET /api/reports/history` — daily report delivery history (newest first)
-- `GET /api/reports/<id>` — a single report record (by `_id` or `YYYY-MM-DD` date)
-- `POST /api/reports/send-now` — generate & send (body: `{"date": "YYYY-MM-DD", "force": false}`; de-dup applies)
-- `POST /api/reports/regenerate` — force regenerate & resend (body: `{"date": "YYYY-MM-DD"}`)
-- `GET /webhook` — Meta WhatsApp webhook verification
-- `POST /webhook` — Meta WhatsApp incoming messages/status callbacks
-
-`api_server.py` starts report and pipeline schedulers only when the matching environment flags are enabled.
 
 ## WhatsApp Cloud API Webhook
 
@@ -288,7 +326,7 @@ See `server/.env.example` (backend) and `client/.env.example` (frontend). Secret
 - **AI:** `GROQ_API_KEY`, `GROQ_API_KEYS`, `GROQ_API_KEY_*`, `GROQ_MODEL`, `GROQ_TIMEOUT_SECONDS`
 - **MongoDB:** `MONGODB_URI`, `MONGODB_DB_NAME`, `MONGODB_COLLECTION`
 - **API:** `API_HOST`, `API_PORT`, `API_DEBUG`, `CORS_ORIGINS`
-- **Pipeline:** `PIPELINE_ON_API`, `PIPELINE_CATCHUP_ON_START`, `PIPELINE_INTERVAL_HOURS`, `YOUTUBE_ENABLED`, `YOUTUBE_API_KEY`
+- **Pipeline:** `PIPELINE_ON_API`, `PIPELINE_CATCHUP_ON_START`, `PIPELINE_INTERVAL_HOURS`, `PIPELINE_LOCK_TTL_SECONDS`, `PIPELINE_ADMIN_TOKEN`, `YOUTUBE_ENABLED`, `YOUTUBE_API_KEY`
 - **Email/Reports:** `EMAIL_ENABLED`, `EMAIL_PROVIDER`, `RESEND_API_KEY`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`, `REPORT_RECIPIENTS`, `REPORT_ENABLED`, `REPORT_TIMEZONE`, `REPORT_HOUR`, `REPORT_MINUTE`
 - **WhatsApp:** `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_WABA_ID`, `WHATSAPP_GRAPH_API_VERSION`, `WHATSAPP_WEBHOOK_ENABLED`
 - **Frontend (`client/.env`):** `VITE_API_BASE_URL` (defaults to `/api`, proxied to the Flask server in development).

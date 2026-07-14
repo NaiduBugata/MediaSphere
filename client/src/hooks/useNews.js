@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { getNews } from '../services/api';
 import { sortByDateDesc } from '../utils/format';
 
@@ -9,6 +9,8 @@ export function useNews() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
+  const [dataRevision, setDataRevision] = useState(null);
+  const dataRevisionRef = useRef(null);
 
   const fetchNews = useCallback(async (options = {}) => {
     const { silent = false } = options;
@@ -18,8 +20,21 @@ export function useNews() {
     setError(null);
     try {
       const data = await getNews();
-      setArticles(sortByDateDesc(data));
+      const nextRevision = data.dataRevision || null;
+      const revisionChanged =
+        nextRevision != null && nextRevision !== dataRevisionRef.current;
+
+      setArticles(sortByDateDesc(data.articles || []));
       setLastUpdated(new Date());
+      if (nextRevision != null) {
+        dataRevisionRef.current = nextRevision;
+        setDataRevision(nextRevision);
+      }
+
+      // Revision is informational for consumers; payload already refreshed.
+      if (silent && revisionChanged) {
+        // Explicit no-op branch kept for clarity: silent poll already replaced articles.
+      }
     } catch (err) {
       setError(err?.message || 'Failed to load news data');
       if (!silent) {
@@ -55,6 +70,7 @@ export function useNews() {
     loading,
     error,
     lastUpdated,
+    dataRevision,
     refresh: fetchNews,
   };
 }

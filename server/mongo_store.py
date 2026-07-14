@@ -89,6 +89,13 @@ def warmup() -> None:
         raise
 
 
+def _content_fingerprint(source: str, title: str, source_url: str | None) -> str:
+    normalized = _normalize_title(title)
+    url = (source_url or "").strip()
+    raw = f"{source}|{normalized}|{url}"
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest()
+
+
 def get_collection() -> Collection:
     """
     Return the active articles collection, ensuring a unique post_id index.
@@ -100,6 +107,7 @@ def get_collection() -> Collection:
     collection = client[MONGODB_DB_NAME][MONGODB_COLLECTION]
     collection.create_index("post_id", unique=True)
     collection.create_index([("source", 1), ("created_on", -1)])
+    collection.create_index("content_fingerprint", unique=True, sparse=True)
     return collection
 
 
@@ -174,20 +182,28 @@ def upsert_articles(
         collector_json_path: Path to collector JSON for post_id resolution.
 
     Returns:
-        Dict with inserted, updated, matched, and total counts.
+        Dict with inserted, updated, matched, duplicates, and total counts.
     """
-    collection = get_collection()
+    from retry_utils import retry_call
+
     title_map = build_postid_map(collector_json_path)
     now = _current_timestamp()
 
     inserted = 0
     updated = 0
     matched = 0
+    duplicates = 0
     inserted_post_ids: list[Any] = []
+
+    def _get_collection() -> Collection:
+        return get_collection()
+
+    collection = retry_call(_get_collection, label="mongo.get_collection")
 
     for article in news_articles:
         title = article.get("title", "")
         post_id, source_url, created_on = _resolve_post_id(title, title_map)
+        fingerprint = _content_fingerprint("lokal", title, source_url)
 
         document = {
             "post_id": post_id,
@@ -204,19 +220,32 @@ def upsert_articles(
             "keywords": article.get("keywords"),
             "source_url": source_url,
             "created_on": created_on,
+            "content_fingerprint": fingerprint,
             "last_updated_at": now,
         }
 
-        result = collection.update_one(
-            {"post_id": post_id},
-            {
-                # New articles start un-emailed so the incremental notifier picks
-                # them up exactly once. Never reset the flag on updates.
-                "$set": document,
-                "$setOnInsert": {"first_seen_at": now, "email_sent": False},
-            },
-            upsert=True,
-        )
+        def _upsert(pid: Any = post_id, doc: dict[str, Any] = document) -> Any:
+            return collection.update_one(
+                {"post_id": pid},
+                {
+                    # New articles start un-emailed so the incremental notifier picks
+                    # them up exactly once. Never reset the flag on updates.
+                    "$set": doc,
+                    "$setOnInsert": {"first_seen_at": now, "email_sent": False},
+                },
+                upsert=True,
+            )
+
+        try:
+            result = retry_call(_upsert, label=f"mongo.upsert_lokal:{post_id}")
+        except DuplicateKeyError:
+            duplicates += 1
+            logger.info(
+                "Duplicate skipped (fingerprint/post_id) for lokal title=%r post_id=%s",
+                title[:80],
+                post_id,
+            )
+            continue
 
         if result.upserted_id is not None:
             inserted += 1
@@ -230,6 +259,7 @@ def upsert_articles(
         "inserted": inserted,
         "updated": updated,
         "matched": matched,
+        "duplicates": duplicates,
         "total": len(news_articles),
         "inserted_post_ids": inserted_post_ids,
     }
@@ -322,18 +352,23 @@ def upsert_youtube_articles(
     collector_json_path: Path | str,
 ) -> dict[str, int]:
     """Upsert categorized YouTube articles into MongoDB."""
-    collection = get_collection()
+    from retry_utils import retry_call
+
     title_map = build_youtube_postid_map(collector_json_path)
     now = _current_timestamp()
 
     inserted = 0
     updated = 0
     matched = 0
+    duplicates = 0
     inserted_post_ids: list[Any] = []
+
+    collection = retry_call(get_collection, label="mongo.get_collection.youtube")
 
     for article in news_articles:
         title = article.get("title", "")
         post_id, source_url, created_on, channel = _resolve_youtube_post_id(title, title_map)
+        fingerprint = _content_fingerprint("youtube", title, source_url)
 
         document = {
             "post_id": post_id,
@@ -351,17 +386,30 @@ def upsert_youtube_articles(
             "source_url": source_url,
             "channel": channel,
             "created_on": created_on,
+            "content_fingerprint": fingerprint,
             "last_updated_at": now,
         }
 
-        result = collection.update_one(
-            {"post_id": post_id},
-            {
-                "$set": document,
-                "$setOnInsert": {"first_seen_at": now, "email_sent": False},
-            },
-            upsert=True,
-        )
+        def _upsert(pid: str = post_id, doc: dict[str, Any] = document) -> Any:
+            return collection.update_one(
+                {"post_id": pid},
+                {
+                    "$set": doc,
+                    "$setOnInsert": {"first_seen_at": now, "email_sent": False},
+                },
+                upsert=True,
+            )
+
+        try:
+            result = retry_call(_upsert, label=f"mongo.upsert_youtube:{post_id}")
+        except DuplicateKeyError:
+            duplicates += 1
+            logger.info(
+                "Duplicate skipped (fingerprint/post_id) for youtube title=%r post_id=%s",
+                title[:80],
+                post_id,
+            )
+            continue
 
         if result.upserted_id is not None:
             inserted += 1
@@ -375,6 +423,7 @@ def upsert_youtube_articles(
         "inserted": inserted,
         "updated": updated,
         "matched": matched,
+        "duplicates": duplicates,
         "total": len(news_articles),
         "inserted_post_ids": inserted_post_ids,
     }

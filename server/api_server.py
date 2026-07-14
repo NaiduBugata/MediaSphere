@@ -170,10 +170,28 @@ def get_news():
         elif source_filter == "youtube":
             articles = [a for a in articles if a.get("source") == "youtube"]
 
-        return jsonify({"articles": articles, "count": len(articles)})
+        data_revision = None
+        try:
+            import pipeline_state
+
+            data_revision = pipeline_state.get_data_revision()
+        except Exception:  # noqa: BLE001 - news must not fail if state unavailable
+            data_revision = None
+
+        response = jsonify(
+            {
+                "articles": articles,
+                "count": len(articles),
+                "data_revision": data_revision,
+            }
+        )
+        response.headers["Cache-Control"] = "no-store"
+        return response
     except Exception as exc:
         logger.exception("Failed to fetch news: %s", exc)
-        return jsonify({"error": str(exc), "articles": [], "count": 0}), 500
+        response = jsonify({"error": "Failed to fetch news", "articles": [], "count": 0})
+        response.headers["Cache-Control"] = "no-store"
+        return response, 500
 
 
 @app.route("/api/news/stats", methods=["GET"])
@@ -185,16 +203,93 @@ def get_news_stats():
         articles = [_normalize_article(doc) for doc in cursor]
         stats = _compute_stats(articles)
         stats["generated_at"] = datetime.now(timezone.utc).isoformat()
-        return jsonify(stats)
+        try:
+            import pipeline_state
+
+            stats["data_revision"] = pipeline_state.get_data_revision()
+        except Exception:  # noqa: BLE001
+            stats["data_revision"] = None
+        response = jsonify(stats)
+        response.headers["Cache-Control"] = "no-store"
+        return response
     except Exception as exc:
         logger.exception("Failed to fetch stats: %s", exc)
-        return jsonify({"error": str(exc)}), 500
+        response = jsonify({"error": "Failed to fetch stats"})
+        response.headers["Cache-Control"] = "no-store"
+        return response, 500
 
 
 @app.route("/api/health", methods=["GET"])
 def health():
-    """Health check endpoint."""
-    return jsonify({"status": "ok"})
+    """Shallow liveness probe with optional Mongo reachability (no secrets)."""
+    mongo_ok = False
+    try:
+        mongo_store.get_client().admin.command("ping")
+        mongo_ok = True
+    except Exception:  # noqa: BLE001
+        mongo_ok = False
+    return jsonify({"status": "ok", "mongo": mongo_ok})
+
+
+@app.route("/api/pipeline/health", methods=["GET"])
+def pipeline_health():
+    """Pipeline scheduler diagnostics (sanitized; no secrets/stack traces)."""
+    try:
+        import pipeline_scheduler
+
+        snapshot = pipeline_scheduler.health_snapshot()
+        raw_status = snapshot.get("status")
+        if raw_status == "failed":
+            snapshot["status"] = "unhealthy"
+        elif snapshot.get("scheduler") == "running":
+            snapshot["status"] = "healthy"
+        return jsonify(snapshot)
+    except Exception as exc:
+        logger.exception("pipeline health failed: %s", exc)
+        return jsonify({"scheduler": "unknown", "status": "unhealthy", "error": "unavailable"}), 500
+
+
+@app.route("/api/database/health", methods=["GET"])
+def database_health():
+    """MongoDB connectivity diagnostics without exposing URIs or credentials."""
+    try:
+        import pipeline_state
+
+        ping = pipeline_state.ping_mongo()
+        return jsonify(
+            {
+                "status": "healthy",
+                "ok": True,
+                "latency_ms": ping.get("latency_ms"),
+                "database": ping.get("database"),
+                "articles_collection": ping.get("articles_collection"),
+                "articles_count": ping.get("articles_count"),
+            }
+        )
+    except Exception as exc:
+        logger.exception("database health failed: %s", exc)
+        return jsonify({"status": "unhealthy", "ok": False, "error": "unavailable"}), 500
+
+
+@app.route("/api/pipeline/run-now", methods=["POST"])
+def pipeline_run_now():
+    """Admin-only manual trigger. Requires X-Pipeline-Admin-Token when configured."""
+    import pipeline_config
+    import pipeline_scheduler
+
+    expected = pipeline_config.PIPELINE_ADMIN_TOKEN
+    if not expected:
+        return jsonify({"status": "disabled", "error": "PIPELINE_ADMIN_TOKEN is not configured"}), 503
+
+    provided = request.headers.get("X-Pipeline-Admin-Token", "")
+    if provided != expected:
+        return jsonify({"status": "forbidden", "error": "Invalid admin token"}), 403
+
+    if not pipeline_scheduler.is_running() and not _truthy("PIPELINE_ON_API"):
+        return jsonify({"status": "error", "error": "Pipeline scheduler is not enabled"}), 503
+
+    pipeline_scheduler.run_now()
+    return jsonify({"status": "accepted", "message": "Pipeline cycle triggered"}), 202
 
 
 @app.route("/api/reports/history", methods=["GET"])
@@ -205,7 +300,7 @@ def reports_history():
         return jsonify({"reports": report_db.history(limit=limit)})
     except Exception as exc:
         logger.exception("Failed to fetch report history: %s", exc)
-        return jsonify({"error": str(exc), "reports": []}), 500
+        return jsonify({"error": "Failed to fetch report history", "reports": []}), 500
 
 
 @app.route("/api/reports/<report_id>", methods=["GET"])

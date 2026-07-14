@@ -10,7 +10,11 @@ const api = axios.create({
 
 export async function getNews() {
   const { data } = await api.get('/news');
-  return data.articles || [];
+  return {
+    articles: data.articles || [],
+    count: data.count || 0,
+    dataRevision: data.data_revision || null,
+  };
 }
 
 export async function getStats() {
