@@ -24,7 +24,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 import lokal_collector
 import pipeline_config
 import pipeline_state
-from run_all_pipelines import configure_logging, run_combined_cycle
+from pipeline.runner import configure_logging, run_combined_cycle
 
 logger = logging.getLogger("pipeline_scheduler")
 

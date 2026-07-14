@@ -1,3 +1,5 @@
+"""Legacy config module — re-exports from config/ package for backward compatibility."""
+# ruff: noqa: F401,F403,E402
 import os
 from pathlib import Path
 

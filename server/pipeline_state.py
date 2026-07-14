@@ -1,6 +1,6 @@
 """MongoDB persistence for pipeline scheduler state, locks, and history.
 
-Reuses the shared ``mongo_store`` client — no second Mongo connection.
+Reuses the shared ``mongo_store`` client â€” no second Mongo connection.
 """
 
 from __future__ import annotations

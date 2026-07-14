@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import lokal_collector as lokal_module
-from collectors.base_collector import BaseCollector
+from collectors.base.base_collector import BaseCollector
 
 
 class LokalCollectorAdapter(BaseCollector):

@@ -20,7 +20,7 @@ os.environ.setdefault("GROQ_API_KEY_1", "test-key")
 os.environ.setdefault("SAKSHI_ENABLED", "true")
 
 from api_server import app  # noqa: E402
-from collectors.sakshi_collector import (  # noqa: E402
+from collectors.sakshi.collector import (  # noqa: E402
     PermanentHttpError,
     SakshiCollector,
     _get_html,
@@ -38,7 +38,7 @@ class SakshiLinkExtractionTests(unittest.TestCase):
         html = (FIXTURES / "tag_page.html").read_text(encoding="utf-8")
         collector = SakshiCollector(request_delay=0, max_articles=20, existing_urls=set())
         with patch.object(collector, "session"), patch(
-            "collectors.sakshi_collector._get_html", return_value=html
+            "collectors.sakshi.collector._get_html", return_value=html
         ):
             links = collector.fetch_links()
         self.assertEqual(len(links), 2)
@@ -60,7 +60,7 @@ class SakshiArticleParseTests(unittest.TestCase):
         html = (FIXTURES / "article_page.html").read_text(encoding="utf-8")
         url = "https://www.sakshi.com/news/andhra-pradesh/narasaraopet-road-works-12345"
         collector = SakshiCollector(request_delay=0, existing_urls=set())
-        with patch("collectors.sakshi_collector._get_html", return_value=html):
+        with patch("collectors.sakshi.collector._get_html", return_value=html):
             raw = collector.fetch_article(url)
         self.assertIsNotNone(raw)
         assert raw is not None
@@ -120,9 +120,9 @@ class SakshiFingerprintTests(unittest.TestCase):
                 "tags": [],
             }
         }
-        with patch("mongo_store.get_collection", return_value=collection), patch(
+        with patch("database.mongo.get_collection", return_value=collection), patch(
             "retry_utils.retry_call", side_effect=lambda fn, **kw: fn()
-        ), patch("mongo_store.build_sakshi_postid_map", return_value=title_map):
+        ), patch("database.mongo.build_sakshi_postid_map", return_value=title_map):
             stats = mongo_store.upsert_sakshi_articles(
                 [{"title": "Same Title", "summary": "body"}],
                 Path("dummy.json"),
@@ -142,7 +142,7 @@ class SakshiRetryTests(unittest.TestCase):
         transient.status_code = 503
         session.get.side_effect = [transient, ok]
 
-        with patch("retry_utils.time.sleep"):
+        with patch("pipeline.retry.time.sleep"):
             html = _get_html(session, "https://www.sakshi.com/news/example-long-enough")
         self.assertIn("html", html)
         self.assertEqual(session.get.call_count, 2)
@@ -163,10 +163,10 @@ class CombinedCycleSakshiTests(unittest.TestCase):
         yt_stats = {"inserted": 0, "duplicates": 0, "articles_fetched": 0, "total": 0, "errors": []}
         sakshi_stats = {"inserted": 2, "duplicates": 0, "articles_fetched": 2, "total": 2, "errors": []}
 
-        with patch("run_all_pipelines.run_lokal_cycle", return_value=(0, lokal_stats)), patch(
-            "run_all_pipelines.yt_config.YOUTUBE_ENABLED", False
-        ), patch("run_all_pipelines.sakshi_config.SAKSHI_ENABLED", True), patch(
-            "run_all_pipelines.run_sakshi_cycle", return_value=(0, sakshi_stats)
+        with patch("pipeline.runner.run_lokal_cycle", return_value=(0, lokal_stats)), patch(
+            "pipeline.runner.yt_config.YOUTUBE_ENABLED", False
+        ), patch("pipeline.runner.sakshi_config.SAKSHI_ENABLED", True), patch(
+            "pipeline.runner.run_sakshi_cycle", return_value=(0, sakshi_stats)
         ) as sakshi_cycle:
             code, stats = run_all_pipelines.run_combined_cycle()
 

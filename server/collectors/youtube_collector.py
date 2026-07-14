@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from collectors.base_collector import BaseCollector
+from collectors.base.base_collector import BaseCollector
 from youtube import collector as yt_collector
 
 

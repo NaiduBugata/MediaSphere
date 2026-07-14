@@ -1,152 +1,18 @@
-"""Run Lokal, YouTube, and Sakshi pipelines on a shared schedule."""
+"""Legacy shim — re-exports from pipeline.runner for backward compatibility."""
+# ruff: noqa: F401,F403
 
-from __future__ import annotations
+from pipeline.runner import *  # noqa: F401,F403
+from pipeline.runner import (
+    configure_logging,
+    run_combined_cycle,
+    run_forever,
+    main,
+)
 
-import logging
-import sys
-import time
-from datetime import datetime, timedelta, timezone
-from typing import Any
-
-import lokal_collector
-from collectors import config as sakshi_config
-from run_lokal_analysis import configure_logging as configure_lokal_logging, run_cycle as run_lokal_cycle
-from run_sakshi_analysis import run_cycle as run_sakshi_cycle
-from run_youtube_analysis import run_cycle as run_youtube_cycle
-from youtube import config as yt_config
-
-logger = logging.getLogger("run_all_pipelines")
-
-
-def configure_logging() -> None:
-    configure_lokal_logging()
-
-
-def _merge_stats(
-    lokal: dict[str, Any],
-    youtube: dict[str, Any],
-    sakshi: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    sakshi = sakshi or {}
-    errors = (
-        list(lokal.get("errors") or [])
-        + list(youtube.get("errors") or [])
-        + list(sakshi.get("errors") or [])
-    )
-    return {
-        "articles_fetched": (
-            int(lokal.get("articles_fetched") or 0)
-            + int(youtube.get("articles_fetched") or 0)
-            + int(sakshi.get("articles_fetched") or 0)
-        ),
-        "duplicates": (
-            int(lokal.get("duplicates") or 0)
-            + int(youtube.get("duplicates") or 0)
-            + int(sakshi.get("duplicates") or 0)
-        ),
-        "inserted": (
-            int(lokal.get("inserted") or 0)
-            + int(youtube.get("inserted") or 0)
-            + int(sakshi.get("inserted") or 0)
-        ),
-        "lokal_processed": int(lokal.get("total") or lokal.get("articles_fetched") or 0),
-        "youtube_processed": int(youtube.get("total") or youtube.get("articles_fetched") or 0),
-        "sakshi_processed": int(sakshi.get("total") or sakshi.get("articles_fetched") or 0),
-        "errors": errors,
-        "lokal": lokal,
-        "youtube": youtube,
-        "sakshi": sakshi,
-    }
-
-
-def run_combined_cycle() -> tuple[int, dict[str, Any]]:
-    """
-    Execute Lokal, then YouTube, then Sakshi once.
-
-    Returns:
-        (exit_code, aggregated_stats)
-    """
-    logger.info("=" * 60)
-    logger.info("COMBINED PIPELINE CYCLE START")
-    logger.info("=" * 60)
-
-    logger.info("Collecting Lokal")
-    lokal_code, lokal_stats = run_lokal_cycle()
-    if lokal_code != 0:
-        logger.warning("Lokal cycle finished with exit code %s", lokal_code)
-
-    youtube_code = 0
-    youtube_stats: dict[str, Any] = {
-        "inserted": 0,
-        "duplicates": 0,
-        "articles_fetched": 0,
-        "total": 0,
-        "errors": [],
-    }
-    if yt_config.YOUTUBE_ENABLED:
-        logger.info("Collecting YouTube")
-        youtube_code, youtube_stats = run_youtube_cycle()
-        if youtube_code != 0:
-            logger.warning("YouTube cycle finished with exit code %s", youtube_code)
-    else:
-        logger.info("YouTube pipeline disabled; skipping.")
-
-    sakshi_code = 0
-    sakshi_stats: dict[str, Any] = {
-        "inserted": 0,
-        "duplicates": 0,
-        "articles_fetched": 0,
-        "total": 0,
-        "errors": [],
-    }
-    if sakshi_config.SAKSHI_ENABLED:
-        logger.info("Collecting Sakshi")
-        sakshi_code, sakshi_stats = run_sakshi_cycle()
-        if sakshi_code != 0:
-            logger.warning("Sakshi cycle finished with exit code %s", sakshi_code)
-    else:
-        logger.info("Sakshi pipeline disabled; skipping.")
-
-    stats = _merge_stats(lokal_stats, youtube_stats, sakshi_stats)
-    exit_code = 0 if lokal_code == 0 and youtube_code == 0 and sakshi_code == 0 else 1
-
-    logger.info(
-        "COMBINED PIPELINE CYCLE END | exit=%s | inserted=%s | duplicates=%s | fetched=%s | sakshi=%s",
-        exit_code,
-        stats["inserted"],
-        stats["duplicates"],
-        stats["articles_fetched"],
-        stats["sakshi_processed"],
-    )
-    logger.info("=" * 60)
-    return exit_code, stats
-
-
-def run_forever() -> int:
-    interval = lokal_collector.CHECK_INTERVAL
-    logger.info(
-        "Combined pipeline started | interval: %s seconds (%s hours)",
-        interval,
-        interval / 3600,
-    )
-    try:
-        while True:
-            run_combined_cycle()
-            next_run = datetime.now(timezone.utc) + timedelta(seconds=interval)
-            logger.info("Next combined run at %s UTC", next_run.isoformat())
-            time.sleep(interval)
-    except KeyboardInterrupt:
-        logger.info("Combined pipeline stopped by user")
-        return 0
-
-
-def main() -> int:
-    configure_logging()
-    if "--once" in sys.argv:
-        code, _stats = run_combined_cycle()
-        return code
-    return run_forever()
-
+# Re-export sub-cycle runners so tests can patch them here
+from run_lokal_analysis import run_cycle as run_lokal_cycle  # noqa: F401
+from run_sakshi_analysis import run_cycle as run_sakshi_cycle  # noqa: F401
+from run_youtube_analysis import run_cycle as run_youtube_cycle  # noqa: F401
 
 if __name__ == "__main__":
     raise SystemExit(main())
