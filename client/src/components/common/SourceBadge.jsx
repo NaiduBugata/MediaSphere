@@ -1,12 +1,15 @@
-import { formatSourceLabel, isYoutubeSource } from '../../utils/format';
+import { formatSourceLabel, isSakshiSource, isYoutubeSource } from '../../utils/format';
 
 const STYLES = {
   lokal: 'bg-emerald-100 text-emerald-800',
   youtube: 'bg-red-100 text-red-800',
+  sakshi: 'bg-amber-100 text-amber-900',
 };
 
 export default function SourceBadge({ source }) {
-  const key = isYoutubeSource(source) ? 'youtube' : 'lokal';
+  let key = 'lokal';
+  if (isYoutubeSource(source)) key = 'youtube';
+  else if (isSakshiSource(source)) key = 'sakshi';
   const label = formatSourceLabel(source);
   const style = STYLES[key] || STYLES.lokal;
 

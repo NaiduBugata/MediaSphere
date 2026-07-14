@@ -7,7 +7,7 @@
 #
 # The web service:
 #   - Serves the dashboard API
-#   - Runs the Lokal + YouTube pipeline every PIPELINE_INTERVAL_HOURS while awake
+#   - Runs the Lokal + YouTube + Sakshi pipeline every PIPELINE_INTERVAL_HOURS while awake
 #   - Runs one catch-up cycle on startup (collects anything published while asleep)
 #
 # gunicorn MUST stay at --workers 1 so only ONE pipeline scheduler exists.
@@ -42,6 +42,14 @@ services:
       # Optional secrets (Dashboard only): PIPELINE_ADMIN_TOKEN, PIPELINE_LOCK_TTL_SECONDS
       - key: YOUTUBE_ENABLED
         value: true
+      - key: SAKSHI_ENABLED
+        value: true
+      - key: SAKSHI_TAG_URL
+        value: https://www.sakshi.com/tags/narasaraopet
+      - key: SAKSHI_REQUEST_DELAY_SECONDS
+        value: "1.5"
+      - key: SAKSHI_MAX_ARTICLES_PER_RUN
+        value: "20"
       # Emails are handled separately; keep off on the web service by default.
       - key: EMAIL_ENABLED
         value: false

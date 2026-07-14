@@ -114,7 +114,9 @@ export default function NewsTable({ articles, onViewDetails }) {
                   <td className="px-4 py-3 text-sm text-gray-600 max-w-[140px] truncate hidden sm:table-cell">
                     {article.source === 'youtube'
                       ? safeString(article.channel, '—')
-                      : 'Lokal News'}
+                      : article.source === 'sakshi'
+                        ? safeString(article.channel, 'Sakshi')
+                        : 'Lokal News'}
                   </td>
                   <td className="px-4 py-3">
                     <CategoryChip category={article.category} />

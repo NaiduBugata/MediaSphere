@@ -153,7 +153,7 @@ def _compute_stats(articles: list[dict]) -> dict:
 
 @app.route("/api/news", methods=["GET"])
 def get_news():
-    """Return categorized articles, newest first. Optional ?source=lokal|youtube|all."""
+    """Return categorized articles, newest first. Optional ?source=lokal|youtube|sakshi|all."""
     try:
         source_filter = (request.args.get("source") or "all").lower()
 
@@ -169,6 +169,8 @@ def get_news():
             articles = [a for a in articles if a.get("source", "lokal") == "lokal"]
         elif source_filter == "youtube":
             articles = [a for a in articles if a.get("source") == "youtube"]
+        elif source_filter == "sakshi":
+            articles = [a for a in articles if a.get("source") == "sakshi"]
 
         data_revision = None
         try:

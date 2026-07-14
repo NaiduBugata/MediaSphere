@@ -27,7 +27,7 @@ API boot -> validate config -> self-test -> APScheduler (once)
          -> acquire Mongo pipeline_lock -> combined cycle -> history + state
 ```
 
-The combined pipeline runner (`server/run_all_pipelines.py`) runs Lokal then YouTube every hour when `YOUTUBE_ENABLED=true`.
+The combined pipeline runner (`server/run_all_pipelines.py`) runs Lokal, then YouTube (when `YOUTUBE_ENABLED=true`), then Sakshi (when `SAKSHI_ENABLED=true`).
 
 ## Project Structure
 
@@ -128,11 +128,12 @@ Fill in only real values in `.env`. Never commit `.env`; it is ignored by Git.
 ### Run the pipeline
 
 ```bash
-python run_all_pipelines.py --once   # Lokal + YouTube (if YOUTUBE_ENABLED=true)
+python run_all_pipelines.py --once   # Lokal + YouTube + Sakshi (when each is enabled)
 python run_all_pipelines.py          # continuous, every 1 hour
 
 python run_lokal_analysis.py --once   # Lokal only
 python run_youtube_analysis.py --once # YouTube only (requires YOUTUBE_API_KEY)
+python run_sakshi_analysis.py --once  # Sakshi newspaper only
 ```
 
 Set in `.env`:
@@ -140,6 +141,8 @@ Set in `.env`:
 ```
 YOUTUBE_ENABLED=true
 YOUTUBE_API_KEY=your_youtube_data_api_key
+SAKSHI_ENABLED=true
+SAKSHI_TAG_URL=https://www.sakshi.com/tags/narasaraopet
 PIPELINE_ON_API=true
 PIPELINE_CATCHUP_ON_START=true
 PIPELINE_INTERVAL_HOURS=1
@@ -326,7 +329,7 @@ See `server/.env.example` (backend) and `client/.env.example` (frontend). Secret
 - **AI:** `GROQ_API_KEY`, `GROQ_API_KEYS`, `GROQ_API_KEY_*`, `GROQ_MODEL`, `GROQ_TIMEOUT_SECONDS`
 - **MongoDB:** `MONGODB_URI`, `MONGODB_DB_NAME`, `MONGODB_COLLECTION`
 - **API:** `API_HOST`, `API_PORT`, `API_DEBUG`, `CORS_ORIGINS`
-- **Pipeline:** `PIPELINE_ON_API`, `PIPELINE_CATCHUP_ON_START`, `PIPELINE_INTERVAL_HOURS`, `PIPELINE_LOCK_TTL_SECONDS`, `PIPELINE_ADMIN_TOKEN`, `YOUTUBE_ENABLED`, `YOUTUBE_API_KEY`
+- **Pipeline:** `PIPELINE_ON_API`, `PIPELINE_CATCHUP_ON_START`, `PIPELINE_INTERVAL_HOURS`, `PIPELINE_LOCK_TTL_SECONDS`, `PIPELINE_ADMIN_TOKEN`, `YOUTUBE_ENABLED`, `YOUTUBE_API_KEY`, `SAKSHI_ENABLED`, `SAKSHI_TAG_URL`, `SAKSHI_REQUEST_DELAY_SECONDS`, `SAKSHI_MAX_ARTICLES_PER_RUN`
 - **Email/Reports:** `EMAIL_ENABLED`, `EMAIL_PROVIDER`, `RESEND_API_KEY`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`, `REPORT_RECIPIENTS`, `REPORT_ENABLED`, `REPORT_TIMEZONE`, `REPORT_HOUR`, `REPORT_MINUTE`
 - **WhatsApp:** `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_WABA_ID`, `WHATSAPP_GRAPH_API_VERSION`, `WHATSAPP_WEBHOOK_ENABLED`
 - **Frontend (`client/.env`):** `VITE_API_BASE_URL` (defaults to `/api`, proxied to the Flask server in development).

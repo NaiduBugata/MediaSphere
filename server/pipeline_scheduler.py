@@ -107,9 +107,11 @@ def _empty_stats() -> dict[str, Any]:
         "inserted": 0,
         "lokal_processed": 0,
         "youtube_processed": 0,
+        "sakshi_processed": 0,
         "errors": [],
         "lokal": {},
         "youtube": {},
+        "sakshi": {},
     }
 
 
@@ -203,9 +205,22 @@ def _job(trigger: str = "interval") -> None:
                 "inserted": int(stats.get("inserted") or 0),
                 "lokal_processed": int(stats.get("lokal_processed") or 0),
                 "youtube_processed": int(stats.get("youtube_processed") or 0),
+                "sakshi_processed": int(stats.get("sakshi_processed") or 0),
                 "errors": errors[:50],
                 "status": status,
                 "trigger": trigger,
+            }
+        )
+        # Per-source markers for health endpoint / dashboard.
+        pipeline_state.update_state(
+            {
+                "last_sakshi_run": finished.isoformat(),
+                "last_sakshi_articles": int(stats.get("sakshi_processed") or 0),
+                "last_lokal_articles": int(stats.get("lokal_processed") or 0),
+                "last_youtube_articles": int(stats.get("youtube_processed") or 0),
+                "sakshi_last_errors": list((stats.get("sakshi") or {}).get("errors") or [])[:10],
+                "lokal_last_errors": list((stats.get("lokal") or {}).get("errors") or [])[:10],
+                "youtube_last_errors": list((stats.get("youtube") or {}).get("errors") or [])[:10],
             }
         )
     except Exception as exc:  # noqa: BLE001 - scheduler must never die
@@ -235,6 +250,7 @@ def _job(trigger: str = "interval") -> None:
                     "inserted": int(stats.get("inserted") or 0),
                     "lokal_processed": int(stats.get("lokal_processed") or 0),
                     "youtube_processed": int(stats.get("youtube_processed") or 0),
+                    "sakshi_processed": int(stats.get("sakshi_processed") or 0),
                     "errors": errors[:50],
                     "status": "failed",
                     "trigger": trigger,
@@ -333,8 +349,22 @@ def run_now() -> None:
     threading.Thread(target=_job, kwargs={"trigger": "manual"}, name="pipeline-manual", daemon=True).start()
 
 
+def _source_health(name: str, enabled: bool, state: dict[str, Any]) -> str:
+    if not enabled:
+        return "disabled"
+    errors = state.get(f"{name}_last_errors") or []
+    if errors:
+        return "degraded"
+    if state.get("last_success") or state.get("last_run"):
+        return "healthy"
+    return "healthy" if is_running() else "stopped"
+
+
 def health_snapshot() -> dict[str, Any]:
     """Sanitized pipeline health for API clients."""
+    from collectors import config as sakshi_config
+    from youtube import config as yt_config
+
     state = {}
     lock = {}
     articles = None
@@ -357,6 +387,13 @@ def health_snapshot() -> dict[str, Any]:
         "articles_inserted_last_run": state.get("articles_inserted"),
         "lock": lock,
         "data_revision": state.get("last_success") or state.get("last_run"),
+        "sources": {
+            "lokal": _source_health("lokal", True, state),
+            "youtube": _source_health("youtube", bool(yt_config.YOUTUBE_ENABLED), state),
+            "sakshi": _source_health("sakshi", bool(sakshi_config.SAKSHI_ENABLED), state),
+        },
+        "last_sakshi_run": state.get("last_sakshi_run"),
+        "last_sakshi_articles": state.get("last_sakshi_articles") or 0,
     }
 
 

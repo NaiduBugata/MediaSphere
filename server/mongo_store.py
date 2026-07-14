@@ -89,11 +89,20 @@ def warmup() -> None:
         raise
 
 
-def _content_fingerprint(source: str, title: str, source_url: str | None) -> str:
+def _content_fingerprint(
+    source: str,
+    title: str,
+    *,
+    body: str | None = None,
+    published_at: str | None = None,
+    source_url: str | None = None,
+) -> str:
+    """SHA-256 fingerprint over title + body + published_at + source."""
     normalized = _normalize_title(title)
-    url = (source_url or "").strip()
-    raw = f"{source}|{normalized}|{url}"
-    return hashlib.sha1(raw.encode("utf-8")).hexdigest()
+    text = re.sub(r"\s+", " ", (body or "").strip())
+    published = (published_at or "").strip()
+    raw = f"{normalized}|{text}|{published}|{source}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 def get_collection() -> Collection:
@@ -203,7 +212,13 @@ def upsert_articles(
     for article in news_articles:
         title = article.get("title", "")
         post_id, source_url, created_on = _resolve_post_id(title, title_map)
-        fingerprint = _content_fingerprint("lokal", title, source_url)
+        fingerprint = _content_fingerprint(
+            "lokal",
+            title,
+            body=article.get("summary") or article.get("content") or "",
+            published_at=created_on,
+            source_url=source_url,
+        )
 
         document = {
             "post_id": post_id,
@@ -368,7 +383,13 @@ def upsert_youtube_articles(
     for article in news_articles:
         title = article.get("title", "")
         post_id, source_url, created_on, channel = _resolve_youtube_post_id(title, title_map)
-        fingerprint = _content_fingerprint("youtube", title, source_url)
+        fingerprint = _content_fingerprint(
+            "youtube",
+            title,
+            body=article.get("summary") or article.get("content") or "",
+            published_at=created_on,
+            source_url=source_url,
+        )
 
         document = {
             "post_id": post_id,
@@ -460,6 +481,172 @@ def filter_new_youtube_articles(
     return filtered_path, new_articles
 
 
+SAKSHI_POST_ID_PREFIX = "sakshi_"
+
+
+def sakshi_post_id(article_id: str) -> str:
+    text = str(article_id).strip()
+    if text.startswith(SAKSHI_POST_ID_PREFIX):
+        return text
+    return f"{SAKSHI_POST_ID_PREFIX}{text}"
+
+
+def get_existing_sakshi_urls() -> set[str]:
+    """Return source_url values already stored for Sakshi articles."""
+    collection = get_collection()
+    urls: set[str] = set()
+    cursor = collection.find({"source": "sakshi"}, {"source_url": 1})
+    for doc in cursor:
+        url = doc.get("source_url")
+        if isinstance(url, str) and url.strip():
+            urls.add(url.strip())
+    return urls
+
+
+def build_sakshi_postid_map(collector_json_path: Path | str) -> dict[str, dict[str, Any]]:
+    """Build title-to-metadata map from Sakshi collector JSON."""
+    payload = json.loads(Path(collector_json_path).read_text(encoding="utf-8"))
+    articles = payload.get("articles", [])
+    title_map: dict[str, dict[str, Any]] = {}
+
+    for article in articles:
+        title = article.get("title", "")
+        article_id = article.get("id")
+        if not title or not article_id:
+            continue
+        entry = {
+            "post_id": sakshi_post_id(str(article_id)),
+            "url": article.get("source_url") or article.get("url"),
+            "created_on": article.get("created_on") or article.get("published_at"),
+            "author": article.get("author"),
+            "thumbnail": article.get("thumbnail"),
+            "tags": article.get("tags") or [],
+            "channel": article.get("channel") or "Sakshi",
+            "raw_title": title,
+            "content": article.get("content") or article.get("article") or "",
+        }
+        title_map[title] = entry
+        normalized = _normalize_title(title)
+        if normalized not in title_map:
+            title_map[normalized] = entry
+        title_map[str(article_id)] = entry
+
+    return title_map
+
+
+def _resolve_sakshi_post_id(
+    title: str,
+    title_map: dict[str, dict[str, Any]],
+) -> tuple[str, str | None, str | None, dict[str, Any]]:
+    normalized = _normalize_title(title)
+    if title in title_map:
+        meta = title_map[title]
+    elif normalized in title_map:
+        meta = title_map[normalized]
+    else:
+        digest = hashlib.sha1(normalized.encode("utf-8")).hexdigest()[:12]
+        logger.warning("No Sakshi collector match for title %r; using hash post_id", title)
+        return f"{SAKSHI_POST_ID_PREFIX}hash_{digest}", None, None, {}
+
+    return (
+        meta["post_id"],
+        meta.get("url"),
+        meta.get("created_on"),
+        meta,
+    )
+
+
+def upsert_sakshi_articles(
+    news_articles: list[dict[str, Any]],
+    collector_json_path: Path | str,
+) -> dict[str, int]:
+    """Upsert categorized Sakshi articles into MongoDB."""
+    from retry_utils import retry_call
+
+    title_map = build_sakshi_postid_map(collector_json_path)
+    now = _current_timestamp()
+    inserted = 0
+    updated = 0
+    matched = 0
+    duplicates = 0
+    inserted_post_ids: list[Any] = []
+    collection = retry_call(get_collection, label="mongo.get_collection.sakshi")
+
+    for article in news_articles:
+        title = article.get("title", "")
+        post_id, source_url, created_on, meta = _resolve_sakshi_post_id(title, title_map)
+        body = article.get("summary") or meta.get("content") or ""
+        fingerprint = _content_fingerprint(
+            "sakshi",
+            title,
+            body=body,
+            published_at=created_on,
+            source_url=source_url,
+        )
+
+        document = {
+            "post_id": post_id,
+            "source": "sakshi",
+            "source_type": "newspaper",
+            "title": title,
+            "sentiment": article.get("sentiment"),
+            "category": article.get("category"),
+            "subcategory": article.get("subcategory"),
+            "summary": article.get("summary"),
+            "problem": article.get("problem"),
+            "problem_id": article.get("problem_id"),
+            "location": article.get("location"),
+            "entities": article.get("entities"),
+            "keywords": article.get("keywords"),
+            "source_url": source_url,
+            "channel": meta.get("channel") or "Sakshi",
+            "author": meta.get("author") or "",
+            "thumbnail": meta.get("thumbnail") or "",
+            "tags": meta.get("tags") or [],
+            "created_on": created_on,
+            "content_fingerprint": fingerprint,
+            "last_updated_at": now,
+        }
+
+        def _upsert(pid: str = post_id, doc: dict[str, Any] = document) -> Any:
+            return collection.update_one(
+                {"post_id": pid},
+                {
+                    "$set": doc,
+                    "$setOnInsert": {"first_seen_at": now, "email_sent": False},
+                },
+                upsert=True,
+            )
+
+        try:
+            result = retry_call(_upsert, label=f"mongo.upsert_sakshi:{post_id}")
+        except DuplicateKeyError:
+            duplicates += 1
+            logger.info(
+                "Duplicate skipped (fingerprint/post_id) for sakshi title=%r post_id=%s",
+                title[:80],
+                post_id,
+            )
+            continue
+
+        if result.upserted_id is not None:
+            inserted += 1
+            inserted_post_ids.append(post_id)
+        elif result.modified_count > 0:
+            updated += 1
+        else:
+            matched += 1
+
+    return {
+        "inserted": inserted,
+        "updated": updated,
+        "matched": matched,
+        "duplicates": duplicates,
+        "total": len(news_articles),
+        "inserted_post_ids": inserted_post_ids,
+    }
+
+
 def get_stats() -> dict[str, Any]:
     """
     Return basic statistics for the active articles collection.
@@ -473,6 +660,8 @@ def get_stats() -> dict[str, Any]:
         "collection": MONGODB_COLLECTION,
         "count": collection.count_documents({}),
     }
+
+
 
 
 def archive_and_reset(archive: bool = True) -> dict[str, Any]:

@@ -126,8 +126,15 @@ export function isYoutubeSource(source) {
   return (source || '').toLowerCase() === 'youtube';
 }
 
+export function isSakshiSource(source) {
+  return (source || '').toLowerCase() === 'sakshi';
+}
+
 export function formatSourceLabel(source) {
-  return isYoutubeSource(source) ? 'YT' : 'Lokal Telugu';
+  const key = (source || '').toLowerCase();
+  if (key === 'youtube') return 'YT';
+  if (key === 'sakshi') return 'Sakshi';
+  return 'Lokal Telugu';
 }
 
 export function sortByDateDesc(articles) {

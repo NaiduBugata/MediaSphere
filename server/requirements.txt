@@ -11,3 +11,5 @@ gunicorn==23.0.0
 google-api-python-client==2.175.0
 youtube-transcript-api==1.1.1
 tqdm==4.67.1
+beautifulsoup4==4.13.4
+lxml==5.4.0

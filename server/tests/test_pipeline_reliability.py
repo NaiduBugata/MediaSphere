@@ -224,9 +224,22 @@ class FingerprintTests(unittest.TestCase):
     def test_content_fingerprint_stable(self) -> None:
         import mongo_store
 
-        a = mongo_store._content_fingerprint("lokal", "Hello World", "https://example.com/a")
-        b = mongo_store._content_fingerprint("lokal", "  Hello   World  ", "https://example.com/a")
+        a = mongo_store._content_fingerprint(
+            "lokal",
+            "Hello World",
+            body="article body",
+            published_at="2026-07-10T08:00:00+00:00",
+            source_url="https://example.com/a",
+        )
+        b = mongo_store._content_fingerprint(
+            "lokal",
+            "  Hello   World  ",
+            body="article body",
+            published_at="2026-07-10T08:00:00+00:00",
+            source_url="https://example.com/a",
+        )
         self.assertEqual(a, b)
+        self.assertEqual(len(a), 64)
 
 
 if __name__ == "__main__":
