@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 import threading
 import traceback
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any
 
 from apscheduler.schedulers.background import BackgroundScheduler
