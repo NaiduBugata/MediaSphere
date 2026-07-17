@@ -503,6 +503,26 @@ def get_existing_sakshi_urls() -> set[str]:
     return urls
 
 
+def delete_sakshi_articles() -> int:
+    """
+    Delete ALL Sakshi articles from MongoDB. Does not touch Lokal, YouTube, or reports.
+
+    Returns:
+        Number of deleted documents.
+    """
+    collection = get_collection()
+    result = collection.delete_many({"source": "sakshi"})
+    deleted = int(result.deleted_count or 0)
+    logger.info("Deleted %s Sakshi articles.", deleted)
+    return deleted
+
+
+def count_by_source(source: str) -> int:
+    """Return article count for a given source field value."""
+    collection = get_collection()
+    return int(collection.count_documents({"source": source}))
+
+
 def build_sakshi_postid_map(collector_json_path: Path | str) -> dict[str, dict[str, Any]]:
     """Build title-to-metadata map from Sakshi collector JSON."""
     payload = json.loads(Path(collector_json_path).read_text(encoding="utf-8"))

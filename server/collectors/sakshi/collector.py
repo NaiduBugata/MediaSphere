@@ -16,6 +16,10 @@ from bs4 import BeautifulSoup
 
 from collectors.base.base_collector import BaseCollector
 from collectors.sakshi import config as sakshi_config
+from collectors.sakshi.constituency_validator import (
+    ConstituencyValidator,
+    get_validator,
+)
 from pipeline.retry import is_transient, retry_call
 
 logger = logging.getLogger("collectors.sakshi")
@@ -99,11 +103,116 @@ def _is_article_url(url: str) -> bool:
     # Prefer news paths; allow numeric id paths common on Sakshi.
     if "/tags/" in path or "/category/" in path or path.rstrip("/") in ("", "/"):
         return False
-    if any(x in path.lower() for x in ("/news/", "/andhra-pradesh/", "/ap/", "/guntur/", "/article/")):
+    if any(
+        x in path.lower()
+        for x in (
+            "/news/",
+            "/telugu-news/",
+            "/andhra-pradesh/",
+            "/ap/",
+            "/guntur/",
+            "/article/",
+            "/politics/",
+            "/crime/",
+        )
+    ):
         return True
     # Fallback: long slug paths that look like articles
     slug = path.strip("/").split("/")[-1]
     return bool(slug) and len(slug) > 12 and not slug.endswith((".jpg", ".png", ".gif", ".mp4"))
+
+
+def _load_url_priority_keywords() -> list[str]:
+    """Location keywords used to rank tag-page links (from location dictionary)."""
+    fallback = ["narasaraopet", "నరసరావుపేట", "palnadu", "పల్నాడు"]
+    try:
+        import json
+
+        path = sakshi_config.LOCATION_DICTIONARY_PATH
+        if not path.exists():
+            return fallback
+        data = json.loads(path.read_text(encoding="utf-8"))
+        keywords: list[str] = []
+        for key in ("primary_keywords", "assembly_segments", "mandals", "villages", "district_aliases"):
+            for item in data.get(key) or []:
+                if isinstance(item, str) and item.strip():
+                    keywords.append(item.strip())
+        return keywords or fallback
+    except Exception:  # noqa: BLE001
+        return fallback
+
+
+def _url_has_location_keyword(url: str, anchor_text: str, keywords: list[str]) -> bool:
+    """
+    Match location keywords in URL/anchor with hyphen/slash/word boundaries.
+
+    Plain substring matching is unsafe: short mandals like ``Ipur`` would match
+    inside ``jaipur``.
+    """
+    combined = f"{url} {anchor_text}"
+    haystack = combined.lower()
+    for keyword in keywords:
+        if not keyword or not str(keyword).strip():
+            continue
+        # Telugu / non-ASCII: require exact substring on original text
+        if any(ord(ch) > 127 for ch in keyword):
+            if keyword in combined:
+                return True
+            continue
+
+        token = keyword.lower().strip()
+        compact = re.sub(r"[\s_-]+", "", token)
+        # Skip very short tokens for URL ranking (too many false positives)
+        if len(compact) < 5:
+            continue
+        # Bound by non-letter edges so "ipur" does not match "jaipur"
+        if re.search(rf"(?<![a-z0-9]){re.escape(token)}(?![a-z0-9])", haystack):
+            return True
+        if " " in token or "-" in token:
+            if compact and re.search(rf"(?<![a-z0-9]){re.escape(compact)}(?![a-z0-9])", haystack.replace("-", "").replace("_", "")):
+                return True
+        elif compact and re.search(rf"(?<![a-z0-9]){re.escape(compact)}(?![a-z0-9])", haystack.replace("-", "").replace("_", "")):
+            return True
+    return False
+
+
+def _is_section_hub_url(url: str) -> bool:
+    """Reject district/section hub pages that are not article detail URLs."""
+    path = (urlparse(url).path or "").strip("/")
+    if not path:
+        return True
+    parts = path.split("/")
+    # e.g. andhra-pradesh/palnadu or andhra-pradesh/amaravati
+    if len(parts) <= 2 and not re.search(r"\d{5,}", parts[-1]):
+        return True
+    slug = parts[-1]
+    # Real Sakshi articles usually have long slugs and/or numeric ids
+    if len(slug) < 20 and not re.search(r"\d{5,}", slug):
+        return True
+    return False
+
+
+def _link_priority(url: str, anchor_text: str = "", keywords: list[str] | None = None) -> int:
+    """
+    Higher score = fetch earlier.
+
+    Sakshi tag pages embed homepage/sidebar noise ahead of tagged stories.
+    Constituency location tokens in the URL/anchor rank highest; non-local
+    sections (sports/national/…) rank lowest unless they carry a location token.
+    """
+    keywords = keywords or _load_url_priority_keywords()
+    path = (urlparse(url).path or "").lower()
+    has_location = _url_has_location_keyword(url, anchor_text, keywords)
+
+    if has_location:
+        return 100
+    if any(marker in path for marker in sakshi_config.NON_LOCAL_URL_PATH_MARKERS):
+        return 0
+    if any(x in path for x in ("/andhra-pradesh/", "/politics/", "/crime/", "/guntur/", "/palnadu/")):
+        return 40
+    if "/telugu-news/" in path or "/news/" in path:
+        return 20
+    return 10
 
 
 def _stable_article_id(url: str) -> str:
@@ -166,6 +275,7 @@ class SakshiCollector(BaseCollector):
         existing_urls: set[str] | None = None,
         request_delay: float | None = None,
         max_articles: int | None = None,
+        validator: ConstituencyValidator | None = None,
     ) -> None:
         self.session = session or _session()
         self.existing_urls = existing_urls or set()
@@ -175,16 +285,25 @@ class SakshiCollector(BaseCollector):
         self.max_articles = (
             sakshi_config.SAKSHI_MAX_ARTICLES_PER_RUN if max_articles is None else max_articles
         )
+        self.validator = validator or get_validator()
+        self.filter_stats: dict[str, Any] = {
+            "fetched": 0,
+            "accepted": 0,
+            "rejected": 0,
+            "rejected_reasons": {},
+            "scores": [],
+        }
 
     def fetch_links(self) -> list[str]:
         logger.info("Starting Sakshi collector")
         logger.info("Tag page download: %s", sakshi_config.SAKSHI_TAG_URL)
         html = _get_html(self.session, sakshi_config.SAKSHI_TAG_URL)
         soup = BeautifulSoup(html, "lxml")
-        found: list[str] = []
+        ranked: list[tuple[int, int, str]] = []
         seen: set[str] = set()
+        keywords = _load_url_priority_keywords()
 
-        for anchor in soup.select(sakshi_config.SAKSHI_ARTICLE_LINK_SELECTOR):
+        for index, anchor in enumerate(soup.select(sakshi_config.SAKSHI_ARTICLE_LINK_SELECTOR)):
             href = (anchor.get("href") or "").strip()
             if not href:
                 continue
@@ -194,10 +313,24 @@ class SakshiCollector(BaseCollector):
                 continue
             if not _is_article_url(absolute):
                 continue
+            if _is_section_hub_url(absolute):
+                continue
             seen.add(absolute)
-            found.append(absolute)
+            anchor_text = " ".join(anchor.get_text(" ", strip=True).split())
+            priority = _link_priority(absolute, anchor_text, keywords)
+            # Skip clear non-local noise unless URL carries a location keyword.
+            if priority <= 0:
+                continue
+            ranked.append((priority, -index, absolute))
 
-        logger.info("%s links found", len(found))
+        ranked.sort(reverse=True)
+        found = [url for _, _, url in ranked]
+        high = sum(1 for p, _, _ in ranked if p >= 100)
+        logger.info(
+            "%s links found after constituency URL ranking (%s location-priority)",
+            len(found),
+            high,
+        )
         return found
 
     def fetch_article(self, url: str) -> dict[str, Any] | None:
@@ -289,6 +422,7 @@ class SakshiCollector(BaseCollector):
         content = (raw.get("content") or "").strip()
         published = raw.get("published_at") or datetime.now(timezone.utc).isoformat()
         article_id = _stable_article_id(url)
+        validation = raw.get("_constituency_validation") or {}
 
         return {
             "id": article_id,
@@ -313,6 +447,8 @@ class SakshiCollector(BaseCollector):
             "url": url,
             "language": "te",
             "channel": "Sakshi",
+            "constituency_score": validation.get("score"),
+            "constituency_match_reason": validation.get("reason"),
         }
 
     def collect(self) -> list[dict[str, Any]]:
@@ -322,15 +458,54 @@ class SakshiCollector(BaseCollector):
         logger.info("%s new articles to fetch (of %s links)", len(pending), len(links))
 
         articles: list[dict[str, Any]] = []
+        self.filter_stats = {
+            "fetched": 0,
+            "accepted": 0,
+            "rejected": 0,
+            "rejected_reasons": {},
+            "scores": [],
+        }
+
         for index, url in enumerate(pending):
             if index > 0 and self.request_delay > 0:
                 time.sleep(self.request_delay)
             raw = self.fetch_article(url)
             if not raw:
                 continue
+
+            self.filter_stats["fetched"] += 1
+            validation = self.validator.validate_article(raw)
+            self.filter_stats["scores"].append(validation.score)
+
+            if not validation.valid:
+                self.filter_stats["rejected"] += 1
+                reasons = self.filter_stats["rejected_reasons"]
+                reasons[validation.reason] = reasons.get(validation.reason, 0) + 1
+                logger.info(
+                    "Rejected Sakshi article | score=%s | reason=%s | title=%r",
+                    validation.score,
+                    validation.reason,
+                    (raw.get("title") or "")[:80],
+                )
+                continue
+
+            self.filter_stats["accepted"] += 1
+            raw["_constituency_validation"] = validation.to_dict()
+            logger.info(
+                "Accepted Sakshi article | score=%s | reason=%s | title=%r",
+                validation.score,
+                validation.reason,
+                (raw.get("title") or "")[:80],
+            )
             articles.append(self.normalize(raw))
 
-        logger.info("Finished Sakshi collect | articles=%s", len(articles))
+        logger.info(
+            "Finished Sakshi collect | fetched=%s | accepted=%s | rejected=%s | articles=%s",
+            self.filter_stats["fetched"],
+            self.filter_stats["accepted"],
+            self.filter_stats["rejected"],
+            len(articles),
+        )
         return articles
 
 
@@ -339,8 +514,9 @@ def collect_sakshi_articles(
     existing_urls: set[str] | None = None,
     request_delay: float | None = None,
     max_articles: int | None = None,
+    collector_out: list | None = None,
 ) -> list[dict[str, Any]]:
-    """Public collector entry: returns normalized Sakshi articles only."""
+    """Public collector entry: returns normalized constituency-validated Sakshi articles only."""
     urls = existing_urls
     if urls is None:
         try:
@@ -356,14 +532,22 @@ def collect_sakshi_articles(
         request_delay=request_delay,
         max_articles=max_articles,
     )
-    return collector.collect()
+    articles = collector.collect()
+    if collector_out is not None:
+        collector_out.append(collector)
+    return articles
 
 
 def get_output_path() -> Path:
     return sakshi_config.SAKSHI_OUTPUT_FILE
 
 
-def save_json(articles: list[dict[str, Any]], output_path: Path | None = None) -> Path:
+def save_json(
+    articles: list[dict[str, Any]],
+    output_path: Path | None = None,
+    *,
+    filter_stats: dict[str, Any] | None = None,
+) -> Path:
     import json
 
     path = output_path or get_output_path()
@@ -374,6 +558,7 @@ def save_json(articles: list[dict[str, Any]], output_path: Path | None = None) -
         "source": sakshi_config.SAKSHI_TAG_URL,
         "source_name": "sakshi",
         "total_articles": len(articles),
+        "filter_stats": filter_stats or {},
         "articles": articles,
     }
     path.write_text(json.dumps(envelope, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -384,8 +569,16 @@ def save_json(articles: list[dict[str, Any]], output_path: Path | None = None) -
 def run() -> Path:
     """Collect Sakshi articles and write the JSON envelope used by the analyzer."""
     started = time.perf_counter()
-    articles = collect_sakshi_articles()
-    path = save_json(articles)
+    holders: list[SakshiCollector] = []
+    articles = collect_sakshi_articles(collector_out=holders)
+    filter_stats = holders[0].filter_stats if holders else {}
+    path = save_json(articles, filter_stats=filter_stats)
     duration = time.perf_counter() - started
-    logger.info("Sakshi collector duration=%.2fs", duration)
+    logger.info(
+        "Sakshi collector duration=%.2fs | fetched=%s | accepted=%s | rejected=%s",
+        duration,
+        filter_stats.get("fetched", 0),
+        filter_stats.get("accepted", 0),
+        filter_stats.get("rejected", 0),
+    )
     return path

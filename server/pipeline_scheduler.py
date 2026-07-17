@@ -212,13 +212,18 @@ def _job(trigger: str = "interval") -> None:
             }
         )
         # Per-source markers for health endpoint / dashboard.
+        sakshi_stats = stats.get("sakshi") or {}
         pipeline_state.update_state(
             {
                 "last_sakshi_run": finished.isoformat(),
                 "last_sakshi_articles": int(stats.get("sakshi_processed") or 0),
                 "last_lokal_articles": int(stats.get("lokal_processed") or 0),
                 "last_youtube_articles": int(stats.get("youtube_processed") or 0),
-                "sakshi_last_errors": list((stats.get("sakshi") or {}).get("errors") or [])[:10],
+                "sakshi_fetched": int(sakshi_stats.get("fetched") or 0),
+                "sakshi_accepted": int(sakshi_stats.get("accepted") or 0),
+                "sakshi_rejected": int(sakshi_stats.get("rejected") or 0),
+                "sakshi_rejected_reasons": dict(sakshi_stats.get("rejected_reasons") or {}),
+                "sakshi_last_errors": list(sakshi_stats.get("errors") or [])[:10],
                 "lokal_last_errors": list((stats.get("lokal") or {}).get("errors") or [])[:10],
                 "youtube_last_errors": list((stats.get("youtube") or {}).get("errors") or [])[:10],
             }
@@ -394,6 +399,14 @@ def health_snapshot() -> dict[str, Any]:
         },
         "last_sakshi_run": state.get("last_sakshi_run"),
         "last_sakshi_articles": state.get("last_sakshi_articles") or 0,
+        "sakshi": {
+            "fetched": state.get("sakshi_fetched") or 0,
+            "accepted": state.get("sakshi_accepted") or 0,
+            "rejected": state.get("sakshi_rejected") or 0,
+            "last_run": state.get("last_sakshi_run"),
+            "inserted_last_run": state.get("last_sakshi_articles") or 0,
+            "rejected_reasons": state.get("sakshi_rejected_reasons") or {},
+        },
     }
 
 

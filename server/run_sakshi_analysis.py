@@ -129,6 +129,10 @@ def run_cycle() -> tuple[int, dict]:
         "duplicates": 0,
         "total": 0,
         "articles_fetched": 0,
+        "fetched": 0,
+        "accepted": 0,
+        "rejected": 0,
+        "rejected_reasons": {},
         "errors": [],
     }
 
@@ -140,14 +144,27 @@ def run_cycle() -> tuple[int, dict]:
     stats = dict(empty)
 
     try:
-        logger.info("Collecting Sakshi")
+        logger.info("Collecting Sakshi (constituency-filtered)")
         collector_path = retry_call(sakshi_collector.run, label="sakshi.collector")
         payload = json.loads(Path(collector_path).read_text(encoding="utf-8"))
         articles = payload.get("articles") or []
+        filter_stats = payload.get("filter_stats") or {}
         stats["articles_fetched"] = len(articles)
+        stats["fetched"] = int(filter_stats.get("fetched") or len(articles))
+        stats["accepted"] = int(filter_stats.get("accepted") or len(articles))
+        stats["rejected"] = int(filter_stats.get("rejected") or 0)
+        stats["rejected_reasons"] = dict(filter_stats.get("rejected_reasons") or {})
+
+        logger.info(
+            "Sakshi filter | fetched=%s | accepted=%s | rejected=%s | reasons=%s",
+            stats["fetched"],
+            stats["accepted"],
+            stats["rejected"],
+            stats["rejected_reasons"],
+        )
 
         if not articles:
-            logger.info("No new Sakshi articles to analyze this cycle.")
+            logger.info("No constituency-valid Sakshi articles to analyze this cycle.")
             return 0, stats
 
         article_path = generate_article_txt_from_json(
@@ -201,8 +218,11 @@ def run_cycle() -> tuple[int, dict]:
 
         elapsed = time.perf_counter() - started_at
         logger.info(
-            "Sakshi cycle complete | articles: %s | inserted=%s | duplicates=%s | elapsed: %.2fs",
-            stats["total"],
+            "Sakshi cycle complete | fetched=%s | accepted=%s | rejected=%s | "
+            "inserted=%s | duplicates=%s | elapsed: %.2fs",
+            stats["fetched"],
+            stats["accepted"],
+            stats["rejected"],
             stats["inserted"],
             stats["duplicates"],
             elapsed,

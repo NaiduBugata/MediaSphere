@@ -20,6 +20,8 @@ from database.mongo import (
     upsert_sakshi_articles,
     get_existing_youtube_video_ids,
     get_existing_sakshi_urls,
+    delete_sakshi_articles,
+    count_by_source,
     filter_new_youtube_articles,
     build_postid_map,
     build_youtube_postid_map,

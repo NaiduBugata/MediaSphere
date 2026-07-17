@@ -38,6 +38,9 @@ SAKSHI_REQUEST_DELAY_SECONDS = max(0.5, _float_env("SAKSHI_REQUEST_DELAY_SECONDS
 SAKSHI_TIMEOUT_SECONDS = max(5, _int_env("SAKSHI_TIMEOUT_SECONDS", 30))
 SAKSHI_MAX_ARTICLES_PER_RUN = max(1, _int_env("SAKSHI_MAX_ARTICLES_PER_RUN", 20))
 SAKSHI_MAX_RETRIES = max(1, _int_env("SAKSHI_MAX_RETRIES", 3))
+SAKSHI_CONSTITUENCY_SCORE_THRESHOLD = max(1, _int_env("SAKSHI_CONSTITUENCY_SCORE_THRESHOLD", 6))
+SAKSHI_AI_VALIDATION = _truthy("SAKSHI_AI_VALIDATION", "true")
+LOCATION_DICTIONARY_PATH = BASE_DIR / "config" / "location_dictionary.json"
 SAKSHI_OUTPUT_DIR = DATA_DIR / "sakshi"
 SAKSHI_OUTPUT_FILE = SAKSHI_OUTPUT_DIR / "narasaraopet_news.json"
 SAKSHI_ARTICLE_PATH = SAKSHI_OUTPUT_DIR / "article.txt"
@@ -76,4 +79,22 @@ SKIP_URL_SUBSTRINGS = (
     "javascript:",
     "mailto:",
     "#",
+)
+
+# Tag pages mix homepage/sidebar noise. Deprioritize these paths unless the URL
+# itself contains a constituency location keyword.
+NON_LOCAL_URL_PATH_MARKERS = (
+    "/sports/",
+    "/business/",
+    "/cartoon/",
+    "/national/",
+    "/international/",
+    "/family/",
+    "/cinema/",
+    "/entertainment/",
+    "/technology/",
+    "/astrology/",
+    "/movies/",
+    "/tollywood/",
+    "/editorial/",
 )
