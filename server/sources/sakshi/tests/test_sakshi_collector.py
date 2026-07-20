@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-SERVER_DIR = Path(__file__).resolve().parents[1]
+SERVER_DIR = Path(__file__).resolve().parents[3]
 if str(SERVER_DIR) not in sys.path:
     sys.path.insert(0, str(SERVER_DIR))
 
@@ -20,12 +20,12 @@ os.environ.setdefault("GROQ_API_KEY_1", "test-key")
 os.environ.setdefault("SAKSHI_ENABLED", "true")
 
 from api_server import app  # noqa: E402
-from collectors.sakshi.collector import (  # noqa: E402
+from sources.sakshi.collector import (  # noqa: E402
     PermanentHttpError,
     SakshiCollector,
     _get_html,
-    _is_article_url,
 )
+from sources.sakshi.parser import _is_article_url  # noqa: E402
 import mongo_store  # noqa: E402
 import pipeline_scheduler  # noqa: E402
 import run_all_pipelines  # noqa: E402
@@ -38,7 +38,7 @@ class SakshiLinkExtractionTests(unittest.TestCase):
         html = (FIXTURES / "tag_page.html").read_text(encoding="utf-8")
         collector = SakshiCollector(request_delay=0, max_articles=20, existing_urls=set())
         with patch.object(collector, "session"), patch(
-            "collectors.sakshi.collector._get_html", return_value=html
+            "sources.sakshi.collector._get_html", return_value=html
         ):
             links = collector.fetch_links()
         self.assertEqual(len(links), 2)
@@ -60,7 +60,7 @@ class SakshiArticleParseTests(unittest.TestCase):
         html = (FIXTURES / "article_page.html").read_text(encoding="utf-8")
         url = "https://www.sakshi.com/news/andhra-pradesh/narasaraopet-road-works-12345"
         collector = SakshiCollector(request_delay=0, existing_urls=set())
-        with patch("collectors.sakshi.collector._get_html", return_value=html):
+        with patch("sources.sakshi.collector._get_html", return_value=html):
             raw = collector.fetch_article(url)
         self.assertIsNotNone(raw)
         assert raw is not None

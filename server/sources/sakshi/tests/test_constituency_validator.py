@@ -2,18 +2,17 @@
 
 from __future__ import annotations
 
-import os
 import sys
 import json
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-SERVER_DIR = Path(__file__).resolve().parents[2]
+SERVER_DIR = Path(__file__).resolve().parents[3]
 if str(SERVER_DIR) not in sys.path:
     sys.path.insert(0, str(SERVER_DIR))
 
-from collectors.sakshi.constituency_validator import (  # noqa: E402
+from sources.sakshi.validator import (  # noqa: E402
     ConstituencyValidator,
     build_searchable_text,
 )
@@ -146,7 +145,7 @@ class ConstituencyValidatorTests(unittest.TestCase):
         self.assertIn("News", text)
 
     def test_url_priority_does_not_match_ipur_inside_jaipur(self) -> None:
-        from collectors.sakshi.collector import _link_priority, _url_has_location_keyword
+        from sources.sakshi.parser import _link_priority, _url_has_location_keyword
 
         keywords = ["Ipur", "Ipuru", "Narasaraopet", "Palnadu"]
         jaipur = "https://www.sakshi.com/telugu-news/national/jaipur-woman-contract-killers"

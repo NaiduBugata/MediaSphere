@@ -1,6 +1,6 @@
-"""Base collector framework: ABC, registry, and manager."""
+"""Legacy shim — canonical framework lives in ``sources.base``."""
 
-from collectors.base.base_collector import BaseCollector
-from collectors.base.registry import register, all_collectors, enabled_collectors
+from sources.base.base_collector import BaseCollector
+from sources.base.registry import register, all_collectors, enabled_collectors
 
 __all__ = ["BaseCollector", "register", "all_collectors", "enabled_collectors"]

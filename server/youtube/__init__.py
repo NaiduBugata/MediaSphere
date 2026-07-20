@@ -1,5 +1,5 @@
-"""YouTube Telugu news collector for MediaSphere."""
+"""Legacy shim — canonical YouTube collector lives in ``sources.youtube``."""
 
-from .collector import get_output_path, run
+from sources.youtube.collector import get_output_path, run
 
 __all__ = ["get_output_path", "run"]
