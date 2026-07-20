@@ -139,8 +139,9 @@ class SakshiCollector(BaseCollector):
             seen.add(absolute)
             anchor_text = " ".join(anchor.get_text(" ", strip=True).split())
             priority = _link_priority(absolute, anchor_text, keywords)
-            # Skip clear non-local noise unless URL carries a location keyword.
-            if priority <= 0:
+            # Only fetch links that mention a PC place name in the URL/anchor.
+            # Sidebar/homepage noise (priority 10–40) is dropped before download.
+            if priority < 100:
                 continue
             ranked.append((priority, -index, absolute))
 

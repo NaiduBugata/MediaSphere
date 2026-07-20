@@ -50,13 +50,18 @@ services:
         value: "1.5"
       - key: SAKSHI_MAX_ARTICLES_PER_RUN
         value: "20"
-      # Emails are handled separately; keep off on the web service by default.
+      # Incremental alerts + daily 07:00 IST digest via Resend (SMTP blocked on free tier).
+      # Set secrets in Dashboard: RESEND_API_KEY, REPORT_RECIPIENTS, SMTP_FROM_EMAIL (verified domain/sender).
       - key: EMAIL_ENABLED
-        value: false
+        value: true
+      - key: EMAIL_PROVIDER
+        value: resend
       - key: REPORT_SCHEDULER_ON_API
-        value: false
+        value: true
       - key: REPORT_CATCHUP_ON_START
         value: false
+      - key: REPORT_CONSTITUENCY
+        value: Narasaraopet
       # WhatsApp Cloud API webhook (secrets set in Render Dashboard only).
       - key: WHATSAPP_WEBHOOK_ENABLED
         value: true

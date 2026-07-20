@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
+from sources.base.constituency_validator import filter_articles_by_constituency
 from sources.lokal.api import create_session
 from sources.lokal.config import CHECK_INTERVAL
 from sources.lokal.constants import (
@@ -79,11 +80,16 @@ def run() -> None:
         session = create_session()
         raw_articles = fetch_last_24hr_news(session)
         articles, duplicates_removed = remove_duplicates(raw_articles)
+        articles, constituency_rejected = filter_articles_by_constituency(
+            articles,
+            source_label="lokal",
+        )
         output_path = get_output_path()
         save_json(articles, output_path)
 
         elapsed = time.perf_counter() - started_at
         logger.info("Duplicates removed: %s", duplicates_removed)
+        logger.info("Constituency rejected: %s", constituency_rejected)
         logger.info("Total saved: %s", len(articles))
         logger.info("Execution time: %.2f seconds", elapsed)
     except Exception as exc:

@@ -43,7 +43,8 @@ class SakshiLinkExtractionTests(unittest.TestCase):
             links = collector.fetch_links()
         self.assertEqual(len(links), 2)
         self.assertTrue(any("narasaraopet-road-works" in u for u in links))
-        self.assertTrue(any("local-school-reopens" in u for u in links))
+        self.assertTrue(any("local-school-reopens-narasaraopet" in u for u in links))
+        self.assertFalse(any("iran-alert" in u for u in links))
         self.assertFalse(any("/videos/" in u for u in links))
         self.assertFalse(any("example.com" in u for u in links))
 

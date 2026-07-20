@@ -7,6 +7,7 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
+from sources.base.constituency_validator import filter_articles_by_constituency
 from sources.youtube import config
 from sources.youtube.channels import run_search
 from sources.youtube.normalizer import normalize_video
@@ -51,6 +52,11 @@ def run(days: int | None = None) -> Path:
         articles.append(normalize_video(item, result["clean_text"]))
         news_count += 1
 
+    articles, constituency_rejected = filter_articles_by_constituency(
+        articles,
+        source_label="youtube",
+    )
+
     envelope = {
         "source": "youtube",
         "fetched_at": datetime.now(timezone.utc).isoformat(),
@@ -62,10 +68,13 @@ def run(days: int | None = None) -> Path:
         json.dump(envelope, f, ensure_ascii=False, indent=2)
 
     logger.info(
-        "YouTube collector done | transcripts: %d | news: %d | filtered: %d | output: %s",
+        "YouTube collector done | transcripts: %d | news: %d | non-news: %d | "
+        "constituency_rejected: %d | saved: %d | output: %s",
         len(transcripts),
         news_count,
         filtered_count,
+        constituency_rejected,
+        len(articles),
         config.NEWS_JSON,
     )
     return config.NEWS_JSON

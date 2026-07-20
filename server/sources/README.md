@@ -1,8 +1,11 @@
 # sources/
 
-Canonical home for all MediaSphere news-source collectors. Each source is a
-self-contained package with a consistent internal layout, so new sources can be
-added without touching the scheduler or pipeline.
+Each collector applies the shared Narasaraopet Parliamentary Constituency
+filter (`sources.base.constituency_validator`) before saving articles:
+
+- **Sakshi** — tag URL + location-priority links + content validator
+- **Lokal** — API tag feed + content validator
+- **YouTube** — place-name search + news cleaner + content validator
 
 ```
 sources/

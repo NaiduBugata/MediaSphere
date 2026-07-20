@@ -155,7 +155,7 @@ def send_report(
     """Send the report email with retry. Returns (success, attempts, error_message)."""
     if not config.EMAIL_ENABLED:
         logger.info("Email delivery disabled (EMAIL_ENABLED=false); skipping send.")
-        return True, 0, None
+        return False, 0, "EMAIL_ENABLED=false"
 
     provider = resolve_provider()
     to = recipients or config.REPORT_RECIPIENTS
