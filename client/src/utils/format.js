@@ -82,26 +82,61 @@ export function isYesterday(value) {
 }
 
 export const SENTIMENT_COLORS = {
-  Positive: { bg: 'bg-primary-50', text: 'text-primary-800', border: 'border-primary-200' },
-  Negative: { bg: 'bg-gray-100', text: 'text-gray-800', border: 'border-gray-300' },
-  Neutral: { bg: 'bg-secondary-100', text: 'text-gray-600', border: 'border-gray-200' },
-  Statement: { bg: 'bg-secondary', text: 'text-gray-700', border: 'border-gray-200' },
+  Positive: { bg: 'bg-success/15', text: 'text-success', border: 'border-success/30' },
+  Negative: { bg: 'bg-danger/15', text: 'text-danger', border: 'border-danger/30' },
+  Neutral: { bg: 'bg-app', text: 'text-muted', border: 'border-app' },
+  Statement: { bg: 'bg-primary/10', text: 'text-primary', border: 'border-primary/20' },
 };
 
 export const CATEGORY_COLORS = {
-  Employment: 'bg-primary-100 text-primary-800',
-  Transport: 'bg-primary-50 text-primary-700',
-  Agriculture: 'bg-primary-100 text-primary-900',
-  Health: 'bg-primary-50 text-primary-800',
-  Education: 'bg-primary-100 text-primary-800',
-  Roads: 'bg-primary-50 text-primary-700',
-  Infrastructure: 'bg-primary-100 text-primary-900',
-  Politics: 'bg-gray-100 text-gray-800',
-  Water: 'bg-primary-50 text-primary-800',
-  Crime: 'bg-gray-200 text-gray-900',
-  'Social Welfare': 'bg-primary-50 text-primary-700',
-  Other: 'bg-secondary-100 text-gray-700',
+  Employment: 'bg-primary/10 text-primary',
+  Transport: 'bg-primary/10 text-primary',
+  Agriculture: 'bg-success/15 text-success',
+  Health: 'bg-danger/10 text-danger',
+  Education: 'bg-warning/15 text-warning',
+  Roads: 'bg-primary/10 text-primary',
+  Infrastructure: 'bg-primary/10 text-primary',
+  Politics: 'bg-app text-muted',
+  Water: 'bg-primary/10 text-primary',
+  'Water Supply': 'bg-primary/10 text-primary',
+  Crime: 'bg-danger/15 text-danger',
+  'Social Welfare': 'bg-primary/10 text-primary',
+  'Women & Child Welfare': 'bg-primary/10 text-primary',
+  Electricity: 'bg-warning/15 text-warning',
+  Drainage: 'bg-primary/10 text-primary',
+  Environment: 'bg-success/15 text-success',
+  'Government Schemes': 'bg-primary/10 text-primary',
+  Youth: 'bg-primary/10 text-primary',
+  Other: 'bg-app text-muted',
 };
+
+/** Constituency-focused display labels for issue categories (filter values unchanged). */
+const CATEGORY_LABELS = {
+  Roads: 'Roads',
+  Water: 'Water Supply',
+  'Water Supply': 'Water Supply',
+  Agriculture: 'Agriculture',
+  Health: 'Health',
+  Education: 'Education',
+  Transport: 'Transport',
+  Crime: 'Crime',
+  'Government Schemes': 'Government Schemes',
+  Employment: 'Employment',
+  Electricity: 'Electricity',
+  Drainage: 'Drainage',
+  Environment: 'Environment',
+  Politics: 'Politics',
+  'Social Welfare': 'Women & Child Welfare',
+  'Women & Child Welfare': 'Women & Child Welfare',
+  Youth: 'Youth',
+  Infrastructure: 'Infrastructure',
+  Other: 'Other',
+};
+
+export function formatCategoryLabel(category) {
+  if (!category) return 'Other';
+  return CATEGORY_LABELS[category] || category;
+}
 
 export function getCategoryColor(category) {
   return CATEGORY_COLORS[category] || CATEGORY_COLORS.Other;

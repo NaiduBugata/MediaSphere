@@ -1,13 +1,15 @@
-import { FiInbox } from 'react-icons/fi';
+import { Inbox } from 'lucide-react';
 
-export default function EmptyState({ title = 'No data available', message = 'There are no articles to display at this time.' }) {
+export default function EmptyState({ title, message }) {
   return (
-    <div className="flex flex-col items-center justify-center py-16 text-center">
-      <div className="mb-4 rounded-full bg-secondary-100 p-4">
-        <FiInbox className="h-8 w-8 text-gray-400" />
+    <div className="flex flex-col items-center justify-center gap-3 py-12 px-6 text-center">
+      <div className="rounded-full bg-app p-3 border border-app">
+        <Inbox className="h-7 w-7 text-muted" />
       </div>
-      <h3 className="text-base font-semibold text-gray-800">{title}</h3>
-      <p className="mt-1 max-w-sm text-sm text-gray-500">{message}</p>
+      <div>
+        <h3 className="text-base font-semibold text-app">{title || 'Nothing here'}</h3>
+        {message && <p className="mt-1 text-sm text-muted max-w-sm">{message}</p>}
+      </div>
     </div>
   );
 }

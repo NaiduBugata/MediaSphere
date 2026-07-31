@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { FiChevronDown, FiChevronUp, FiExternalLink } from 'react-icons/fi';
-import SentimentBadge from './common/SentimentBadge';
-import CategoryChip from './common/CategoryChip';
-import SourceBadge from './common/SourceBadge';
-import EmptyState from './common/EmptyState';
-import { formatDate, getArticleSortTime, safeString } from '../utils/format';
+import { ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
+import SentimentBadge from '../common/SentimentBadge';
+import CategoryChip from '../common/CategoryChip';
+import SourceBadge from '../common/SourceBadge';
+import EmptyState from '../common/EmptyState';
+import { formatDate, getArticleSortTime, safeString } from '../../utils/format';
 
 const PAGE_SIZE = 10;
 const SORTABLE = ['title', 'category', 'sentiment', 'created_on'];
@@ -14,12 +14,12 @@ function SortHeader({ field, label, sortField, sortDir, onSort }) {
   return (
     <th
       scope="col"
-      className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer select-none hover:text-primary"
+      className="px-4 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider cursor-pointer select-none hover:text-primary"
       onClick={() => onSort(field)}
     >
       <span className="inline-flex items-center gap-1">
         {label}
-        {active && (sortDir === 'asc' ? <FiChevronUp className="h-3 w-3" /> : <FiChevronDown className="h-3 w-3" />)}
+        {active && (sortDir === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />)}
       </span>
     </th>
   );
@@ -83,35 +83,35 @@ export default function NewsTable({ articles, onViewDetails }) {
     <section aria-label="Latest news">
       <div className="flex items-center justify-between mb-4">
         <h2 className="section-title">Latest News</h2>
-        <span className="text-sm text-gray-500">{articles.length} articles</span>
+        <span className="text-sm text-muted">{articles.length} articles</span>
       </div>
 
       <div className="card overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
+          <table className="min-w-full divide-y divide-[rgb(var(--color-border))]">
             <thead className="bg-secondary">
               <tr>
                 <SortHeader field="title" label="Title" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
-                <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Channel</th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider">Channel</th>
                 <SortHeader field="category" label="Category" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
                 <SortHeader field="sentiment" label="Sentiment" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
-                <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider hidden md:table-cell">District</th>
-                <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider hidden lg:table-cell">Mandal</th>
-                <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider hidden lg:table-cell">Village</th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider hidden md:table-cell">District</th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider hidden lg:table-cell">Mandal</th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider hidden lg:table-cell">Village</th>
                 <SortHeader field="created_on" label="Date" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
-                <th scope="col" className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Action</th>
+                <th scope="col" className="px-4 py-3 text-right text-xs font-semibold text-muted uppercase tracking-wider">Action</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100 bg-white">
+            <tbody className="divide-y divide-[rgb(var(--color-border))] bg-surface">
               {paginated.map((article) => (
-                <tr key={article._id || article.post_id} className="hover:bg-secondary/50 transition-colors">
-                  <td className="px-4 py-3 text-sm font-medium text-gray-900 max-w-xs">
+                <tr key={article._id || article.post_id} className="hover:bg-app/50 transition-colors">
+                  <td className="px-4 py-3 text-sm font-medium text-app max-w-xs">
                     <div className="flex items-start gap-2 min-w-0">
                       <SourceBadge source={article.source} />
                       <span className="truncate">{safeString(article.title, 'Untitled')}</span>
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-600 max-w-[140px] truncate hidden sm:table-cell">
+                  <td className="px-4 py-3 text-sm text-muted max-w-[140px] truncate hidden sm:table-cell">
                     {article.source === 'youtube'
                       ? safeString(article.channel, '—')
                       : article.source === 'sakshi'
@@ -124,16 +124,16 @@ export default function NewsTable({ articles, onViewDetails }) {
                   <td className="px-4 py-3">
                     <SentimentBadge sentiment={article.sentiment} />
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-600 hidden md:table-cell">
+                  <td className="px-4 py-3 text-sm text-muted hidden md:table-cell">
                     {safeString(article.location?.district)}
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-600 hidden lg:table-cell">
+                  <td className="px-4 py-3 text-sm text-muted hidden lg:table-cell">
                     {safeString(article.location?.mandal)}
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-600 hidden lg:table-cell">
+                  <td className="px-4 py-3 text-sm text-muted hidden lg:table-cell">
                     {safeString(article.location?.village)}
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">
+                  <td className="px-4 py-3 text-sm text-muted whitespace-nowrap">
                     {formatDate(article.created_on)}
                   </td>
                   <td className="px-4 py-3 text-right">
@@ -143,7 +143,7 @@ export default function NewsTable({ articles, onViewDetails }) {
                       className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
                     >
                       View
-                      <FiExternalLink className="h-3 w-3" />
+                      <ExternalLink className="h-3 w-3" />
                     </button>
                   </td>
                 </tr>
@@ -153,8 +153,8 @@ export default function NewsTable({ articles, onViewDetails }) {
         </div>
 
         {totalPages > 1 && (
-          <div className="flex items-center justify-between border-t border-gray-200 px-4 py-3">
-            <p className="text-sm text-gray-500">
+          <div className="flex items-center justify-between border-t border-app px-4 py-3">
+            <p className="text-sm text-muted">
               Page {page} of {totalPages}
             </p>
             <div className="flex gap-2">
@@ -162,7 +162,7 @@ export default function NewsTable({ articles, onViewDetails }) {
                 type="button"
                 disabled={page <= 1}
                 onClick={() => setPage((p) => p - 1)}
-                className="rounded-md border border-gray-200 px-3 py-1.5 text-sm disabled:opacity-40 hover:bg-secondary transition-colors"
+                className="rounded-md border border-app px-3 py-1.5 text-sm disabled:opacity-40 hover:bg-app transition-colors"
               >
                 Previous
               </button>
@@ -170,7 +170,7 @@ export default function NewsTable({ articles, onViewDetails }) {
                 type="button"
                 disabled={page >= totalPages}
                 onClick={() => setPage((p) => p + 1)}
-                className="rounded-md border border-gray-200 px-3 py-1.5 text-sm disabled:opacity-40 hover:bg-secondary transition-colors"
+                className="rounded-md border border-app px-3 py-1.5 text-sm disabled:opacity-40 hover:bg-app transition-colors"
               >
                 Next
               </button>

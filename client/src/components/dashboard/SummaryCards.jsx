@@ -1,52 +1,57 @@
 import {
-  FiAlertTriangle,
-  FiFileText,
-  FiMinusCircle,
-  FiThumbsDown,
-  FiThumbsUp,
-} from 'react-icons/fi';
-import StatCard from './common/StatCard';
+  FileText,
+  MinusCircle,
+  ThumbsDown,
+  ThumbsUp,
+  TriangleAlert,
+} from 'lucide-react';
+import StatCard from '../common/StatCard';
 
-export default function SummaryCards({ stats }) {
+export default function SummaryCards({ stats, compact = false }) {
   const { total, positive, negative, statements, problems, changeSinceYesterday } = stats;
 
   const cards = [
     {
-      icon: FiFileText,
+      icon: FileText,
       label: 'Total News',
       count: total,
       change: changeSinceYesterday.total,
       highlight: true,
     },
     {
-      icon: FiThumbsUp,
-      label: 'Positive News',
+      icon: ThumbsUp,
+      label: 'Positive',
       count: positive,
       change: changeSinceYesterday.positive,
     },
     {
-      icon: FiThumbsDown,
-      label: 'Negative News',
+      icon: ThumbsDown,
+      label: 'Negative',
       count: negative,
       change: changeSinceYesterday.negative,
     },
     {
-      icon: FiAlertTriangle,
-      label: 'Problems Identified',
+      icon: TriangleAlert,
+      label: 'Problems',
       count: problems,
       change: changeSinceYesterday.problems,
     },
     {
-      icon: FiMinusCircle,
-      label: 'Statements / General',
+      icon: MinusCircle,
+      label: 'Statements',
       count: statements,
       change: changeSinceYesterday.statements,
     },
   ];
 
   return (
-    <section aria-label="Summary statistics">
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+    <section aria-label="Quick stats" className="shrink-0">
+      {!compact && <h2 className="section-title mb-4">Quick Stats</h2>}
+      <div
+        className={`grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 items-stretch ${
+          compact ? 'gap-2' : 'gap-4'
+        }`}
+      >
         {cards.map((card) => (
           <StatCard
             key={card.label}
@@ -56,6 +61,7 @@ export default function SummaryCards({ stats }) {
             total={total}
             change={card.change}
             highlight={card.highlight}
+            compact={compact}
           />
         ))}
       </div>

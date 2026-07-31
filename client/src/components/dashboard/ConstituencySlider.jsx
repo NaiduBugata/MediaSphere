@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import { FiChevronLeft, FiChevronRight, FiBarChart2 } from 'react-icons/fi';
-import { formatDateTime, formatRelativeTime } from '../utils/format';
+import { ChevronLeft, ChevronRight, BarChart2 } from 'lucide-react';
+import { formatDateTime, formatRelativeTime } from '../../utils/format';
 
 const ROTATE_INTERVAL = 3500;
 
-export default function ConstituencySlider({ stats }) {
-  const slides = [
+export default function ConstituencySlider({ stats, maxSlides = 9 }) {
+  const allSlides = [
     { label: 'Total Articles Collected', value: stats.total },
     { label: 'Positive Developments', value: stats.positive },
     { label: 'Negative Developments', value: stats.negative },
@@ -20,6 +20,7 @@ export default function ConstituencySlider({ stats }) {
       detail: stats.latestTime ? formatDateTime(stats.latestTime) : null,
     },
   ];
+  const slides = allSlides.slice(0, maxSlides);
 
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
@@ -44,9 +45,9 @@ export default function ConstituencySlider({ stats }) {
         onMouseEnter={() => setPaused(true)}
         onMouseLeave={() => setPaused(false)}
       >
-        <div className="flex items-center justify-between gap-3 border-b border-gray-100 px-5 py-4 shrink-0">
+        <div className="flex items-center justify-between gap-3 border-b border-app px-5 py-4 shrink-0">
           <div className="flex items-center gap-2">
-            <FiBarChart2 className="h-5 w-5 text-primary" />
+            <BarChart2 className="h-5 w-5 text-primary" />
             <h2 className="section-title">Constituency Overview</h2>
           </div>
           <div className="flex items-center gap-1">
@@ -54,17 +55,17 @@ export default function ConstituencySlider({ stats }) {
               type="button"
               onClick={prev}
               aria-label="Previous"
-              className="rounded p-1.5 text-gray-400 hover:bg-secondary hover:text-primary transition-colors"
+              className="rounded p-1.5 text-muted hover:bg-app hover:text-primary transition-colors"
             >
-              <FiChevronLeft className="h-4 w-4" />
+              <ChevronLeft className="h-4 w-4" />
             </button>
             <button
               type="button"
               onClick={next}
               aria-label="Next"
-              className="rounded p-1.5 text-gray-400 hover:bg-secondary hover:text-primary transition-colors"
+              className="rounded p-1.5 text-muted hover:bg-app hover:text-primary transition-colors"
             >
-              <FiChevronRight className="h-4 w-4" />
+              <ChevronRight className="h-4 w-4" />
             </button>
           </div>
         </div>
@@ -79,12 +80,12 @@ export default function ConstituencySlider({ stats }) {
             {current.value}
           </p>
           {current.detail && (
-            <p className="mt-2 text-xs text-gray-400">{current.detail}</p>
+            <p className="mt-2 text-xs text-muted">{current.detail}</p>
           )}
-          <p className="mt-3 text-sm font-medium text-gray-500">{current.label}</p>
+          <p className="mt-3 text-sm font-medium text-muted">{current.label}</p>
         </div>
 
-        <div className="flex items-center justify-center gap-1.5 border-t border-gray-100 px-5 py-4 shrink-0">
+        <div className="flex items-center justify-center gap-1.5 border-t border-app px-5 py-4 shrink-0">
           {slides.map((slide, i) => (
             <button
               key={slide.label}

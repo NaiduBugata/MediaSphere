@@ -1,8 +1,9 @@
-import { FiAlertTriangle } from 'react-icons/fi';
-import CategoryChip from './common/CategoryChip';
-import SourceBadge from './common/SourceBadge';
-import EmptyState from './common/EmptyState';
-import { formatLocation, formatRelativeTime, truncate } from '../utils/format';
+import { Link } from 'react-router-dom';
+import { TriangleAlert } from 'lucide-react';
+import CategoryChip from '../common/CategoryChip';
+import SourceBadge from '../common/SourceBadge';
+import EmptyState from '../common/EmptyState';
+import { formatLocation, formatRelativeTime, truncate } from '../../utils/format';
 
 const PRIORITY_DOT = {
   High: 'bg-primary',
@@ -12,9 +13,9 @@ const PRIORITY_DOT = {
 
 function PriorityPill({ label, count, dotClass }) {
   return (
-    <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-secondary px-3 py-2">
+    <div className="flex items-center gap-2 rounded-lg border border-app bg-secondary px-3 py-2">
       <span className={`h-2 w-2 shrink-0 rounded-full ${dotClass}`} aria-hidden="true" />
-      <span className="text-xs font-medium text-gray-500">{label}</span>
+      <span className="text-xs font-medium text-muted">{label}</span>
       <span className="ml-auto text-sm font-bold text-primary">{count}</span>
     </div>
   );
@@ -28,7 +29,7 @@ function ProblemRow({ article, onViewDetails }) {
     <button
       type="button"
       onClick={() => onViewDetails(article)}
-      className={`group w-full text-left px-4 py-3.5 transition-colors hover:bg-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset ${
+      className={`group w-full text-left px-4 py-3.5 transition-colors hover:bg-app focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset ${
         isHigh ? 'border-l-2 border-l-primary bg-primary/[0.02]' : 'border-l-2 border-l-transparent'
       }`}
     >
@@ -38,19 +39,19 @@ function ProblemRow({ article, onViewDetails }) {
           aria-label={`${article.priority} priority`}
         />
         <div className="min-w-0 flex-1 space-y-1.5">
-          <p className="text-sm font-medium text-gray-900 leading-snug group-hover:text-primary transition-colors">
+          <p className="text-sm font-medium text-app leading-snug group-hover:text-primary transition-colors">
             {truncate(article.title, 90)}
           </p>
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <SourceBadge source={article.source} />
             <CategoryChip category={article.category} />
-            <span className="text-xs text-gray-400">·</span>
-            <span className="text-xs text-gray-500">{formatLocation(article.location)}</span>
-            <span className="text-xs text-gray-400">·</span>
-            <span className="text-xs text-gray-400">{formatRelativeTime(article.created_on)}</span>
+            <span className="text-xs text-muted">·</span>
+            <span className="text-xs text-muted">{formatLocation(article.location)}</span>
+            <span className="text-xs text-muted">·</span>
+            <span className="text-xs text-muted">{formatRelativeTime(article.created_on)}</span>
           </div>
         </div>
-        <span className="hidden sm:inline shrink-0 text-xs font-semibold text-gray-400 group-hover:text-primary transition-colors">
+        <span className="hidden sm:inline shrink-0 text-xs font-semibold text-muted group-hover:text-primary transition-colors">
           View →
         </span>
       </div>
@@ -58,21 +59,35 @@ function ProblemRow({ article, onViewDetails }) {
   );
 }
 
-export default function PriorityProblems({ problems, counts, total, onViewDetails }) {
-  const topProblems = (problems || []).slice(0, 6);
+export default function PriorityProblems({
+  problems,
+  counts,
+  total,
+  onViewDetails,
+  limit = 6,
+  showViewAll = false,
+}) {
+  const topProblems = (problems || []).slice(0, limit);
   const priorityCounts = counts || { High: 0, Medium: 0, Low: 0 };
 
   return (
     <section aria-label="Priority problems" className="flex-1 flex flex-col">
       <div className="card overflow-hidden flex-1 flex flex-col">
-        <div className="flex items-center justify-between gap-3 border-b border-gray-100 px-5 py-4">
+        <div className="flex items-center justify-between gap-3 border-b border-app px-5 py-4">
           <div className="flex items-center gap-2">
-            <FiAlertTriangle className="h-5 w-5 text-primary" />
+            <TriangleAlert className="h-5 w-5 text-primary" />
             <h2 className="section-title">Priority Problems</h2>
           </div>
-          <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
-            {total} total
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
+              {total} total
+            </span>
+            {showViewAll && total > 0 && (
+              <Link to="/problems" className="text-xs font-semibold text-primary hover:underline">
+                View all →
+              </Link>
+            )}
+          </div>
         </div>
 
         {total === 0 ? (
@@ -84,17 +99,17 @@ export default function PriorityProblems({ problems, counts, total, onViewDetail
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-3 gap-2 border-b border-gray-100 px-5 py-3 shrink-0">
+            <div className="grid grid-cols-3 gap-2 border-b border-app px-5 py-3 shrink-0">
               <PriorityPill label="High" count={priorityCounts.High} dotClass={PRIORITY_DOT.High} />
               <PriorityPill label="Medium" count={priorityCounts.Medium} dotClass={PRIORITY_DOT.Medium} />
               <PriorityPill label="Low" count={priorityCounts.Low} dotClass={PRIORITY_DOT.Low} />
             </div>
 
-            <p className="px-5 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400 shrink-0">
+            <p className="px-5 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted shrink-0">
               Top issues requiring attention
             </p>
 
-            <div className="flex-1 divide-y divide-gray-100">
+            <div className="flex-1 divide-y divide-[rgb(var(--color-border))]">
               {topProblems.map((article) => (
                 <ProblemRow
                   key={article._id || article.post_id}

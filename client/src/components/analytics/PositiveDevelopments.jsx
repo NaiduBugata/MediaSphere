@@ -1,8 +1,8 @@
-import { FiTrendingUp } from 'react-icons/fi';
-import CategoryChip from './common/CategoryChip';
-import SourceBadge from './common/SourceBadge';
-import EmptyState from './common/EmptyState';
-import { formatDate, formatLocation, truncate } from '../utils/format';
+import { TrendingUp } from 'lucide-react';
+import CategoryChip from '../common/CategoryChip';
+import SourceBadge from '../common/SourceBadge';
+import EmptyState from '../common/EmptyState';
+import { formatDate, formatLocation, truncate } from '../../utils/format';
 
 function PositiveCard({ article, onViewDetails }) {
   return (
@@ -13,13 +13,13 @@ function PositiveCard({ article, onViewDetails }) {
       role="button"
       tabIndex={0}
     >
-      <h3 className="text-sm font-semibold text-gray-900 leading-snug">{article.title}</h3>
-      <p className="text-sm text-gray-600 leading-relaxed">{truncate(article.summary, 140)}</p>
+      <h3 className="text-sm font-semibold text-app leading-snug">{article.title}</h3>
+      <p className="text-sm text-muted leading-relaxed">{truncate(article.summary, 140)}</p>
       <div className="flex flex-wrap items-center gap-2 mt-1">
         <SourceBadge source={article.source} />
         <CategoryChip category={article.category} />
-        <span className="text-xs text-gray-500">{formatLocation(article.location)}</span>
-        <span className="text-xs text-gray-400">{formatDate(article.created_on)}</span>
+        <span className="text-xs text-muted">{formatLocation(article.location)}</span>
+        <span className="text-xs text-muted">{formatDate(article.created_on)}</span>
       </div>
     </div>
   );
@@ -29,7 +29,7 @@ export default function PositiveDevelopments({ articles, onViewDetails }) {
   return (
     <section aria-label="Positive developments">
       <div className="flex items-center gap-2 mb-4">
-        <FiTrendingUp className="h-5 w-5 text-primary" />
+        <TrendingUp className="h-5 w-5 text-primary" />
         <h2 className="section-title">Positive Developments</h2>
       </div>
 

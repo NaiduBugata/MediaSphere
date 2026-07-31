@@ -1,5 +1,5 @@
+import { X } from 'lucide-react';
 import { useEffect } from 'react';
-import { FiX } from 'react-icons/fi';
 
 export default function Modal({ isOpen, onClose, title, children, wide = false }) {
   useEffect(() => {
@@ -20,7 +20,7 @@ export default function Modal({ isOpen, onClose, title, children, wide = false }
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
       <div
-        className="absolute inset-0 bg-gray-900/50"
+        className="absolute inset-0 bg-app/70 backdrop-blur-sm dark:bg-black/60"
         onClick={onClose}
         aria-hidden="true"
       />
@@ -28,19 +28,19 @@ export default function Modal({ isOpen, onClose, title, children, wide = false }
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"
-        className={`relative z-10 w-full ${wide ? 'max-w-3xl' : 'max-w-2xl'} max-h-[95vh] overflow-y-auto rounded-t-xl sm:rounded-xl bg-white shadow-xl`}
+        className={`relative z-10 w-full ${wide ? 'max-w-3xl' : 'max-w-2xl'} max-h-[95vh] overflow-y-auto rounded-t-card sm:rounded-card bg-surface border border-app shadow-lift`}
       >
-        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-200 bg-white px-5 py-4">
-          <h2 id="modal-title" className="text-lg font-semibold text-primary pr-4">
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-app bg-surface/95 backdrop-blur px-5 py-4">
+          <h2 id="modal-title" className="text-lg font-semibold text-app pr-4">
             {title}
           </h2>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+            className="rounded-control p-1.5 text-muted hover:bg-app hover:text-app transition-colors"
             aria-label="Close"
           >
-            <FiX className="h-5 w-5" />
+            <X className="h-5 w-5" />
           </button>
         </div>
         <div className="p-5">{children}</div>

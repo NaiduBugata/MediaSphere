@@ -7,6 +7,7 @@ const DEFAULT_FILTERS = {
   category: '',
   subcategory: '',
   sentiment: '',
+  priority: '',
   district: '',
   mandal: '',
   village: '',
@@ -42,7 +43,14 @@ export function useFilters(articles) {
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
 
   const setFilter = useCallback((key, value) => {
-    setFilters((prev) => ({ ...prev, [key]: value }));
+    setFilters((prev) => {
+      const next = { ...prev, [key]: value };
+      // Village depends on Mandal — reset village when mandal changes.
+      if (key === 'mandal' && prev.village) {
+        next.village = '';
+      }
+      return next;
+    });
   }, []);
 
   const resetFilters = useCallback(() => {
@@ -56,6 +64,7 @@ export function useFilters(articles) {
       if (filters.category && article.category !== filters.category) return false;
       if (filters.subcategory && article.subcategory !== filters.subcategory) return false;
       if (filters.sentiment && article.sentiment !== filters.sentiment) return false;
+      if (filters.priority && article.priority !== filters.priority) return false;
       if (filters.district && article.location?.district !== filters.district) return false;
       if (filters.mandal && article.location?.mandal !== filters.mandal) return false;
       if (filters.village && article.location?.village !== filters.village) return false;
