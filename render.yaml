@@ -66,12 +66,29 @@ services:
       - key: WHATSAPP_WEBHOOK_ENABLED
         value: true
       - key: WHATSAPP_ENABLED
-        value: false
+        value: true
       - key: WHATSAPP_USE_TEMPLATES
         value: true
+      - key: WHATSAPP_FORCE_SINGLE_TEMPLATE
+        value: true
+      - key: WHATSAPP_TEMPLATE_NAME
+        value: mediasphere_critical_issue
       - key: WHATSAPP_TEMPLATE_LANGUAGE
         value: en
-      # Required secrets (add manually in Render Dashboard, do NOT commit):
+      # Required secrets (add manually in Render Dashboard; Blueprint keeps
+      # their values private and never stores them in git):
       # WHATSAPP_VERIFY_TOKEN, WHATSAPP_ACCESS_TOKEN,
       # WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_WABA_ID / WHATSAPP_BUSINESS_ACCOUNT_ID,
       # WHATSAPP_RECIPIENTS
+      - key: WHATSAPP_VERIFY_TOKEN
+        sync: false
+      - key: WHATSAPP_ACCESS_TOKEN
+        sync: false
+      - key: WHATSAPP_PHONE_NUMBER_ID
+        sync: false
+      - key: WHATSAPP_WABA_ID
+        sync: false
+      - key: WHATSAPP_BUSINESS_ACCOUNT_ID
+        sync: false
+      - key: WHATSAPP_RECIPIENTS
+        sync: false

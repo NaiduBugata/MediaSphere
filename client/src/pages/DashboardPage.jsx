@@ -21,8 +21,8 @@ export default function DashboardPage() {
         <TrendingBar items={trending} dense />
       </div>
 
-      {/* Hero 70% / Critical Issues 30% — matched height, no nested scroll */}
-      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,7fr)_minmax(240px,3fr)] gap-4 items-stretch shrink-0 mb-4 h-auto lg:h-[300px]">
+      {/* Hero ~62% / Critical Issues ~38% — featured image a bit narrower */}
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,5.5fr)_minmax(260px,3.5fr)] gap-4 items-stretch shrink-0 mb-4 h-auto lg:h-[300px]">
         <div className="min-h-0 h-[260px] sm:h-[280px] lg:h-full">
           <FeaturedStory
             article={featured}
