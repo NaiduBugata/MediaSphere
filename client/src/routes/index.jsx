@@ -1,0 +1,25 @@
+import { Navigate, Route, Routes } from 'react-router-dom';
+import AppShell from '../layouts/AppShell';
+import DashboardPage from '../pages/DashboardPage';
+import NewsPage from '../pages/NewsPage';
+import ProblemsPage from '../pages/ProblemsPage';
+import AnalyticsPage from '../pages/AnalyticsPage';
+import DepartmentsPage from '../pages/DepartmentsPage';
+import SettingsPage from '../pages/SettingsPage';
+
+export default function AppRoutes() {
+  return (
+    <Routes>
+      <Route element={<AppShell />}>
+        <Route index element={<DashboardPage />} />
+        <Route path="news" element={<NewsPage />} />
+        <Route path="problems" element={<ProblemsPage />} />
+        <Route path="analytics" element={<AnalyticsPage />} />
+        <Route path="departments" element={<DepartmentsPage />} />
+        <Route path="departments/:slug" element={<DepartmentsPage />} />
+        <Route path="settings" element={<SettingsPage />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Route>
+    </Routes>
+  );
+}

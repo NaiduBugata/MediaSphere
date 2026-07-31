@@ -1,0 +1,52 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+coverage/
+.venv/
+.venv-release/
+venv/
+env/
+
+# ---- Secrets / environment ----
+.env
+.env.local
+.env.*.local
+server/.env
+server/.env.local
+client/.env
+client/.env.local
+
+# ---- Logs ----
+*.log
+logs/
+
+# ---- Runtime artifacts ----
+output/
+output_audit/
+runtime_outputs/
+reports_output/
+data/
+checkpoint*.json
+pipeline_status.json
+article.txt
+*.tmp
+*.bak
+narasaraopet_news.csv
+
+# ---- Node / frontend ----
+node_modules/
+client/node_modules/
+client/dist/
+dist/
+.vite/
+*.local
+
+# ---- Editor / OS ----
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
