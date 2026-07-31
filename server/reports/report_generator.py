@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any
 
-from . import ai_summary, config, data_service, db_service, email_service, html_template, pdf_generator
+from . import ai_summary, config, data_service, db_service, html_template, pdf_generator
 from .logger import get_logger
 
 logger = get_logger("reports.generator")
@@ -68,19 +68,57 @@ def generate_and_send(
     db_service.record_generation(target, report["stats"], to, str(report["pdf_path"]))
 
     try:
-        success, attempts, error = email_service.send_report(
+        from notifications import get_notification_manager
+
+        notify_result = get_notification_manager().notify_daily_summary(
+            {
+                "total": report["stats"].get("total", 0),
+                "positive_count": report["stats"].get("positive", 0),
+                "negative_count": report["stats"].get("negative", 0),
+                "neutral_count": report["stats"].get("neutral", 0),
+                "problem_count": report["stats"].get("problems", 0),
+                "high_priority_problems": report["stats"].get("high_priority_problems", 0),
+                "category": report["stats"].get("by_category") or report["stats"].get("category") or {},
+                "district": report["stats"].get("by_district") or report["stats"].get("district") or {},
+            },
+            report_date=target,
             subject=report["subject"],
             html_body=report["html"],
             pdf_path=report["pdf_path"],
             recipients=to,
+            async_=False,
         )
-    except email_service.EmailConfigError as exc:
-        logger.error("Email not sent (configuration): %s", exc)
-        db_service.record_failed(target, 0, f"config_error: {exc}")
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Daily notification failed: %s", exc)
+        db_service.record_failed(target, 0, f"notification_error: {exc}")
+        return {
+            "status": "error",
+            "reason": "notification_error",
+            "error": str(exc),
+            "report_date": target.isoformat(),
+            "pdf_path": str(report["pdf_path"]),
+        }
+
+    email_result = next(
+        (r for r in (notify_result.get("results") or []) if r.get("channel") == "email"),
+        None,
+    )
+    if email_result is None:
+        success, attempts, error = False, 0, "email_channel_missing"
+    elif email_result.get("skipped") and email_result.get("skip_reason") == "email_disabled":
+        success, attempts, error = False, 0, "EMAIL_ENABLED=false"
+    else:
+        success = bool(email_result.get("success")) and not email_result.get("skipped")
+        attempts = 1
+        error = email_result.get("error")
+
+    # Preserve EmailConfigError-style outcomes when channel reports config failure.
+    if error and "config" in str(error).lower():
+        db_service.record_failed(target, 0, f"config_error: {error}")
         return {
             "status": "error",
             "reason": "email_config",
-            "error": str(exc),
+            "error": str(error),
             "report_date": target.isoformat(),
             "pdf_path": str(report["pdf_path"]),
         }
@@ -105,4 +143,5 @@ def generate_and_send(
         "negative_count": report["stats"]["negative"],
         "pdf_path": str(report["pdf_path"]),
         "subject": report["subject"],
+        "notifications": notify_result,
     }

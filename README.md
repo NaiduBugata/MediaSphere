@@ -58,6 +58,7 @@ The combined pipeline runner (`server/run_all_pipelines.py`) runs Lokal, then Yo
 │   ├── pipeline_config.py    #   pipeline env validation
 │   ├── retry_utils.py        #   exponential backoff helper
 │   ├── reports/            #   daily + incremental email reports package
+│   ├── notifications/      #   Multi-channel Notification Manager (Email + WhatsApp)
 │   ├── whatsapp/           #   WhatsApp Cloud API webhook + send service
 │   ├── tests/              #   unit tests
 │   ├── requirements.txt
@@ -221,6 +222,73 @@ curl -X POST "https://graph.facebook.com/v25.0/$WHATSAPP_PHONE_NUMBER_ID/message
   }'
 ```
 
+## Notification Framework (Email + WhatsApp)
+
+All outbound alerts go through `server/notifications/` — the pipeline never calls Email or WhatsApp directly.
+
+```text
+Pipeline / Scheduler / WSGI
+        │
+        ▼
+NotificationManager
+        │
+   ┌────┴────┐
+   ▼         ▼
+ Email    WhatsApp
+```
+
+### Setup
+
+1. Keep existing email env vars (`EMAIL_ENABLED`, `EMAIL_PROVIDER`, `REPORT_RECIPIENTS`, Resend/SMTP).
+2. Enable WhatsApp alerts:
+
+```text
+WHATSAPP_ENABLED=true
+WHATSAPP_RECIPIENTS=9198XXXXXXXX
+WHATSAPP_USE_TEMPLATES=true
+WHATSAPP_TEMPLATE_LANGUAGE=en
+WHATSAPP_ACCESS_TOKEN=...
+WHATSAPP_PHONE_NUMBER_ID=...
+```
+
+3. Create and approve Meta message templates in Business Manager (names must match env defaults or overrides):
+
+| Template env | Default name | Body variables |
+|--------------|--------------|----------------|
+| `WHATSAPP_TEMPLATE_ARTICLE_ALERT` | `mediasphere_article_alert` | source, category, sentiment, headline, summary, date, url |
+| `WHATSAPP_TEMPLATE_CRITICAL` | `mediasphere_critical_issue` | location, problem, priority, source, time |
+| `WHATSAPP_TEMPLATE_DAILY` | `mediasphere_daily_summary` | date, totals, dashboard URL |
+| `WHATSAPP_TEMPLATE_PIPELINE` | `mediasphere_pipeline_status` | inserted, fetched, duration, status |
+| `WHATSAPP_TEMPLATE_FAILURE` | `mediasphere_failure_alert` | module, reason, time |
+| `WHATSAPP_TEMPLATE_SYSTEM` | `mediasphere_system_status` | kind, environment, version, time |
+
+4. For local testing without approved templates, set `WHATSAPP_USE_TEMPLATES=false` (session/free-form text only).
+
+### Local test
+
+```bash
+cd server
+python -c "from notifications import get_notification_manager; print(get_notification_manager().notify_health(async_=False))"
+python -m unittest notifications.tests.test_notifications -v
+```
+
+### Dedup
+
+- Email: Mongo `email_sent` (unchanged).
+- WhatsApp: Mongo `whatsapp_sent` / `whatsapp_sent_at` / `whatsapp_message_id` on new inserts.
+
+### Troubleshooting Meta Graph errors
+
+| HTTP | Meaning | Fix |
+|------|---------|-----|
+| 401 | Invalid token invalid/expired | Regenerate permanent token; update Render secret |
+| 403 | Permission / WABA mismatch | Confirm app has `whatsapp_business_messaging`; check phone number ID |
+| 404 | Wrong phone number ID or template name | Verify IDs and approved template spelling |
+| 429 | Rate limited | Framework retries with backoff; reduce alert volume |
+| 5xx | Meta outage | Automatic retries (1/2/4/8s, max 4); pipeline continues |
+
+Notification failures never stop collectors or Mongo upserts.
+
 ### Example inbound payload
 
 ```json
@@ -331,7 +399,8 @@ See `server/.env.example` (backend) and `client/.env.example` (frontend). Secret
 - **API:** `API_HOST`, `API_PORT`, `API_DEBUG`, `CORS_ORIGINS`
 - **Pipeline:** `PIPELINE_ON_API`, `PIPELINE_CATCHUP_ON_START`, `PIPELINE_INTERVAL_HOURS`, `PIPELINE_LOCK_TTL_SECONDS`, `PIPELINE_ADMIN_TOKEN`, `YOUTUBE_ENABLED`, `YOUTUBE_API_KEY`, `SAKSHI_ENABLED`, `SAKSHI_TAG_URL`, `SAKSHI_REQUEST_DELAY_SECONDS`, `SAKSHI_MAX_ARTICLES_PER_RUN`
 - **Email/Reports:** `EMAIL_ENABLED`, `EMAIL_PROVIDER`, `RESEND_API_KEY`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`, `REPORT_RECIPIENTS`, `REPORT_ENABLED`, `REPORT_TIMEZONE`, `REPORT_HOUR`, `REPORT_MINUTE`
-- **WhatsApp:** `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_WABA_ID`, `WHATSAPP_GRAPH_API_VERSION`, `WHATSAPP_WEBHOOK_ENABLED`
+- **WhatsApp webhook:** `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_WABA_ID`, `WHATSAPP_GRAPH_API_VERSION` / `META_API_VERSION`, `WHATSAPP_WEBHOOK_ENABLED`
+- **Notifications:** `WHATSAPP_ENABLED`, `WHATSAPP_RECIPIENTS`, `WHATSAPP_USE_TEMPLATES`, `WHATSAPP_TEMPLATE_*`, `NOTIFICATION_QUEUE_WORKERS`, `DASHBOARD_URL`
 - **Frontend (`client/.env`):** `VITE_API_BASE_URL` (defaults to `/api`, proxied to the Flask server in development).
 
 ## Render Deployment

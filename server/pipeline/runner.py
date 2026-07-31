@@ -109,6 +109,21 @@ def run_combined_cycle() -> tuple[int, dict[str, Any]]:
 
     stats = _merge_stats(lokal_stats, youtube_stats, sakshi_stats)
     exit_code = 0 if lokal_code == 0 and youtube_code == 0 and sakshi_code == 0 else 1
+    stats["duration_seconds"] = None
+    stats["status"] = "Finished Successfully" if exit_code == 0 else "Completed with errors"
+
+    try:
+        from notifications import get_notification_manager
+
+        get_notification_manager().notify_pipeline_complete(stats, async_=True)
+        if exit_code != 0:
+            get_notification_manager().notify_failure(
+                module="combined_pipeline",
+                reason="; ".join(stats.get("errors") or ["non-zero exit"])[:500],
+                async_=True,
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Pipeline notification failed (ignored): %s", exc)
 
     logger.info(
         "COMBINED PIPELINE CYCLE END | exit=%s | inserted=%s | duplicates=%s | fetched=%s | sakshi=%s",

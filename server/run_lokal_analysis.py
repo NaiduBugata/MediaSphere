@@ -184,35 +184,22 @@ def validate_news_output() -> list:
 
 
 def send_incremental_email() -> None:
-    """Email each pending article individually after a successful store.
+    """Notify pending articles via Notification Manager (Email + WhatsApp).
 
-    Sends one email per article with email_sent=false (new inserts and retries
-    from prior failed sends). Successfully emailed articles are marked email_sent=true.
+    Preserves incremental email behaviour (one email per email_sent=false doc)
+    and additionally sends WhatsApp for whatsapp_sent=false docs.
     """
-    from reports import config as report_config
-
-    if not report_config.EMAIL_ENABLED:
-        logger.info("Incremental email disabled (EMAIL_ENABLED=false); skipping.")
-        return
-
     try:
-        from reports import incremental
+        from notifications import get_notification_manager
 
-        result = incremental.send_incremental_report()
+        result = get_notification_manager().notify_new_article(async_=False)
         status = result.get("status")
-        if status in ("sent", "partial"):
-            logger.info(
-                "Incremental emails | sent: %s | failed: %s | batch: %s",
-                result.get("sent"),
-                result.get("failed"),
-                result.get("batch_id"),
-            )
-        elif status == "skipped":
-            logger.info("Incremental email skipped (%s).", result.get("reason"))
-        else:
-            logger.warning("Incremental email issues | %s", result)
+        if status == "queued":
+            logger.info("Article notifications queued.")
+            return
+        logger.info("Article notifications | %s", result)
     except Exception as exc:
-        logger.error("Incremental email step failed (cycle continues): %s", exc)
+        logger.error("Article notification step failed (cycle continues): %s", exc)
 
 
 def run_cycle() -> tuple[int, dict]:

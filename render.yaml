@@ -62,9 +62,16 @@ services:
         value: false
       - key: REPORT_CONSTITUENCY
         value: Narasaraopet
-      # WhatsApp Cloud API webhook (secrets set in Render Dashboard only).
+      # WhatsApp Cloud API webhook + outbound notifications (secrets in Dashboard).
       - key: WHATSAPP_WEBHOOK_ENABLED
         value: true
+      - key: WHATSAPP_ENABLED
+        value: false
+      - key: WHATSAPP_USE_TEMPLATES
+        value: true
+      - key: WHATSAPP_TEMPLATE_LANGUAGE
+        value: en
       # Required secrets (add manually in Render Dashboard, do NOT commit):
       # WHATSAPP_VERIFY_TOKEN, WHATSAPP_ACCESS_TOKEN,
-      # WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_WABA_ID
+      # WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_WABA_ID / WHATSAPP_BUSINESS_ACCOUNT_ID,
+      # WHATSAPP_RECIPIENTS

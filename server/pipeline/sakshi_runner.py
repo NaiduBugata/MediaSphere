@@ -97,26 +97,14 @@ def validate_news_output() -> list:
 
 
 def send_incremental_email() -> None:
-    from reports import config as report_config
-
-    if not report_config.EMAIL_ENABLED:
-        logger.info("Incremental email disabled; skipping.")
-        return
+    """Notify pending articles via Notification Manager (Email + WhatsApp)."""
     try:
-        from reports import incremental
+        from notifications import get_notification_manager
 
-        result = incremental.send_incremental_report()
-        status = result.get("status")
-        if status in ("sent", "partial"):
-            logger.info(
-                "Incremental emails | sent: %s | failed: %s",
-                result.get("sent"),
-                result.get("failed"),
-            )
-        elif status == "skipped":
-            logger.info("Incremental email skipped (%s).", result.get("reason"))
+        result = get_notification_manager().notify_new_article(async_=False)
+        logger.info("Article notifications | %s", result)
     except Exception as exc:
-        logger.error("Incremental email failed (cycle continues): %s", exc)
+        logger.error("Article notification step failed (cycle continues): %s", exc)
 
 
 def run_cycle() -> tuple[int, dict]:

@@ -36,13 +36,40 @@ def _expected_report_date(now: datetime | None = None) -> date:
 
 
 def _scheduled_job() -> None:
-    """The cron job body: generate & send yesterday's report."""
+    """The cron job body: generate & send yesterday's report, then health ping."""
     logger.info("Scheduled 07:00 IST job triggered.")
     try:
         result = report_generator.generate_and_send()
         logger.info("Scheduled report result: %s", result.get("status"))
     except Exception as exc:  # noqa: BLE001 - scheduler must never die
         logger.exception("Scheduled report job crashed: %s", exc)
+        try:
+            from notifications import get_notification_manager
+
+            get_notification_manager().notify_failure(
+                module="daily_report_scheduler",
+                reason=str(exc)[:500],
+                async_=True,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
+    try:
+        from notifications import get_notification_manager
+        from notifications import config as notif_config
+
+        get_notification_manager().notify_health(
+            {
+                "Database": "ok",
+                "Collectors": "ok",
+                "Email": "enabled" if notif_config.EMAIL_ENABLED else "disabled",
+                "WhatsApp": "enabled" if notif_config.WHATSAPP_ENABLED else "disabled",
+                "Scheduler": "running",
+            },
+            async_=True,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Morning health notification failed: %s", exc)
 
 
 def _catch_up() -> None:
