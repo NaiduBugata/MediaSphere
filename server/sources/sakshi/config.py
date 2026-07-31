@@ -58,11 +58,23 @@ SAKSHI_ARTICLE_LINK_SELECTOR = os.getenv(
 )
 SAKSHI_ARTICLE_BODY_SELECTOR = os.getenv(
     "SAKSHI_ARTICLE_BODY_SELECTOR",
-    "div.story-content, div.article-content, article .content, div#storyBody, div.field-name-body",
+    "div.news-story-content, div.news-story-body, div.story-content, div.article-content, "
+    "article .content, div#storyBody, div.field-name-body",
 )
 SAKSHI_TITLE_SELECTOR = os.getenv(
     "SAKSHI_TITLE_SELECTOR",
     "h1.story-title, h1.article-title, h1.title, h1",
+)
+
+# Page chrome that surrounds the story. When the body selector misses, a
+# whole-page paragraph scrape otherwise pulls national/cinema teasers into the
+# article text and the analyzer then emits them as separate articles.
+SAKSHI_NOISE_SELECTOR = os.getenv(
+    "SAKSHI_NOISE_SELECTOR",
+    "header, footer, nav, aside, form, script, style, noscript, "
+    ".detail_aside, .header_top_row, .trending_news, .trending_results, "
+    ".search_results_dropdown, .search_dialog, .related_news, .related-news, "
+    ".more_news, .most_read, .photo_gallery, .web_stories, .taboola, .advertisement",
 )
 
 TRANSIENT_HTTP_STATUSES = frozenset({500, 502, 503, 504})

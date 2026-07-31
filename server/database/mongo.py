@@ -246,7 +246,7 @@ def upsert_articles(
                     # New articles start un-emailed so the incremental notifier picks
                     # them up exactly once. Never reset the flag on updates.
                     "$set": doc,
-                    "$setOnInsert": {"first_seen_at": now, "email_sent": False},
+                    "$setOnInsert": {"first_seen_at": now, "email_sent": False, "whatsapp_sent": False},
                 },
                 upsert=True,
             )
@@ -416,7 +416,7 @@ def upsert_youtube_articles(
                 {"post_id": pid},
                 {
                     "$set": doc,
-                    "$setOnInsert": {"first_seen_at": now, "email_sent": False},
+                    "$setOnInsert": {"first_seen_at": now, "email_sent": False, "whatsapp_sent": False},
                 },
                 upsert=True,
             )
@@ -589,12 +589,23 @@ def upsert_sakshi_articles(
     updated = 0
     matched = 0
     duplicates = 0
+    skipped_unmatched = 0
     inserted_post_ids: list[Any] = []
     collection = retry_call(get_collection, label="mongo.get_collection.sakshi")
 
     for article in news_articles:
         title = article.get("title", "")
         post_id, source_url, created_on, meta = _resolve_sakshi_post_id(title, title_map)
+        if not meta:
+            # The analyzer only ever sees constituency-validated collector output.
+            # A title with no collector match came from page chrome bleeding into
+            # the article text, so it was never validated and must not be stored.
+            skipped_unmatched += 1
+            logger.warning(
+                "Skipping unvalidated Sakshi article with no collector match: %r",
+                title[:80],
+            )
+            continue
         body = article.get("summary") or meta.get("content") or ""
         fingerprint = _content_fingerprint(
             "sakshi",
@@ -633,7 +644,7 @@ def upsert_sakshi_articles(
                 {"post_id": pid},
                 {
                     "$set": doc,
-                    "$setOnInsert": {"first_seen_at": now, "email_sent": False},
+                    "$setOnInsert": {"first_seen_at": now, "email_sent": False, "whatsapp_sent": False},
                 },
                 upsert=True,
             )
@@ -657,11 +668,17 @@ def upsert_sakshi_articles(
         else:
             matched += 1
 
+    if skipped_unmatched:
+        logger.warning(
+            "Skipped %s Sakshi article(s) absent from collector output", skipped_unmatched
+        )
+
     return {
         "inserted": inserted,
         "updated": updated,
         "matched": matched,
         "duplicates": duplicates,
+        "skipped_unmatched": skipped_unmatched,
         "total": len(news_articles),
         "inserted_post_ids": inserted_post_ids,
     }

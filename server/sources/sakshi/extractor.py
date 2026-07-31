@@ -13,6 +13,23 @@ from sources.sakshi.parser import _meta_content, _parse_datetime, _text_or_empty
 logger = logging.getLogger("collectors.sakshi")
 
 
+def _fallback_paragraphs(html: str) -> list[str]:
+    """
+    Scrape body paragraphs from a de-chromed copy of the page.
+
+    Parsed separately so removing nav/aside here cannot strip breadcrumbs and
+    tags that the caller still needs for constituency scoring.
+    """
+    soup = BeautifulSoup(html, "lxml")
+    for node in soup.select(sakshi_config.SAKSHI_NOISE_SELECTOR):
+        node.decompose()
+    return [
+        " ".join(p.get_text(" ", strip=True).split())
+        for p in soup.find_all("p")
+        if p.get_text(strip=True) and len(p.get_text(strip=True)) > 40
+    ]
+
+
 def extract_article(html: str, url: str) -> dict[str, Any] | None:
     """
     Stage 2: extract title, body, metadata, breadcrumb, tags, and category.
@@ -33,11 +50,12 @@ def extract_article(html: str, url: str) -> dict[str, Any] | None:
             if p.get_text(strip=True)
         ]
     if not paragraphs:
-        paragraphs = [
-            " ".join(p.get_text(" ", strip=True).split())
-            for p in soup.find_all("p")
-            if p.get_text(strip=True) and len(p.get_text(strip=True)) > 40
-        ]
+        logger.warning(
+            "Body selector %r matched nothing; falling back to page scrape for %s",
+            sakshi_config.SAKSHI_ARTICLE_BODY_SELECTOR,
+            url,
+        )
+        paragraphs = _fallback_paragraphs(html)
 
     content = "\n\n".join(paragraphs).strip()
     if not title or len(content) < 80:
