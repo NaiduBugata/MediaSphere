@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { ChevronDown } from 'lucide-react';
 import NewsCard from '../news/NewsCard';
 
 export default function LatestNewsRow({
@@ -9,6 +10,7 @@ export default function LatestNewsRow({
   columns = 4,
   compact = false,
   headerAction = null,
+  showHeader = true,
 }) {
   const gridCols =
     columns === 3
@@ -19,24 +21,27 @@ export default function LatestNewsRow({
 
   return (
     <section aria-label={title} className="shrink-0">
-      <div className={`flex items-center justify-between gap-4 ${compact ? 'mb-3' : 'mb-4'} min-h-[36px]`}>
-        <h2
-          className={`section-title leading-none ${compact ? '!text-[1.25rem]' : ''}`}
-        >
-          {title}
-        </h2>
-        <div className="flex items-center gap-3 shrink-0">
-          {headerAction}
-          {!headerAction && viewAllTo && (
-            <Link
-              to={viewAllTo}
-              className="text-[15px] font-semibold text-primary hover:text-primary-hover transition-colors"
-            >
-              View All →
-            </Link>
-          )}
+      {showHeader && (
+        <div className={`flex items-center justify-between gap-4 ${compact ? 'mb-3' : 'mb-4'} min-h-[36px]`}>
+          <h2
+            className={`section-title leading-none inline-flex items-center gap-2 ${compact ? '!text-[1.25rem]' : ''}`}
+          >
+            <span>{title}</span>
+            <ChevronDown className="h-5 w-5 shrink-0 text-muted" aria-hidden="true" strokeWidth={2.5} />
+          </h2>
+          <div className="flex items-center gap-3 shrink-0">
+            {headerAction}
+            {!headerAction && viewAllTo && (
+              <Link
+                to={viewAllTo}
+                className="text-[15px] font-semibold text-primary hover:text-primary-hover transition-colors"
+              >
+                View All →
+              </Link>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {list.length === 0 ? (
         <p className="text-sm text-muted py-6 text-center">No recent articles.</p>
