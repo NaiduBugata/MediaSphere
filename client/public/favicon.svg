@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="MediaSphere">
+  <rect width="32" height="32" rx="8" fill="#D72638"/>
+  <path
+    fill="#FFFFFF"
+    d="M5.5 23V9h3.2l3 8.4L14.7 9H18v14h-2.7V12.6L12.6 23h-2.5L7.4 12.6V23H5.5zm13.2 0V9H22c3.1 0 5 1.7 5 4.3 0 1.8-1 3.1-2.5 3.7L27.5 23h-3.2l-2.6-5.7h-1.5V23h-2.5zm2.5-8h1.2c1.3 0 2.1-.7 2.1-1.9S22.7 11.2 21.4 11.2h-1.2V15z"
+  />
+</svg>

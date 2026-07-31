@@ -236,6 +236,43 @@ def health():
     return jsonify({"status": "ok", "mongo": mongo_ok})
 
 
+@app.route("/api/notifications/status", methods=["GET"])
+def notifications_status():
+    """Email + WhatsApp delivery health for the Settings page (no secrets)."""
+    try:
+        from notifications.status_store import build_status_snapshot
+
+        snapshot = build_status_snapshot()
+        response = jsonify(snapshot)
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    except Exception as exc:
+        logger.exception("notifications status failed: %s", exc)
+        response = jsonify(
+            {
+                "email": {
+                    "enabled": False,
+                    "configured": False,
+                    "status": "unknown",
+                    "last_at": None,
+                    "last_error": "unavailable",
+                    "pending_articles": 0,
+                    "last_daily_report": None,
+                },
+                "whatsapp": {
+                    "enabled": False,
+                    "configured": False,
+                    "status": "unknown",
+                    "last_at": None,
+                    "last_error": "unavailable",
+                    "pending_articles": 0,
+                },
+            }
+        )
+        response.headers["Cache-Control"] = "no-store"
+        return response, 500
+
+
 @app.route("/api/pipeline/health", methods=["GET"])
 def pipeline_health():
     """Pipeline scheduler diagnostics (sanitized; no secrets/stack traces)."""

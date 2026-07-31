@@ -12,6 +12,7 @@ from notifications.exceptions import RetryableChannelError
 from notifications.logger import get_logger, log_delivery
 from notifications.models import ChannelResult, NotificationPayload, NotificationType
 from notifications.retry import is_retryable_status, retry_call
+from notifications import status_store
 from notifications.template_bridge import (
     active_template_language,
     active_template_name,
@@ -25,6 +26,29 @@ logger = get_logger("notifications.whatsapp")
 
 # Meta codes that mean template cannot be used — fall back to text.
 _TEMPLATE_ERROR_CODES = frozenset({132000, 132001, 132005, 132007, 132012, 132015, 132016})
+
+
+def _record(
+    result: ChannelResult,
+    *,
+    notification_type: str | None = None,
+    enabled: bool = True,
+) -> ChannelResult:
+    if result.skipped:
+        status = "skipped"
+    elif result.success:
+        status = "ok"
+    else:
+        status = "failed"
+    status_store.record(
+        "whatsapp",
+        status=status,
+        enabled=enabled,
+        error=result.error or result.skip_reason,
+        notification_type=notification_type,
+        http_code=result.http_code,
+    )
+    return result
 
 
 class WhatsAppChannel(NotificationChannel):
@@ -43,25 +67,36 @@ class WhatsAppChannel(NotificationChannel):
         )
 
     def send(self, payload: NotificationPayload) -> ChannelResult:
+        ntype = payload.notification_type.value
         if not self.is_enabled():
-            return ChannelResult(
-                channel=self.name,
-                success=True,
-                skipped=True,
-                skip_reason="whatsapp_disabled_or_misconfigured",
+            return _record(
+                ChannelResult(
+                    channel=self.name,
+                    success=True,
+                    skipped=True,
+                    skip_reason="whatsapp_disabled_or_misconfigured",
+                ),
+                notification_type=ntype,
+                enabled=False,
             )
 
         if payload.whatsapp_pending_articles:
-            return self._send_pending_articles(critical_only=payload.critical_only)
+            return _record(
+                self._send_pending_articles(critical_only=payload.critical_only),
+                notification_type=ntype,
+            )
 
         payload = apply_single_template(payload)
         recipients = payload.recipients_whatsapp or list(config.WHATSAPP_RECIPIENTS)
         if not recipients:
-            return ChannelResult(
-                channel=self.name,
-                success=True,
-                skipped=True,
-                skip_reason="no_recipients",
+            return _record(
+                ChannelResult(
+                    channel=self.name,
+                    success=True,
+                    skipped=True,
+                    skip_reason="no_recipients",
+                ),
+                notification_type=ntype,
             )
 
         last: ChannelResult | None = None
@@ -76,14 +111,20 @@ class WhatsAppChannel(NotificationChannel):
             elif last.error:
                 last_error = last.error
         if last is None:
-            return ChannelResult(channel=self.name, success=False, error="no_recipients_processed")
-        return ChannelResult(
-            channel=self.name,
-            success=any_success,
-            attempts=last.attempts,
-            message_id=last_message_id or last.message_id,
-            error=None if any_success else (last_error or last.error),
-            latency_ms=last.latency_ms,
+            return _record(
+                ChannelResult(channel=self.name, success=False, error="no_recipients_processed"),
+                notification_type=ntype,
+            )
+        return _record(
+            ChannelResult(
+                channel=self.name,
+                success=any_success,
+                attempts=last.attempts,
+                message_id=last_message_id or last.message_id,
+                error=None if any_success else (last_error or last.error),
+                latency_ms=last.latency_ms,
+            ),
+            notification_type=ntype,
         )
 
     def _send_pending_articles(self, *, critical_only: bool) -> ChannelResult:

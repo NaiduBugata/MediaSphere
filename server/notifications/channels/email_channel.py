@@ -9,8 +9,27 @@ from notifications import config
 from notifications.base import NotificationChannel
 from notifications.logger import get_logger, log_delivery
 from notifications.models import ChannelResult, NotificationPayload
+from notifications import status_store
 
 logger = get_logger("notifications.email")
+
+
+def _record(result: ChannelResult, *, notification_type: str | None = None) -> ChannelResult:
+    if result.skipped:
+        status = "skipped"
+    elif result.success:
+        status = "ok"
+    else:
+        status = "failed"
+    status_store.record(
+        "email",
+        status=status,
+        enabled=True,
+        error=result.error or result.skip_reason,
+        notification_type=notification_type,
+        http_code=result.http_code,
+    )
+    return result
 
 
 class EmailChannel(NotificationChannel):
@@ -30,7 +49,15 @@ class EmailChannel(NotificationChannel):
             return bool(config.EMAIL_ENABLED)
 
     def send(self, payload: NotificationPayload) -> ChannelResult:
+        ntype = payload.notification_type.value
         if not self.is_enabled():
+            status_store.record(
+                "email",
+                status="skipped",
+                enabled=False,
+                error="email_disabled",
+                notification_type=ntype,
+            )
             return ChannelResult(
                 channel=self.name,
                 success=True,
@@ -39,17 +66,20 @@ class EmailChannel(NotificationChannel):
             )
 
         if payload.email_incremental:
-            return self._send_incremental(payload)
+            return _record(self._send_incremental(payload), notification_type=ntype)
 
         if not payload.html_body and not payload.subject:
-            return ChannelResult(
-                channel=self.name,
-                success=True,
-                skipped=True,
-                skip_reason="no_email_content",
+            return _record(
+                ChannelResult(
+                    channel=self.name,
+                    success=True,
+                    skipped=True,
+                    skip_reason="no_email_content",
+                ),
+                notification_type=ntype,
             )
 
-        return self._send_report(payload)
+        return _record(self._send_report(payload), notification_type=ntype)
 
     def _send_incremental(self, payload: NotificationPayload) -> ChannelResult:
         from reports import incremental

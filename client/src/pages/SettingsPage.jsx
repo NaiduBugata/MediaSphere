@@ -1,21 +1,44 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { RefreshCw } from 'lucide-react';
 import { useNewsContext } from '../context/NewsContext';
+import { getNotificationStatus } from '../services/api';
 import { DEFAULT_SETTINGS, loadSettings, saveSettings } from '../utils/settings';
 import {
   PrefSection,
   PrefField,
   PrefInput,
   PrefToggle,
+  DeliveryStatusRow,
 } from '../components/settings/PrefControls';
 
 export default function SettingsPage() {
   const { dataRevision, lastUpdated } = useNewsContext();
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [saved, setSaved] = useState(false);
+  const [delivery, setDelivery] = useState(null);
+  const [deliveryError, setDeliveryError] = useState(null);
+  const [deliveryLoading, setDeliveryLoading] = useState(true);
 
   useEffect(() => {
     setSettings(loadSettings());
   }, []);
+
+  const fetchDelivery = useCallback(async () => {
+    setDeliveryLoading(true);
+    setDeliveryError(null);
+    try {
+      const data = await getNotificationStatus();
+      setDelivery(data);
+    } catch (err) {
+      setDeliveryError(err?.message || 'Failed to load delivery status');
+    } finally {
+      setDeliveryLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchDelivery();
+  }, [fetchDelivery]);
 
   const update = (patch) => {
     setSettings((prev) => ({ ...prev, ...patch }));
@@ -75,6 +98,37 @@ export default function SettingsPage() {
         />
       </PrefSection>
 
+      <PrefSection
+        title="Delivery status"
+        description="Live Email and WhatsApp health from the API (last send success or failure)."
+      >
+        <div className="flex items-center justify-end">
+          <button
+            type="button"
+            onClick={fetchDelivery}
+            disabled={deliveryLoading}
+            className="inline-flex items-center gap-1.5 rounded-md border border-app bg-surface px-2.5 py-1.5 text-xs font-medium text-app hover:bg-secondary disabled:opacity-60"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${deliveryLoading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        </div>
+        {deliveryError ? (
+          <p className="text-sm text-red-600">{deliveryError}</p>
+        ) : (
+          <div className="space-y-2">
+            <DeliveryStatusRow
+              label="Email"
+              channel={deliveryLoading && !delivery ? null : delivery?.email}
+            />
+            <DeliveryStatusRow
+              label="WhatsApp"
+              channel={deliveryLoading && !delivery ? null : delivery?.whatsapp}
+            />
+          </div>
+        )}
+      </PrefSection>
+
       <PrefSection title="Refresh" description="Silent refresh interval (applied on next session).">
         <PrefField label="Interval (minutes)">
           <PrefInput
@@ -91,11 +145,11 @@ export default function SettingsPage() {
 
       <PrefSection
         title="Alerts"
-        description="Email report delivery is managed on the server. Wire recipients via backend env."
+        description="Recipients are configured on the server (REPORT_RECIPIENTS / WHATSAPP_RECIPIENTS)."
       >
         <p className="text-sm text-muted">
-          Daily executive reports and incremental alerts use SMTP / Resend configuration on the API.
-          A dedicated in-app recipient editor will appear here in a future release.
+          Use Delivery status above to see whether the last Email or WhatsApp send succeeded.
+          Recipient editing in-app will come in a future release.
         </p>
       </PrefSection>
 

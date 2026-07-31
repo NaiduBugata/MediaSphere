@@ -22,4 +22,9 @@ export async function getStats() {
   return data;
 }
 
+export async function getNotificationStatus() {
+  const { data } = await api.get('/notifications/status');
+  return data;
+}
+
 export default api;
