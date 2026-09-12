@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   adminLogin,
@@ -153,7 +153,7 @@ function DetailModal({ run, onClose, onRetry }) {
             ['Duration', run.duration_seconds != null ? `${run.duration_seconds}s` : '—'],
             ['Fetched', run.records_fetched],
             ['Processed', run.records_processed],
-            ['Inserted', run.records_inserted],
+            ['New on dashboard', run.records_inserted],
             ['Retry count', run.retry_count],
             ['Error', run.error_message || '—'],
           ].map(([k, v]) => (
@@ -186,6 +186,8 @@ function AdminDashboard({ onLogout }) {
   const [actionMsg, setActionMsg] = useState('');
   const [detail, setDetail] = useState(null);
   const [error, setError] = useState('');
+  const pendingRunIdRef = useRef('');
+  const wasRunningRef = useRef(false);
 
   const load = useCallback(async () => {
     try {
@@ -203,13 +205,15 @@ function AdminDashboard({ onLogout }) {
       setStatus(st);
       setHistory(hist.runs || []);
       setHealth(hl);
+      return { status: st, history: hist.runs || [] };
     } catch (err) {
       if (err?.response?.status === 401) {
         clearAdminToken();
         window.location.reload();
-        return;
+        return null;
       }
       setError(err?.response?.data?.error || err?.message || 'Failed to load admin data');
+      return null;
     }
   }, [filters.status, filters.trigger, filters.q]);
 
@@ -223,6 +227,52 @@ function AdminDashboard({ onLogout }) {
     const id = setInterval(load, ms);
     return () => clearInterval(id);
   }, [load, status?.headline]);
+
+  // After a manual/retry fetch finishes, report how many new articles hit the dashboard.
+  useEffect(() => {
+    const running = status?.headline === 'running';
+    const pendingId = pendingRunIdRef.current;
+
+    if (running) {
+      wasRunningRef.current = true;
+      return;
+    }
+
+    if (!pendingId && !wasRunningRef.current) return;
+
+    const matched =
+      (pendingId && history.find((r) => r.run_id === pendingId)) ||
+      history.find((r) => r.trigger === 'manual' || r.trigger === 'retry') ||
+      history[0];
+
+    if (matched && (matched.status === 'success' || matched.status === 'failed' || matched.status === 'skipped')) {
+      const n = matched.records_inserted ?? status?.articles_inserted_last_run ?? 0;
+      if (matched.status === 'success') {
+        setActionMsg(
+          n === 1
+            ? 'Fetch complete — 1 new article added to the dashboard.'
+            : `Fetch complete — ${n} new articles added to the dashboard.`
+        );
+      } else if (matched.status === 'failed') {
+        setActionMsg(
+          `Fetch failed${matched.error_message ? `: ${matched.error_message}` : ''}. New articles: ${n}.`
+        );
+      } else {
+        setActionMsg(`Fetch skipped. New articles: ${n}.`);
+      }
+      pendingRunIdRef.current = '';
+      wasRunningRef.current = false;
+    } else if (wasRunningRef.current && status?.articles_inserted_last_run != null) {
+      const n = status.articles_inserted_last_run;
+      setActionMsg(
+        n === 1
+          ? 'Fetch complete — 1 new article added to the dashboard.'
+          : `Fetch complete — ${n} new articles added to the dashboard.`
+      );
+      pendingRunIdRef.current = '';
+      wasRunningRef.current = false;
+    }
+  }, [status, history]);
 
   const headline = HEADLINE_META[status?.headline] || HEADLINE_META.unknown;
 
@@ -238,7 +288,9 @@ function AdminDashboard({ onLogout }) {
           }`
         );
       } else if (data?.accepted) {
-        setActionMsg(`Fetching… run ${data.run_id}`);
+        pendingRunIdRef.current = data.run_id || '';
+        wasRunningRef.current = true;
+        setActionMsg(`Fetching… run ${data.run_id}. New article count will appear when this run finishes.`);
       } else {
         setActionMsg(data?.message || data?.error || 'Trigger failed');
       }
@@ -256,7 +308,11 @@ function AdminDashboard({ onLogout }) {
     try {
       const { data, status: http } = await retryAdminFetch(runId);
       if (http === 409) setActionMsg(data?.message || 'Already running');
-      else setActionMsg(data?.accepted ? `Retry accepted (${data.run_id})` : data?.error || 'Retry failed');
+      else if (data?.accepted) {
+        pendingRunIdRef.current = data.run_id || '';
+        wasRunningRef.current = true;
+        setActionMsg(`Retry accepted (${data.run_id}). New article count will appear when this run finishes.`);
+      } else setActionMsg(data?.error || 'Retry failed');
       setDetail(null);
       await load();
     } catch (err) {
@@ -286,7 +342,7 @@ function AdminDashboard({ onLogout }) {
   return (
     <div className="min-h-screen bg-app text-app">
       <header className="border-b border-app bg-navbar/95 backdrop-blur sticky top-0 z-30">
-        <div className="mx-auto max-w-6xl px-4 py-3 flex items-center justify-between gap-3">
+        <div className="mx-auto max-w-7xl px-4 py-3 flex items-center justify-between gap-3">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-primary">Admin</p>
             <h1 className="text-lg font-bold leading-tight">Fetch monitoring</h1>
@@ -316,7 +372,7 @@ function AdminDashboard({ onLogout }) {
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-4 py-6 space-y-6">
+      <main className="mx-auto max-w-7xl px-4 py-6 space-y-5">
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
         <section className="rounded-2xl border border-app bg-surface p-5 shadow-soft">
@@ -335,15 +391,21 @@ function AdminDashboard({ onLogout }) {
             </div>
           </div>
           <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+            <StatCard
+              label="New on dashboard (last fetch)"
+              value={status?.articles_inserted_last_run ?? '—'}
+              sub="Articles newly inserted into Mongo / site"
+            />
             <StatCard label="Last successful" value={formatDateTime(status?.last_success)} />
             <StatCard label="Last attempt" value={formatDateTime(status?.last_run)} />
-            <StatCard label="Next scheduled" value={formatDateTime(status?.next_run)} />
             <StatCard
-              label="Last duration"
-              value={
-                status?.last_duration_seconds != null ? `${status.last_duration_seconds}s` : '—'
+              label="Next scheduled"
+              value={formatDateTime(status?.next_run)}
+              sub={
+                status?.last_duration_seconds != null
+                  ? `Last duration ${status.last_duration_seconds}s`
+                  : undefined
               }
-              sub={`Inserted last run: ${status?.articles_inserted_last_run ?? '—'}`}
             />
           </div>
           <p className="mt-3 text-xs text-muted">
@@ -352,16 +414,32 @@ function AdminDashboard({ onLogout }) {
           </p>
         </section>
 
-        <section className="rounded-2xl border border-app bg-surface p-5 shadow-soft space-y-3">
-          <button
-            type="button"
-            disabled={busy || status?.headline === 'running'}
-            onClick={onFetchNow}
-            className="w-full sm:w-auto rounded-xl bg-primary px-8 py-3 text-base font-bold text-white hover:bg-primary-hover disabled:opacity-60"
-          >
-            {status?.headline === 'running' || busy ? 'Fetching…' : 'FETCH DATA NOW'}
-          </button>
-          {actionMsg ? <p className="text-sm text-muted">{actionMsg}</p> : null}
+        <section className="rounded-2xl border border-app bg-surface p-4 shadow-soft">
+          <div className="flex flex-col lg:flex-row lg:items-stretch gap-3">
+            <button
+              type="button"
+              disabled={busy || status?.headline === 'running'}
+              onClick={onFetchNow}
+              className="shrink-0 rounded-xl bg-primary px-6 py-3 text-sm font-bold text-white hover:bg-primary-hover disabled:opacity-60 lg:min-w-[11rem]"
+            >
+              {status?.headline === 'running' || busy ? 'Fetching…' : 'FETCH DATA NOW'}
+            </button>
+            <div className="min-w-0 flex-1 grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <StatCard label="Successful runs" value={status?.stats?.successful} />
+              <StatCard label="Failed runs" value={status?.stats?.failed} />
+              <StatCard label="Skipped" value={status?.stats?.skipped} />
+              <StatCard label="Running records" value={status?.stats?.running} />
+            </div>
+          </div>
+          {actionMsg ? (
+            <p
+              className={`mt-3 text-sm ${
+                /new article/i.test(actionMsg) ? 'font-semibold text-app' : 'text-muted'
+              }`}
+            >
+              {actionMsg}
+            </p>
+          ) : null}
         </section>
 
         {(status?.alerts || []).length > 0 ? (
@@ -384,13 +462,6 @@ function AdminDashboard({ onLogout }) {
             ))}
           </section>
         ) : null}
-
-        <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <StatCard label="Successful runs" value={status?.stats?.successful} />
-          <StatCard label="Failed runs" value={status?.stats?.failed} />
-          <StatCard label="Skipped" value={status?.stats?.skipped} />
-          <StatCard label="Running records" value={status?.stats?.running} />
-        </section>
 
         {health?.checks ? (
           <section className="rounded-2xl border border-app bg-surface p-5 shadow-soft">
@@ -449,7 +520,7 @@ function AdminDashboard({ onLogout }) {
                   <th className="py-2 pr-3">Trigger</th>
                   <th className="py-2 pr-3">Status</th>
                   <th className="py-2 pr-3">Duration</th>
-                  <th className="py-2 pr-3">Items</th>
+                  <th className="py-2 pr-3">New articles</th>
                   <th className="py-2 pr-3">Error</th>
                   <th className="py-2">Action</th>
                 </tr>
