@@ -84,9 +84,11 @@ Render Free does **not** support background workers and web services sleep after
 
 ### Known limitations
 
-- Sleep still requires an inbound request (dashboard polling helps keep the service awake).
+- Render Free sleeps after ~15 minutes idle; the in-process APScheduler stops until the next request.
+- Use the GitHub Actions keep-alive workflow (or an external cron) — see [`server/pipeline/README.md`](server/pipeline/README.md).
 - gunicorn must stay at `--workers 1` (Mongo lock mitigates mistakes; single worker remains the rule).
 - Catch-up is best-effort on cold start, not continuous collection while asleep.
+- Set `PIPELINE_ADMIN_TOKEN` on Render (and mirror it in GitHub Actions secrets) so `POST /api/pipeline/run-now` works.
 
 ## Endpoints
 

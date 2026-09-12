@@ -1,0 +1,100 @@
+# Keep Render Free awake and trigger the news pipeline on a wall clock.
+#
+# Render Free sleeps after ~15 minutes idle, which stops the in-process
+# APScheduler. This workflow:
+#   1) Pings GET /api/health every 10 minutes (keep-alive; no secrets).
+#   2) POSTs /api/pipeline/run-now hourly when PIPELINE_ADMIN_TOKEN is set.
+#
+# Required GitHub repo secrets (Settings → Secrets and variables → Actions):
+#   PIPELINE_BASE_URL      — e.g. https://mediasphere-1.onrender.com
+#   PIPELINE_ADMIN_TOKEN   — same value as Render env PIPELINE_ADMIN_TOKEN
+#
+# Keep-alive still runs if PIPELINE_ADMIN_TOKEN is missing; run-now is skipped.
+
+name: Pipeline keep-alive
+
+on:
+  schedule:
+    # Every 10 minutes — shorter than Render Free's ~15 min idle sleep.
+    - cron: "*/10 * * * *"
+    # Top of each hour — explicit pipeline trigger (backup to in-process job).
+    - cron: "0 * * * *"
+  workflow_dispatch:
+    inputs:
+      trigger_pipeline:
+        description: "Also POST /api/pipeline/run-now"
+        type: boolean
+        default: true
+
+jobs:
+  keep-alive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Resolve base URL
+        id: cfg
+        env:
+          BASE: ${{ secrets.PIPELINE_BASE_URL }}
+        run: |
+          if [ -z "$BASE" ]; then
+            BASE="https://mediasphere-1.onrender.com"
+          fi
+          echo "base_url=$BASE" >> "$GITHUB_OUTPUT"
+
+      - name: GET /api/health (wake service)
+        env:
+          BASE_URL: ${{ steps.cfg.outputs.base_url }}
+        run: |
+          set -euo pipefail
+          code=$(curl -sS -o /tmp/health.json -w "%{http_code}" --max-time 90 "$BASE_URL/api/health" || true)
+          echo "health_http=$code"
+          cat /tmp/health.json || true
+          test "$code" = "200"
+
+  run-pipeline:
+    # Only on the hourly schedule, manual dispatch with trigger, or when both fire.
+    # schedule event has no inputs; use github.event.schedule to distinguish.
+    if: >
+      github.event_name == 'workflow_dispatch' && inputs.trigger_pipeline
+      || github.event_name == 'schedule' && github.event.schedule == '0 * * * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: keep-alive
+    steps:
+      - name: Resolve base URL
+        id: cfg
+        env:
+          BASE: ${{ secrets.PIPELINE_BASE_URL }}
+        run: |
+          if [ -z "$BASE" ]; then
+            BASE="https://mediasphere-1.onrender.com"
+          fi
+          echo "base_url=$BASE" >> "$GITHUB_OUTPUT"
+
+      - name: POST /api/pipeline/run-now
+        env:
+          BASE_URL: ${{ steps.cfg.outputs.base_url }}
+          TOKEN: ${{ secrets.PIPELINE_ADMIN_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TOKEN:-}" ]; then
+            echo "PIPELINE_ADMIN_TOKEN secret not set — skipping run-now."
+            echo "Set the same token on Render (Environment) and in GitHub Actions secrets."
+            exit 0
+          fi
+          code=$(curl -sS -o /tmp/runnow.json -w "%{http_code}" --max-time 90 \
+            -X POST "$BASE_URL/api/pipeline/run-now" \
+            -H "X-Pipeline-Admin-Token: $TOKEN" \
+            -H "Content-Type: application/json" || true)
+          echo "run_now_http=$code"
+          cat /tmp/runnow.json || true
+          case "$code" in
+            202|200) exit 0 ;;
+            503)
+              echo "run-now disabled on server (PIPELINE_ADMIN_TOKEN not configured on Render)."
+              exit 1
+              ;;
+            *)
+              exit 1
+              ;;
+          esac
