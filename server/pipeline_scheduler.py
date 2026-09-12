@@ -115,12 +115,34 @@ def _empty_stats() -> dict[str, Any]:
     }
 
 
-def _job(trigger: str = "interval") -> None:
+def _job(
+    trigger: str = "interval",
+    run_id: str | None = None,
+    parent_run_id: str | None = None,
+) -> None:
     """Run one locked pipeline cycle. Never raises (scheduler must not die)."""
     # Serialize catch-up vs interval within this process as a belt-and-suspenders
     # measure; Mongo lock covers cross-process races.
     if not _job_gate.acquire(blocking=False):
         logger.info("Pipeline job skipped: another cycle is already in progress (local gate).")
+        try:
+            pipeline_state.record_history(
+                {
+                    "run_id": run_id or f"skip_gate_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}",
+                    "start_time": datetime.now(timezone.utc).isoformat(),
+                    "finish_time": datetime.now(timezone.utc).isoformat(),
+                    "duration_seconds": 0,
+                    "articles_fetched": 0,
+                    "duplicates": 0,
+                    "inserted": 0,
+                    "errors": ["skipped_local_gate"],
+                    "status": "skipped",
+                    "trigger": trigger,
+                    "parent_run_id": parent_run_id,
+                }
+            )
+        except Exception:  # noqa: BLE001
+            pass
         return
 
     owner: str | None = None
@@ -129,24 +151,49 @@ def _job(trigger: str = "interval") -> None:
     stats = _empty_stats()
     status = "failed"
     errors: list[str] = []
+    if not run_id:
+        try:
+            state = pipeline_state.get_state()
+            run_id = state.get("pending_run_id")
+        except Exception:  # noqa: BLE001
+            run_id = None
+    if not run_id:
+        run_id = f"fetch_{started.strftime('%Y%m%d_%H%M%S')}_{trigger}"
 
     try:
         owner = pipeline_state.acquire_lock()
         if not owner:
             logger.info("Pipeline job skipped: distributed lock held by another instance.")
+            pipeline_state.record_history(
+                {
+                    "run_id": run_id,
+                    "start_time": started.isoformat(),
+                    "finish_time": datetime.now(timezone.utc).isoformat(),
+                    "duration_seconds": 0,
+                    "articles_fetched": 0,
+                    "duplicates": 0,
+                    "inserted": 0,
+                    "errors": ["skipped_lock_held"],
+                    "status": "skipped",
+                    "trigger": trigger,
+                    "parent_run_id": parent_run_id,
+                }
+            )
             return
 
-        logger.info("Starting pipeline | trigger=%s | owner=%s", trigger, owner)
-        logger.info("Collecting Lokal")
-        logger.info("Collecting YouTube")
-        logger.info("Categorizing")
-        logger.info("Saving MongoDB")
+        logger.info(
+            "[FETCH_START] run_id=%s trigger=%s owner=%s",
+            run_id,
+            trigger,
+            owner,
+        )
 
         pipeline_state.update_state(
             {
                 "last_run": started.isoformat(),
                 "status": "running",
                 "trigger": trigger,
+                "current_run_id": run_id,
             }
         )
 
@@ -166,15 +213,17 @@ def _job(trigger: str = "interval") -> None:
                     "articles_inserted": int(stats.get("inserted") or 0),
                     "next_run": _next_run_iso(),
                     "last_errors": [],
+                    "current_run_id": None,
+                    "pending_run_id": None,
                 }
             )
             logger.info(
-                "Finished successfully | duration=%.2fs | inserted=%s | duplicates=%s",
+                "[FETCH_SUCCESS] run_id=%s duration=%.2fs inserted=%s duplicates=%s",
+                run_id,
                 duration,
                 stats.get("inserted"),
                 stats.get("duplicates"),
             )
-            logger.info("Dashboard refresh available")
         else:
             status = "failed"
             errors.append(f"combined_cycle_exit_code={exit_code}")
@@ -187,16 +236,20 @@ def _job(trigger: str = "interval") -> None:
                     "articles_inserted": int(stats.get("inserted") or 0),
                     "next_run": _next_run_iso(),
                     "last_errors": errors[:20],
+                    "current_run_id": None,
+                    "pending_run_id": None,
                 }
             )
             logger.error(
-                "Pipeline finished with failures | duration=%.2fs | errors=%s",
+                "[FETCH_FAILED] run_id=%s duration=%.2fs errors=%s",
+                run_id,
                 duration,
                 errors,
             )
 
         pipeline_state.record_history(
             {
+                "run_id": run_id,
                 "start_time": started.isoformat(),
                 "finish_time": finished.isoformat(),
                 "duration_seconds": round(duration, 3),
@@ -209,6 +262,7 @@ def _job(trigger: str = "interval") -> None:
                 "errors": errors[:50],
                 "status": status,
                 "trigger": trigger,
+                "parent_run_id": parent_run_id,
             }
         )
         # Per-source markers for health endpoint / dashboard.
@@ -247,6 +301,7 @@ def _job(trigger: str = "interval") -> None:
             )
             pipeline_state.record_history(
                 {
+                    "run_id": run_id,
                     "start_time": started.isoformat(),
                     "finish_time": finished.isoformat(),
                     "duration_seconds": round(duration, 3),
@@ -259,6 +314,8 @@ def _job(trigger: str = "interval") -> None:
                     "errors": errors[:50],
                     "status": "failed",
                     "trigger": trigger,
+                    "parent_run_id": parent_run_id,
+                    "error_stack": tb[:2000],
                 }
             )
         except Exception:  # noqa: BLE001
@@ -349,9 +406,18 @@ def start(run_catch_up: bool = True) -> BackgroundScheduler | None:
     return _scheduler
 
 
-def run_now() -> None:
+def run_now(
+    trigger: str = "manual",
+    run_id: str | None = None,
+    parent_run_id: str | None = None,
+) -> None:
     """Manually trigger one locked cycle in a daemon thread (admin use)."""
-    threading.Thread(target=_job, kwargs={"trigger": "manual"}, name="pipeline-manual", daemon=True).start()
+    threading.Thread(
+        target=_job,
+        kwargs={"trigger": trigger, "run_id": run_id, "parent_run_id": parent_run_id},
+        name=f"pipeline-{trigger}",
+        daemon=True,
+    ).start()
 
 
 def _source_health(name: str, enabled: bool, state: dict[str, Any]) -> str:

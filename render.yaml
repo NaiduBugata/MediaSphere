@@ -47,7 +47,10 @@ services:
       # only auto-fills on first Blueprint provision if the key is missing).
       - key: PIPELINE_ADMIN_TOKEN
         generateValue: true
+      - key: FETCH_DELAY_TOLERANCE_MINUTES
+        value: "30"
       # Optional: PIPELINE_LOCK_TTL_SECONDS
+      # Optional override: ADMIN_PASSWORD (defaults to PIPELINE_ADMIN_TOKEN for /@admin login)
       - key: YOUTUBE_ENABLED
         value: true
       - key: SAKSHI_ENABLED

@@ -22,12 +22,24 @@ from whatsapp.routes import whatsapp_bp
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 logger = logging.getLogger("api_server")
 
-_DEFAULT_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
+_DEFAULT_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173,https://media-sphere-omega.vercel.app"
 CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", _DEFAULT_ORIGINS).split(",") if o.strip()]
 
 app = Flask(__name__)
-CORS(app, origins=CORS_ORIGINS)
+CORS(
+    app,
+    origins=CORS_ORIGINS,
+    supports_credentials=True,
+    allow_headers=["Content-Type", "Authorization", "X-Admin-Token", "X-Pipeline-Admin-Token"],
+)
 app.register_blueprint(whatsapp_bp)
+
+try:
+    from admin.routes import admin_bp
+
+    app.register_blueprint(admin_bp)
+except Exception as _admin_exc:  # noqa: BLE001
+    logger.warning("Admin blueprint not loaded: %s", _admin_exc)
 
 
 def _normalize_article(doc: dict) -> dict:

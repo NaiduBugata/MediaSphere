@@ -6,10 +6,15 @@ import ProblemsPage from '../pages/ProblemsPage';
 import AnalyticsPage from '../pages/AnalyticsPage';
 import DepartmentsPage from '../pages/DepartmentsPage';
 import SettingsPage from '../pages/SettingsPage';
+import AdminPage from '../pages/AdminPage';
 
 export default function AppRoutes() {
   return (
     <Routes>
+      {/* Canonical admin entry — outside AppShell so news load cannot block it */}
+      <Route path="@admin" element={<AdminPage />} />
+      <Route path="/@admin" element={<AdminPage />} />
+
       <Route element={<AppShell />}>
         <Route index element={<DashboardPage />} />
         <Route path="news" element={<NewsPage />} />

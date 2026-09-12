@@ -63,6 +63,8 @@ def ensure_indexes() -> None:
         def _create() -> None:
             history_collection().create_index([("start_time", -1)])
             history_collection().create_index("status")
+            history_collection().create_index("run_id")
+            history_collection().create_index("trigger")
             lock_collection().create_index("expires_at")
 
         retry_call(_create, label="pipeline_state.ensure_indexes")
