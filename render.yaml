@@ -30,6 +30,9 @@ services:
         value: 3.11.9
       - key: API_DEBUG
         value: false
+      # Groq model (llama-3.3-70b-versatile shut down Aug 2026)
+      - key: GROQ_MODEL
+        value: openai/gpt-oss-120b
       # Run the news pipeline in-process (no separate worker on free tier).
       - key: PIPELINE_ON_API
         value: true

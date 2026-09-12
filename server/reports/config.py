@@ -69,7 +69,7 @@ SMTP_RETRY_BACKOFF_SECONDS = _get_int("SMTP_RETRY_BACKOFF_SECONDS", 5)
 REPORT_RECIPIENTS = _get_list("REPORT_RECIPIENTS")
 
 # ---- Groq (executive summary) ----
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 GROQ_TIMEOUT_SECONDS = _get_int("GROQ_TIMEOUT_SECONDS", 120)
 
 

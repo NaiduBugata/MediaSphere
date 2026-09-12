@@ -54,7 +54,7 @@ ALL_ARTICLES_CSV_FILE = OUTPUT_DIR / "all_articles.csv"
 FAILED_ARTICLES_FILE = OUTPUT_DIR / "failed_articles.json"
 PROCESSING_LOG_FILE = OUTPUT_DIR / "processing.log"
 
-MODEL_NAME = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+MODEL_NAME = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 TEMPERATURE = float(os.getenv("GROQ_TEMPERATURE", "0.0"))
 REQUEST_TIMEOUT_SECONDS = float(os.getenv("GROQ_TIMEOUT_SECONDS", "120"))
 

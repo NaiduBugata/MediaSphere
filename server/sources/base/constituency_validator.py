@@ -323,7 +323,7 @@ class ConstituencyValidator:
             model = _env_first(
                 "CONSTITUENCY_AI_VALIDATION_MODEL",
                 "SAKSHI_AI_VALIDATION_MODEL",
-                default="llama-3.1-8b-instant",
+                default="openai/gpt-oss-20b",
             )
             client = Groq(api_key=keys[0])
             response = client.chat.completions.create(
