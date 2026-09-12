@@ -11,7 +11,6 @@ const NAV_ITEMS = [
   { to: '/problems', label: 'Problems', badge: 'problems' },
   { to: '/analytics', label: 'Analytics' },
   { to: '/departments', label: 'Departments', badge: 'departments' },
-  { to: '/settings', label: 'Settings' },
 ];
 
 function linkClass({ isActive }) {
@@ -120,8 +119,8 @@ export default function TopNav() {
             </button>
 
             <Link
-              to="/settings"
-              title="Profile & settings"
+              to="/profile"
+              title="Constituency profile"
               className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-app bg-app text-muted hover:text-primary hover:border-primary/30 transition-colors duration-200"
             >
               <User className="h-4 w-4" />

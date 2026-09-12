@@ -5,8 +5,8 @@ import NewsPage from '../pages/NewsPage';
 import ProblemsPage from '../pages/ProblemsPage';
 import AnalyticsPage from '../pages/AnalyticsPage';
 import DepartmentsPage from '../pages/DepartmentsPage';
-import SettingsPage from '../pages/SettingsPage';
 import AdminPage from '../pages/AdminPage';
+import ProfilePage from '../pages/ProfilePage';
 
 export default function AppRoutes() {
   return (
@@ -22,7 +22,8 @@ export default function AppRoutes() {
         <Route path="analytics" element={<AnalyticsPage />} />
         <Route path="departments" element={<DepartmentsPage />} />
         <Route path="departments/:slug" element={<DepartmentsPage />} />
-        <Route path="settings" element={<SettingsPage />} />
+        <Route path="profile" element={<ProfilePage />} />
+        <Route path="settings" element={<Navigate to="/profile" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
