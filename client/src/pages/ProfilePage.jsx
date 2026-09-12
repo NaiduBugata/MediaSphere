@@ -1,4 +1,4 @@
-const MP_PHOTO = '/mp-lavu-sri-krishna-devarayalu.png';
+const MP_PHOTO = '/mp-lavu-sri-krishna-devarayalu.jpg';
 
 const DETAILS = [
   { label: 'Constituency', value: 'Narasaraopet Lok Sabha' },
