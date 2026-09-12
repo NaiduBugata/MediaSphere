@@ -26,11 +26,25 @@ _DEFAULT_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173,https://media-sp
 CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", _DEFAULT_ORIGINS).split(",") if o.strip()]
 
 app = Flask(__name__)
+# Explicit methods/headers so browser preflight (OPTIONS) always gets HTTP 200
+# with ACAO when Origin is allowed. Render Free cold-starts can still drop the
+# first OPTIONS (non-OK / no CORS) → browser shows "Network Error".
 CORS(
     app,
+    resources={r"/api/*": {"origins": CORS_ORIGINS}},
     origins=CORS_ORIGINS,
+    methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     supports_credentials=True,
-    allow_headers=["Content-Type", "Authorization", "X-Admin-Token", "X-Pipeline-Admin-Token"],
+    allow_headers=[
+        "Content-Type",
+        "Authorization",
+        "X-Admin-Token",
+        "X-Pipeline-Admin-Token",
+        "Cache-Control",
+        "Pragma",
+    ],
+    expose_headers=["Content-Type"],
+    max_age=86400,
 )
 app.register_blueprint(whatsapp_bp)
 

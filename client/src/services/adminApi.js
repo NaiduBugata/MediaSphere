@@ -31,7 +31,12 @@ function adminHeaders() {
 }
 
 export async function adminLogin(username, password) {
-  const { data } = await api.post('/admin/auth/login', { username, password });
+  // Longer timeout: Render Free cold-start often exceeds the default 30s.
+  const { data } = await api.post(
+    '/admin/auth/login',
+    { username, password },
+    { timeout: 90000 },
+  );
   if (data?.token) setAdminToken(data.token);
   return data;
 }

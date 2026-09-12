@@ -67,10 +67,11 @@ function AdminLogin({ onSuccess }) {
       await adminLogin(username, password);
       onSuccess();
     } catch (err) {
-      const msg =
-        err?.response?.data?.error ||
-        err?.message ||
-        'Login failed. Check ADMIN_USERNAME / ADMIN_PASSWORD on the API.';
+      const noResponse = !err?.response;
+      const raw = err?.response?.data?.error || err?.message || '';
+      const msg = noResponse
+        ? 'API unreachable (often Render Free waking up). Wait ~60s and try again, or open https://mediasphere-1.onrender.com/api/health first.'
+        : raw || 'Login failed. Check ADMIN_USERNAME / ADMIN_PASSWORD on the API.';
       setError(msg);
     } finally {
       setLoading(false);
