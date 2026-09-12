@@ -9,7 +9,10 @@ const api = axios.create({
 });
 
 export async function getNews() {
-  const { data } = await api.get('/news');
+  const { data } = await api.get('/news', {
+    params: { _t: Date.now() },
+    headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
+  });
   return {
     articles: data.articles || [],
     count: data.count || 0,

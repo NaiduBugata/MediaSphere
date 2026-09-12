@@ -100,6 +100,15 @@ export default function TopNav() {
 
             <ThemeToggle />
 
+            {typeof stats?.total === 'number' ? (
+              <span
+                className="hidden sm:inline-flex items-center rounded-control border border-app bg-surface px-2 py-1 text-xs font-semibold text-muted"
+                title="Articles loaded from API"
+              >
+                {stats.total} news
+              </span>
+            ) : null}
+
             <button
               type="button"
               onClick={refresh}

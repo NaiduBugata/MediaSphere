@@ -125,6 +125,23 @@ def run_combined_cycle() -> tuple[int, dict[str, Any]]:
     except Exception as exc:  # noqa: BLE001
         logger.error("Pipeline notification failed (ignored): %s", exc)
 
+    # Keep API data_revision / health in sync for local CLI runs (not only APScheduler).
+    try:
+        import pipeline_state
+
+        now = datetime.now(timezone.utc).isoformat()
+        fields: dict[str, Any] = {
+            "last_run": now,
+            "status": "success" if exit_code == 0 else "failed",
+            "articles_inserted_last_run": int(stats.get("inserted") or 0),
+            "articles_processed": int(stats.get("articles_fetched") or 0),
+        }
+        if exit_code == 0:
+            fields["last_success"] = now
+        pipeline_state.update_state(fields)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Could not update pipeline_state after cycle: %s", exc)
+
     logger.info(
         "COMBINED PIPELINE CYCLE END | exit=%s | inserted=%s | duplicates=%s | fetched=%s | sakshi=%s",
         exit_code,

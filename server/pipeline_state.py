@@ -87,8 +87,32 @@ def update_state(fields: dict[str, Any]) -> dict[str, Any]:
 
 
 def get_data_revision() -> str | None:
+    """Return a revision stamp that advances when articles change or the pipeline succeeds."""
     state = get_state()
-    return state.get("last_success") or state.get("last_run")
+    candidates: list[str] = []
+    for key in ("last_success", "last_run", "updated_at"):
+        value = state.get(key)
+        if value:
+            candidates.append(str(value))
+
+    try:
+        coll = mongo_store.get_collection()
+        newest = coll.find_one(
+            {},
+            sort=[("first_seen_at", -1)],
+            projection={"first_seen_at": 1, "last_updated_at": 1},
+        )
+        if newest:
+            for key in ("first_seen_at", "last_updated_at"):
+                value = newest.get(key)
+                if value:
+                    candidates.append(str(value))
+    except Exception:  # noqa: BLE001
+        pass
+
+    if not candidates:
+        return None
+    return max(candidates)
 
 
 def article_count() -> int:
