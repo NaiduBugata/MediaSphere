@@ -30,8 +30,8 @@ function adminHeaders() {
     : { 'Content-Type': 'application/json' };
 }
 
-export async function adminLogin(password) {
-  const { data } = await api.post('/admin/auth/login', { password });
+export async function adminLogin(username, password) {
+  const { data } = await api.post('/admin/auth/login', { username, password });
   if (data?.token) setAdminToken(data.token);
   return data;
 }

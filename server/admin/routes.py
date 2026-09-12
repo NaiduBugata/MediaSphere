@@ -31,15 +31,16 @@ def admin_login():
         return (
             jsonify(
                 {
-                    "error": "Admin auth is not configured. Set ADMIN_PASSWORD or PIPELINE_ADMIN_TOKEN.",
+                    "error": "Admin auth is not configured. Set ADMIN_PASSWORD (and optionally ADMIN_USERNAME).",
                     "status": "disabled",
                 }
             ),
             503,
         )
     payload = request.get_json(silent=True) or {}
+    username = payload.get("username") or payload.get("email") or ""
     password = payload.get("password") or payload.get("token") or ""
-    if not auth.verify_password(password):
+    if not auth.verify_credentials(username, password):
         return jsonify({"error": "Invalid credentials", "status": "forbidden"}), 403
     session = auth.issue_session_token()
     return jsonify({"status": "ok", **session})

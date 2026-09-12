@@ -9,8 +9,8 @@ import time
 from typing import Any
 
 
-def _truthy(name: str, default: str = "false") -> bool:
-    return os.getenv(name, default).lower() in ("1", "true", "yes", "on")
+def admin_username() -> str:
+    return os.getenv("ADMIN_USERNAME", "").strip()
 
 
 def admin_password() -> str:
@@ -70,8 +70,25 @@ def verify_session_token(token: str | None) -> bool:
         return False
 
 
-def verify_password(password: str | None) -> bool:
-    expected = admin_password()
-    if not expected or password is None:
+def verify_credentials(username: str | None, password: str | None) -> bool:
+    """Validate admin username + password.
+
+    If ADMIN_USERNAME is unset, only the password is checked (legacy).
+    """
+    expected_password = admin_password()
+    if not expected_password or password is None:
         return False
-    return hmac.compare_digest(str(password), expected)
+    if not hmac.compare_digest(str(password), expected_password):
+        return False
+
+    expected_user = admin_username()
+    if not expected_user:
+        return True
+    if username is None:
+        return False
+    return hmac.compare_digest(str(username).strip().lower(), expected_user.lower())
+
+
+def verify_password(password: str | None) -> bool:
+    """Backward-compatible password-only check."""
+    return verify_credentials(admin_username() or None, password)

@@ -54,6 +54,7 @@ function StatCard({ label, value, sub }) {
 }
 
 function AdminLogin({ onSuccess }) {
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -63,13 +64,13 @@ function AdminLogin({ onSuccess }) {
     setLoading(true);
     setError('');
     try {
-      await adminLogin(password);
+      await adminLogin(username, password);
       onSuccess();
     } catch (err) {
       const msg =
         err?.response?.data?.error ||
         err?.message ||
-        'Login failed. Check ADMIN_PASSWORD / PIPELINE_ADMIN_TOKEN on the API.';
+        'Login failed. Check ADMIN_USERNAME / ADMIN_PASSWORD on the API.';
       setError(msg);
     } finally {
       setLoading(false);
@@ -90,7 +91,18 @@ function AdminLogin({ onSuccess }) {
           </p>
         </div>
         <label className="block text-sm">
-          <span className="text-muted">Admin password</span>
+          <span className="text-muted">Username / email</span>
+          <input
+            type="email"
+            autoComplete="username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            className="input-field mt-1 w-full"
+            required
+          />
+        </label>
+        <label className="block text-sm">
+          <span className="text-muted">Password</span>
           <input
             type="password"
             autoComplete="current-password"
@@ -104,7 +116,7 @@ function AdminLogin({ onSuccess }) {
         <button
           type="submit"
           disabled={loading}
-          className="w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white hover:bg-primary-hover disabled:opacity-60"
+          className="w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-hover disabled:opacity-60"
         >
           {loading ? 'Signing in…' : 'Sign in'}
         </button>

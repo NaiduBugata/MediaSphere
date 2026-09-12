@@ -8,12 +8,15 @@ Production: `https://media-sphere-omega.vercel.app/@admin`
 
 ## Auth
 
-Set one of:
+Set:
 
-- `ADMIN_PASSWORD` (preferred), or
-- `PIPELINE_ADMIN_TOKEN` (fallback login password)
+- `ADMIN_USERNAME` (e.g. email)
+- `ADMIN_PASSWORD` (required)
 
 Optional: `ADMIN_SESSION_SECRET`, `ADMIN_SESSION_TTL_SECONDS`.
+
+If `ADMIN_USERNAME` is unset, only the password is checked (legacy).
+`PIPELINE_ADMIN_TOKEN` remains a password fallback when `ADMIN_PASSWORD` is empty.
 
 Login issues a Bearer session token (HMAC). All `/api/admin/*` routes require it.
 
