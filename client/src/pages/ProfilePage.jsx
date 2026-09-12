@@ -16,15 +16,15 @@ export default function ProfilePage() {
       </div>
 
       <section className="rounded-2xl border border-app bg-surface shadow-soft overflow-hidden">
-        <div className="flex flex-col sm:flex-row gap-6 p-6 sm:p-8">
-          <div className="shrink-0 mx-auto sm:mx-0">
+        <div className="flex flex-col sm:flex-row sm:items-stretch gap-6 p-6 sm:p-8">
+          <div className="shrink-0 mx-auto sm:mx-0 w-44 sm:w-52 md:w-60 self-stretch">
             <img
               src={MP_PHOTO}
               alt="Lavu Sri Krishna Devarayalu, Member of Parliament for Narasaraopet"
-              className="h-44 w-44 sm:h-52 sm:w-52 rounded-2xl object-cover object-top border border-app shadow-soft bg-secondary"
+              className="h-56 sm:h-full sm:min-h-full w-full rounded-2xl object-cover object-top border border-app shadow-soft bg-secondary"
             />
           </div>
-          <div className="min-w-0 flex-1 space-y-4 text-center sm:text-left">
+          <div className="min-w-0 flex-1 flex flex-col justify-between gap-4 text-center sm:text-left">
             <div>
               <p className="text-xs font-semibold uppercase tracking-wider text-primary">
                 Member of Parliament
