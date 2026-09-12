@@ -17,13 +17,13 @@ export default function DashboardPage() {
 
   return (
     <div className="page-enter flex flex-col gap-0 lg:h-[calc(100dvh-5.5rem)] lg:max-h-[calc(100dvh-5.5rem)] lg:overflow-hidden">
-      <div className="shrink-0 mb-4">
-        <TrendingBar items={trending} dense />
+      <div className="shrink-0 mb-5">
+        <TrendingBar items={trending} />
       </div>
 
-      {/* Hero ~62% / Critical Issues ~38% — featured image a bit narrower */}
-      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,5.5fr)_minmax(260px,3.5fr)] gap-4 items-stretch shrink-0 mb-4 h-auto lg:h-[300px]">
-        <div className="min-h-0 h-[260px] sm:h-[280px] lg:h-full">
+      {/* Hero + Critical Issues share the same vertical band as the featured image */}
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,5.5fr)_minmax(280px,3.5fr)] gap-5 items-stretch shrink-0 mb-5 h-auto lg:h-[340px]">
+        <div className="min-h-0 h-[280px] sm:h-[300px] lg:h-full">
           <FeaturedStory
             article={featured}
             onReadMore={openArticle}
@@ -31,19 +31,18 @@ export default function DashboardPage() {
             compact
           />
         </div>
-        <div className="min-h-0 h-[260px] sm:h-[280px] lg:h-full">
+        <div className="min-h-0 h-[280px] sm:h-[300px] lg:h-full">
           <TopStoriesRail
             articles={rail}
             onSelect={openArticle}
             title="Critical Issues"
             viewAllTo="/problems"
-            dense
             limit={5}
           />
         </div>
       </div>
 
-      <div className="shrink-0 mb-4 flex items-center gap-3">
+      <div className="shrink-0 mb-5 flex items-center gap-4">
         <h2 className="section-title !text-[1.25rem] leading-none inline-flex items-center gap-1.5 shrink-0">
           <span>Latest News</span>
           <ChevronDown

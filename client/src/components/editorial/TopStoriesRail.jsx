@@ -38,13 +38,13 @@ export default function TopStoriesRail({
                 type="button"
                 onClick={() => onSelect?.(article)}
                 className={`group flex h-full w-full items-center text-left transition-colors duration-200 hover:bg-app/80 overflow-hidden ${
-                  dense ? 'gap-3 px-3.5 py-2' : 'gap-3 px-4 py-3'
+                  dense ? 'gap-3.5 px-4 py-3' : 'gap-3.5 px-4 py-3.5'
                 }`}
               >
                 <ArticleMedia
                   article={article}
                   className={`shrink-0 rounded-control shadow-soft ${
-                    dense ? 'h-11 w-11' : 'h-14 w-14'
+                    dense ? 'h-12 w-12' : 'h-14 w-14'
                   }`}
                   alt=""
                   zoom
@@ -57,7 +57,7 @@ export default function TopStoriesRail({
                   >
                     {truncate(article.title, dense ? 80 : 90)}
                   </p>
-                  <p className="mt-0.5 text-meta truncate">
+                  <p className="mt-1 text-meta truncate">
                     {formatRelativeTime(article.created_on)}
                   </p>
                 </div>

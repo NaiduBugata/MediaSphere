@@ -12,7 +12,7 @@ export default function FeaturedStory({
 
   // Compact (Dashboard): fill parent band — overlay stays lower-left.
   const height = compact
-    ? 'h-full min-h-[260px]'
+    ? 'h-full min-h-[280px]'
     : 'min-h-[260px] lg:min-h-[280px] h-[260px] lg:h-[280px]';
 
   return (
