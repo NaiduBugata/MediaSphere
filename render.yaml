@@ -45,6 +45,7 @@ services:
       # Required for POST /api/pipeline/run-now (external cron / GitHub Actions).
       # Existing services: set this once in Render Dashboard → Environment (generateValue
       # only auto-fills on first Blueprint provision if the key is missing).
+      # If unset, the API falls back to ADMIN_PASSWORD for run-now auth.
       - key: PIPELINE_ADMIN_TOKEN
         generateValue: true
       - key: FETCH_DELAY_TOLERANCE_MINUTES

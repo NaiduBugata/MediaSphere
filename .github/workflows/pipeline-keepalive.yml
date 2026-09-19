@@ -8,8 +8,9 @@
 # Required GitHub repo secrets (Settings → Secrets and variables → Actions):
 #   PIPELINE_BASE_URL      — e.g. https://mediasphere-1.onrender.com
 #   PIPELINE_ADMIN_TOKEN   — same value as Render env PIPELINE_ADMIN_TOKEN
+#   ADMIN_PASSWORD         — optional fallback (API accepts either after deploy)
 #
-# Keep-alive still runs if PIPELINE_ADMIN_TOKEN is missing; run-now is skipped.
+# Keep-alive still runs if both secrets are missing; run-now is skipped.
 
 name: Pipeline keep-alive
 
@@ -75,23 +76,30 @@ jobs:
         env:
           BASE_URL: ${{ steps.cfg.outputs.base_url }}
           TOKEN: ${{ secrets.PIPELINE_ADMIN_TOKEN }}
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
         run: |
           set -euo pipefail
-          if [ -z "${TOKEN:-}" ]; then
-            echo "PIPELINE_ADMIN_TOKEN secret not set — skipping run-now."
-            echo "Set the same token on Render (Environment) and in GitHub Actions secrets."
+          # Prefer PIPELINE_ADMIN_TOKEN; fall back to ADMIN_PASSWORD (same as API).
+          AUTH_TOKEN="${TOKEN:-${ADMIN_PASSWORD:-}}"
+          if [ -z "${AUTH_TOKEN}" ]; then
+            echo "No PIPELINE_ADMIN_TOKEN or ADMIN_PASSWORD secret — skipping run-now."
+            echo "Set the same value on Render Environment and in GitHub Actions secrets."
             exit 0
           fi
           code=$(curl -sS -o /tmp/runnow.json -w "%{http_code}" --max-time 90 \
             -X POST "$BASE_URL/api/pipeline/run-now" \
-            -H "X-Pipeline-Admin-Token: $TOKEN" \
+            -H "X-Pipeline-Admin-Token: $AUTH_TOKEN" \
             -H "Content-Type: application/json" || true)
           echo "run_now_http=$code"
           cat /tmp/runnow.json || true
           case "$code" in
             202|200) exit 0 ;;
             503)
-              echo "run-now disabled on server (PIPELINE_ADMIN_TOKEN not configured on Render)."
+              echo "run-now disabled on server (set PIPELINE_ADMIN_TOKEN or ADMIN_PASSWORD on Render)."
+              exit 1
+              ;;
+            403)
+              echo "Invalid token — GitHub secret must match Render PIPELINE_ADMIN_TOKEN or ADMIN_PASSWORD."
               exit 1
               ;;
             *)

@@ -148,8 +148,12 @@ def _compute_stats(articles: list[dict]) -> dict:
         day = (today - timedelta(days=i)).isoformat()
         daily_counts[day] = 0
 
+    # Prefer first_seen_at (when we ingested to the dashboard) over created_on
+    # (source publish date) so daily_trend reflects new news on the site.
     for article in articles:
-        key = _date_key(article.get("created_on") or "")
+        key = _date_key(article.get("first_seen_at") or "") or _date_key(
+            article.get("created_on") or ""
+        )
         if key and key in daily_counts:
             daily_counts[key] += 1
 
@@ -345,12 +349,26 @@ def pipeline_run_now():
     import pipeline_config
     import pipeline_scheduler
 
-    expected = pipeline_config.PIPELINE_ADMIN_TOKEN
-    if not expected:
-        return jsonify({"status": "disabled", "error": "PIPELINE_ADMIN_TOKEN is not configured"}), 503
+    allowed = {
+        t
+        for t in (
+            os.getenv("PIPELINE_ADMIN_TOKEN", "").strip(),
+            os.getenv("ADMIN_PASSWORD", "").strip(),
+            pipeline_config.PIPELINE_ADMIN_TOKEN,
+        )
+        if t
+    }
+    if not allowed:
+        return jsonify(
+            {
+                "status": "disabled",
+                "error": "PIPELINE_ADMIN_TOKEN is not configured",
+                "hint": "Set PIPELINE_ADMIN_TOKEN (or ADMIN_PASSWORD) on Render, mirror in GitHub Actions secrets.",
+            }
+        ), 503
 
     provided = request.headers.get("X-Pipeline-Admin-Token", "")
-    if provided != expected:
+    if provided not in allowed:
         return jsonify({"status": "forbidden", "error": "Invalid admin token"}), 403
 
     if not pipeline_scheduler.is_running() and not _truthy("PIPELINE_ON_API"):

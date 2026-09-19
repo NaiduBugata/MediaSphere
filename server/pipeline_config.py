@@ -29,7 +29,12 @@ PIPELINE_ON_API = _truthy("PIPELINE_ON_API", "false")
 PIPELINE_CATCHUP_ON_START = _truthy("PIPELINE_CATCHUP_ON_START", "true")
 PIPELINE_INTERVAL_HOURS = _float_env("PIPELINE_INTERVAL_HOURS", 1.0)
 PIPELINE_LOCK_TTL_SECONDS = max(60, _int_env("PIPELINE_LOCK_TTL_SECONDS", 45 * 60))
-PIPELINE_ADMIN_TOKEN = os.getenv("PIPELINE_ADMIN_TOKEN", "").strip()
+# Prefer dedicated cron token; fall back to ADMIN_PASSWORD so /run-now works when
+# only admin login secrets were set on Render (common Free-tier misconfig).
+PIPELINE_ADMIN_TOKEN = (
+    os.getenv("PIPELINE_ADMIN_TOKEN", "").strip()
+    or os.getenv("ADMIN_PASSWORD", "").strip()
+)
 PIPELINE_STATE_ID = "pipeline"
 JOB_ID = "news_pipeline"
 
