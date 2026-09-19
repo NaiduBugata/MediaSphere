@@ -187,15 +187,17 @@ def run_cycle() -> tuple[int, dict]:
                     "updated": upsert_stats.get("updated", 0),
                     "matched": upsert_stats.get("matched", 0),
                     "duplicates": upsert_stats.get("duplicates", 0),
+                    "skipped_unmatched": upsert_stats.get("skipped_unmatched", 0),
                     "total": upsert_stats.get("total", len(news_output)),
                 }
             )
             logger.info(
-                "MongoDB upsert (Sakshi) | inserted: %s | updated: %s | matched: %s | duplicates: %s",
+                "MongoDB upsert (Sakshi) | inserted: %s | updated: %s | matched: %s | duplicates: %s | skipped_unmatched: %s",
                 stats["inserted"],
                 stats["updated"],
                 stats["matched"],
                 stats["duplicates"],
+                stats.get("skipped_unmatched", 0),
             )
         except Exception as exc:
             logger.error("MongoDB store failed: %s", exc)

@@ -50,6 +50,62 @@ def _normalize_title(title: str) -> str:
     return re.sub(r"\s+", " ", text)
 
 
+def _resolve_sakshi_post_id(
+    title: str,
+    title_map: dict[str, dict[str, Any]],
+) -> tuple[str, str | None, str | None, dict[str, Any]]:
+    from difflib import SequenceMatcher
+
+    normalized = _normalize_title(title)
+    if title in title_map:
+        meta = title_map[title]
+    elif normalized in title_map:
+        meta = title_map[normalized]
+    else:
+        # Analyzer titles often drift slightly from collector titles; fuzzy-match
+        # so valid constituency articles are not dropped (inserted=0) every cycle.
+        best_meta: dict[str, Any] = {}
+        best_score = 0.0
+        seen_ids: set[str] = set()
+        for key, entry in title_map.items():
+            post_id = str(entry.get("post_id") or "")
+            if not post_id or post_id in seen_ids:
+                continue
+            seen_ids.add(post_id)
+            cand = _normalize_title(str(entry.get("raw_title") or key))
+            if not cand or cand == post_id:
+                continue
+            score = SequenceMatcher(None, normalized.casefold(), cand.casefold()).ratio()
+            if normalized and cand and (normalized in cand or cand in normalized):
+                score = max(score, 0.93)
+            if score > best_score:
+                best_score = score
+                best_meta = entry
+        if best_meta and best_score >= 0.72:
+            logger.info(
+                "Sakshi fuzzy title match (%.2f): analyzer=%r collector=%r",
+                best_score,
+                title[:80],
+                str(best_meta.get("raw_title") or "")[:80],
+            )
+            meta = best_meta
+        else:
+            digest = hashlib.sha1(normalized.encode("utf-8")).hexdigest()[:12]
+            logger.warning(
+                "No Sakshi collector match for title %r (best=%.2f); using hash post_id",
+                title[:80],
+                best_score,
+            )
+            return f"{SAKSHI_POST_ID_PREFIX}hash_{digest}", None, None, {}
+
+    return (
+        meta["post_id"],
+        meta.get("url"),
+        meta.get("created_on"),
+        meta,
+    )
+
+
 def get_client() -> MongoClient:
     """
     Return a singleton MongoDB client configured from environment variables.
@@ -552,28 +608,6 @@ def build_sakshi_postid_map(collector_json_path: Path | str) -> dict[str, dict[s
         title_map[str(article_id)] = entry
 
     return title_map
-
-
-def _resolve_sakshi_post_id(
-    title: str,
-    title_map: dict[str, dict[str, Any]],
-) -> tuple[str, str | None, str | None, dict[str, Any]]:
-    normalized = _normalize_title(title)
-    if title in title_map:
-        meta = title_map[title]
-    elif normalized in title_map:
-        meta = title_map[normalized]
-    else:
-        digest = hashlib.sha1(normalized.encode("utf-8")).hexdigest()[:12]
-        logger.warning("No Sakshi collector match for title %r; using hash post_id", title)
-        return f"{SAKSHI_POST_ID_PREFIX}hash_{digest}", None, None, {}
-
-    return (
-        meta["post_id"],
-        meta.get("url"),
-        meta.get("created_on"),
-        meta,
-    )
 
 
 def upsert_sakshi_articles(
