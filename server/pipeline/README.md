@@ -38,14 +38,18 @@ not collect news. If nobody has the site open, the dyno sleeps and data goes sta
 
 Use wall-clock HTTP so Render wakes even with no browser open.
 
-### 1. Set `PIPELINE_ADMIN_TOKEN` on Render
+### 1. Set `PIPELINE_ADMIN_TOKEN` on Render (required)
 
 1. Open [Render Dashboard](https://dashboard.render.com) → service `mediasphere-api` → **Environment**
-2. Add or copy `PIPELINE_ADMIN_TOKEN` (long random string; Blueprint may `generateValue` on first sync)
-3. Save / redeploy so the web process picks it up
-4. Confirm: `POST /api/pipeline/run-now` without the header returns **403**, not **503**
+2. Add `PIPELINE_ADMIN_TOKEN` = a long random string (or reuse `ADMIN_PASSWORD`)
+3. Also set `ADMIN_PASSWORD` / `ADMIN_USERNAME` if you use `/@admin`
+4. **Save** and wait for redeploy (or Manual Deploy → Deploy latest commit)
+5. Confirm: `POST /api/pipeline/run-now` with a bad token returns **403**, not **503**
 
-Without this env var, `POST /api/pipeline/run-now` returns `503` (`PIPELINE_ADMIN_TOKEN is not configured`).
+The API accepts either `PIPELINE_ADMIN_TOKEN` or `ADMIN_PASSWORD` as `X-Pipeline-Admin-Token`.
+If both are unset, `run-now` returns `503` and GitHub’s hourly trigger cannot collect news.
+
+Without this, keep-alive may still wake the dyno, but **hourly forced fetch is dead**.
 
 ### 2. GitHub Actions (in this repo)
 
@@ -62,8 +66,11 @@ Repo secrets (GitHub → Settings → Secrets and variables → Actions):
 |--------|--------|
 | `PIPELINE_BASE_URL` | `https://mediasphere-1.onrender.com` (optional; this is the default) |
 | `PIPELINE_ADMIN_TOKEN` | **Same** value as Render `PIPELINE_ADMIN_TOKEN` |
+| `ADMIN_PASSWORD` | Optional fallback (same as Render `ADMIN_PASSWORD`) |
 
-After push, use **Actions → Pipeline keep-alive → Run workflow** once to verify.
+After setting secrets, use **Actions → Pipeline keep-alive → Run workflow** (with trigger pipeline) and confirm the `run-pipeline` job logs `run_now_http=202`.
+
+**Note:** GitHub schedule cron is often delayed on free accounts. Prefer also adding an external 10‑minute health ping (below) if wakes are sparse.
 
 ### 3. Alternative: cron-job.org / EasyCron
 

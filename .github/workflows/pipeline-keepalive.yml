@@ -10,7 +10,8 @@
 #   PIPELINE_ADMIN_TOKEN   — same value as Render env PIPELINE_ADMIN_TOKEN
 #   ADMIN_PASSWORD         — optional fallback (API accepts either after deploy)
 #
-# Keep-alive still runs if both secrets are missing; run-now is skipped.
+# Keep-alive (health) still runs if secrets are missing; hourly run-now FAILS
+# until PIPELINE_ADMIN_TOKEN or ADMIN_PASSWORD is set (avoids false-green skips).
 
 name: Pipeline keep-alive
 
@@ -82,9 +83,9 @@ jobs:
           # Prefer PIPELINE_ADMIN_TOKEN; fall back to ADMIN_PASSWORD (same as API).
           AUTH_TOKEN="${TOKEN:-${ADMIN_PASSWORD:-}}"
           if [ -z "${AUTH_TOKEN}" ]; then
-            echo "No PIPELINE_ADMIN_TOKEN or ADMIN_PASSWORD secret — skipping run-now."
+            echo "::error::No PIPELINE_ADMIN_TOKEN or ADMIN_PASSWORD GitHub secret — hourly run-now cannot run."
             echo "Set the same value on Render Environment and in GitHub Actions secrets."
-            exit 0
+            exit 1
           fi
           code=$(curl -sS -o /tmp/runnow.json -w "%{http_code}" --max-time 90 \
             -X POST "$BASE_URL/api/pipeline/run-now" \
