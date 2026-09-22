@@ -8,7 +8,8 @@ import { pickFeaturedArticle, scoreHeroImage } from '../utils/articleMedia';
 export function useEditorialFeed(articles, stats) {
   return useMemo(() => {
     const list = articles || [];
-    const action = stats?.actionRequired || list.filter((a) => a.isActionRequired);
+    const fromList = list.filter((a) => a.isActionRequired);
+    const action = fromList.length ? fromList : stats?.actionRequired || [];
 
     // Prefer recent pool; bias toward action items when image scores are close.
     const pool = [];
@@ -29,11 +30,16 @@ export function useEditorialFeed(articles, stats) {
 
     const featuredId = featured?._id || featured?.post_id;
 
-    const rail = (action.length ? action : list)
-      .filter((a) => (a._id || a.post_id) !== featuredId)
-      .slice(0, 5);
+    const actionPool = (action.length ? action : list).filter(
+      (a) => (a._id || a.post_id) !== featuredId,
+    );
+
+    // Pull more action items so the lower Critical Issues slot has data.
+    const rail = actionPool.slice(0, 5);
+    const railMore = actionPool.slice(5, 12);
 
     const railIds = new Set(rail.map((a) => a._id || a.post_id));
+    for (const a of railMore) railIds.add(a._id || a.post_id);
     if (featuredId) railIds.add(featuredId);
 
     const latest = list.filter((a) => !railIds.has(a._id || a.post_id)).slice(0, 4);
@@ -43,6 +49,6 @@ export function useEditorialFeed(articles, stats) {
         ? stats.topKeywords
         : list.slice(0, 6).map((a) => a.title);
 
-    return { featured, rail, latest, trending };
+    return { featured, rail, railMore, latest, trending };
   }, [articles, stats]);
 }

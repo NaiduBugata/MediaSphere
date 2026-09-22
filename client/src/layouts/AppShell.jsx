@@ -49,7 +49,7 @@ export default function AppShell() {
     <div className="min-h-screen bg-app flex flex-col">
       <TopNav />
 
-      <main className="mx-auto w-full max-w-none flex-1 px-6 pt-6 pb-4">
+      <main className="mx-auto w-full max-w-none flex-1 px-6 pt-4 pb-4">
         {!loading && articles.length === 0 ? (
           <EmptyState
             title="No news data yet"
