@@ -1,0 +1,28 @@
+{
+  "id": "/",
+  "name": "JanaVignanam",
+  "short_name": "JanaVignanam",
+  "description": "Central constituency intelligence hub for MPs, staff, and field teams.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#faf9f7",
+  "theme_color": "#293b5f",
+  "orientation": "portrait-primary",
+  "icons": [
+    { "src": "/icon/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    {
+      "src": "/icon/icon-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

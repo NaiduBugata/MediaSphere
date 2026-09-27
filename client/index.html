@@ -1,37 +1,48 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="apple-touch-icon" href="/favicon.svg" />
-    <meta name="theme-color" content="#D72638" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <title>JanaVignanam</title>
     <meta
       name="description"
-      content="MediaSphere — AI Powered Constituency Intelligence Platform"
+      content="JanaVignanam is the central constituency intelligence hub for MPs, staff, and field teams."
     />
-    <title>MediaSphere · AI Powered Constituency Intelligence Platform</title>
+    <meta name="author" content="JanaVignanam" />
+    <link rel="icon" type="image/png" href="/icon/icon-192.png" />
+
+    <!-- PWA Configuration -->
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta name="theme-color" content="#293b5f" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <meta name="apple-mobile-web-app-title" content="JanaVignanam" />
+    <link rel="apple-touch-icon" href="/icon/icon-192.png" />
+
+    <meta property="og:title" content="JanaVignanam" />
+    <meta
+      property="og:description"
+      content="Central constituency intelligence hub for MPs, staff, and field teams."
+    />
+    <meta property="og:type" content="website" />
+
+    <meta name="twitter:card" content="summary" />
+
+    <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@300..700&family=Geist+Mono:wght@100..900&family=Geist:wght@100..900&family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&family=Montserrat:ital,wght@0,100..900;1,100..900&family=Noto+Serif:ital,wght@0,100..900;1,100..900&display=swap"
       rel="stylesheet"
+      crossorigin
     />
-    <script>
-      (function () {
-        try {
-          var stored = localStorage.getItem('mediasphere.theme') || 'system';
-          var dark =
-            stored === 'dark' ||
-            (stored === 'system' &&
-              window.matchMedia('(prefers-color-scheme: dark)').matches);
-          if (dark) document.documentElement.classList.add('dark');
-        } catch (e) {}
-      })();
-    </script>
+
+    <link href="/src/index.css" rel="stylesheet" />
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

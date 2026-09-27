@@ -1,1 +1,0 @@
-"""Notification content templates package."""
