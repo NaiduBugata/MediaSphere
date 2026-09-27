@@ -60,4 +60,4 @@ Do not set `PORT`. Railway provides it. Do not set `API_PORT` on Railway.
 
 Copy `GROQ_API_KEY`, `YOUTUBE_API_KEY`, and the email or WhatsApp variables only if those channels should run. A restart does not send them while catch-up is false.
 
-WhatsApp webhooks must target the Railway host, `https://YOUR-RAILWAY-DOMAIN/webhook`, not the Vercel app.
+WhatsApp webhooks must target the Railway host, `https://YOUR-RAILWAY-DOMAIN/webhook`, not the Vercel app. That same callback also answers inbound chats from `WHATSAPP_RECIPIENTS` when `CHATBOT_ENABLED=true`. No separate tunnel is required. News alerts stay on templates. The bot does not reply when the recipient list is empty.

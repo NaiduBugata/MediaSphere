@@ -1,11 +1,15 @@
 import { Controller, Get, Post, Req, Res } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import { ChatbotService } from '../chatbot/chatbot.service';
 import { WhatsAppWebhookRepository } from './whatsapp.repository';
 import { processWebhookPost, verifyWebhook, webhookEnabled } from './whatsapp.webhook';
 
 @Controller()
 export class WhatsAppController {
-  constructor(private readonly events: WhatsAppWebhookRepository) {}
+  constructor(
+    private readonly events: WhatsAppWebhookRepository,
+    private readonly chatbot: Pick<ChatbotService, 'consider'> = { consider() {} },
+  ) {}
 
   @Get('webhook')
   verify(@Req() req: Request, @Res() res: Response): void {
@@ -32,5 +36,6 @@ export class WhatsAppController {
       save: (event, raw) => this.events.saveEvent(event, clientIp, raw),
     });
     res.status(result.status).type('text/plain').send(result.body);
+    if (result.status === 200) this.chatbot.consider(req.body);
   }
 }

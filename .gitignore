@@ -30,6 +30,8 @@ output_audit/
 runtime_outputs/
 reports_output/
 data/
+!server/src/chatbot/data/
+!server/src/chatbot/data/knowledge.json
 checkpoint*.json
 pipeline_status.json
 article.txt
