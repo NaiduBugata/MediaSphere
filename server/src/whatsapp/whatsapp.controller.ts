@@ -1,15 +1,22 @@
-import { Controller, Get, Inject, Optional, Post, Req, Res } from '@nestjs/common';
+import { Controller, Get, Post, Req, Res } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import { ChatbotService } from '../chatbot/chatbot.service';
 import { WhatsAppWebhookRepository } from './whatsapp.repository';
 import { processWebhookPost, verifyWebhook, webhookEnabled } from './whatsapp.webhook';
 
+export interface ChatbotReply {
+  consider(payload: unknown): void;
+}
+
 @Controller()
 export class WhatsAppController {
-  constructor(
-    private readonly events: WhatsAppWebhookRepository,
-    @Optional() @Inject(ChatbotService) private readonly chatbot?: ChatbotService,
-  ) {}
+  private chatbot: ChatbotReply | null = null;
+
+  constructor(private readonly events: WhatsAppWebhookRepository) {}
+
+  /** Called once after the module is ready. Keeps ChatbotService out of this constructor. */
+  useChatbot(chatbot: ChatbotReply): void {
+    this.chatbot = chatbot;
+  }
 
   @Get('webhook')
   verify(@Req() req: Request, @Res() res: Response): void {
