@@ -37,6 +37,8 @@ export class PipelineSchedulerService implements OnModuleInit, OnModuleDestroy {
   private running = false;
   private nextRunAt: Date | null = null;
   private intervalRegistered = false;
+  private retryTimer: NodeJS.Timeout | null = null;
+  readonly selfTestRetryMs = 60_000;
 
   constructor(
     private readonly config: ConfigService,
@@ -69,13 +71,27 @@ export class PipelineSchedulerService implements OnModuleInit, OnModuleDestroy {
       );
       return;
     }
+    await this.arm();
+  }
 
+  /** Starts the interval once the self-test passes. A database failure is retried; a config error is not. */
+  private async arm(): Promise<void> {
     const selfTest = await this.selfTest();
     this.logger.log(`Pipeline self-test: ${JSON.stringify(selfTest)}`);
     for (const warning of selfTest.warnings) this.logger.warn(warning);
     if (selfTest.errors.length) {
       for (const err of selfTest.errors) {
         this.logger.error(`Scheduler start aborted: ${err}`);
+      }
+      if (selfTest.config_ok) {
+        this.logger.warn(
+          `Retrying the scheduler self-test in ${String(this.selfTestRetryMs / 1000)}s.`,
+        );
+        this.retryTimer = setTimeout(() => {
+          this.retryTimer = null;
+          void this.arm();
+        }, this.selfTestRetryMs);
+        this.retryTimer.unref?.();
       }
       return;
     }
@@ -128,6 +144,10 @@ export class PipelineSchedulerService implements OnModuleInit, OnModuleDestroy {
   }
 
   shutdown(): void {
+    if (this.retryTimer) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = null;
+    }
     if (this.intervalRegistered) {
       try {
         this.registry.deleteInterval(this.intervalName);

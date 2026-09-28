@@ -33,22 +33,35 @@ function htmlFor(article: Record<string, unknown>): string {
  * Flask incremental email: one message per article still marked email_sent=false.
  * Does not query Mongo unless email is enabled and findPending is invoked.
  */
-export async function notifyPendingEmail(deps: PendingEmailDeps): Promise<{ sent: number; failed: number; skipped: boolean }> {
-  if (!enabled()) return { sent: 0, failed: 0, skipped: true };
+export interface PendingEmailResult {
+  sent: number;
+  failed: number;
+  skipped: boolean;
+  pending: number;
+  lastError: string | null;
+}
+
+export async function notifyPendingEmail(deps: PendingEmailDeps): Promise<PendingEmailResult> {
+  if (!enabled()) return { sent: 0, failed: 0, skipped: true, pending: 0, lastError: null };
   const docs = await deps.findPending();
-  if (!docs.length) return { sent: 0, failed: 0, skipped: true };
+  if (!docs.length) return { sent: 0, failed: 0, skipped: true, pending: 0, lastError: null };
   const batchId = randomBytes(8).toString('hex');
   let sent = 0;
   let failed = 0;
+  let lastError: string | null = null;
   for (const doc of docs) {
     const postId = doc.post_id ? String(doc.post_id) : '';
     const result = await sendReportEmail(subjectFor(doc), htmlFor(doc), null, undefined, deps.fetchImpl || fetch);
     if (result.success && postId) {
       sent += 1;
       await deps.markSent(postId, batchId);
+    } else if (result.success) {
+      failed += 1;
+      lastError = 'sent but article has no post_id to mark';
     } else if (!result.skipped) {
       failed += 1;
+      lastError = result.error;
     }
   }
-  return { sent, failed, skipped: sent === 0 && failed === 0 };
+  return { sent, failed, skipped: sent === 0 && failed === 0, pending: docs.length, lastError };
 }

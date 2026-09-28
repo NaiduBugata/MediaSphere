@@ -52,7 +52,7 @@ describe('notifyPendingEmail', () => {
       ],
       markSent,
     });
-    expect(result).toEqual({ sent: 1, failed: 0, skipped: false });
+    expect(result).toEqual({ sent: 1, failed: 0, skipped: false, pending: 1, lastError: null });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(String(fetchImpl.mock.calls[0][0])).toBe('https://api.resend.com/emails');
     expect(markSent).toHaveBeenCalledWith('lokal-1', expect.any(String));
@@ -71,6 +71,7 @@ describe('notifyPendingEmail', () => {
       markSent,
     });
     expect(result.failed).toBe(1);
+    expect(result.lastError).toContain('Resend API 422');
     expect(markSent).not.toHaveBeenCalled();
   });
 });

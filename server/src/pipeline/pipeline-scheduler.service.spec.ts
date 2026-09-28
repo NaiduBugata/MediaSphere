@@ -105,6 +105,28 @@ describe('PipelineSchedulerService', () => {
     expect(scheduler.isRunning()).toBe(false);
   });
 
+  it('retries the self-test after a database failure and then arms', async () => {
+    jest.useFakeTimers();
+    try {
+      const { scheduler, state } = makeScheduler(
+        { 'pipeline.onApi': true, 'pipeline.catchupOnStart': false },
+        { last_success: pythonUtcIso() },
+      );
+      state.pingDiagnostics
+        .mockRejectedValueOnce(new Error('connection timeout'))
+        .mockResolvedValue({ ok: true });
+
+      await scheduler.onModuleInit();
+      expect(scheduler.isRunning()).toBe(false);
+
+      await jest.advanceTimersByTimeAsync(scheduler.selfTestRetryMs);
+      expect(scheduler.isRunning()).toBe(true);
+      scheduler.shutdown();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('skips catch-up when the last success is younger than one interval', async () => {
     const { scheduler, runner } = makeScheduler(
       {},

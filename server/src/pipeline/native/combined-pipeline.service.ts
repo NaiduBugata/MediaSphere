@@ -337,7 +337,7 @@ export class CombinedPipelineService {
       this.logger.log(
         `[NOTIFY_PIPELINE] exit=${exitCode} inserted=${stats.inserted} errors=${stats.errors.length}`,
       );
-      await notifyPendingEmail({
+      const email = await notifyPendingEmail({
         fetchImpl,
         findPending: async () => {
           await this.db.ensureConnected();
@@ -351,6 +351,13 @@ export class CombinedPipelineService {
           );
         },
       });
+      if (email.failed) {
+        this.logger.error(
+          `[NOTIFY_EMAIL] pending=${email.pending} sent=${email.sent} failed=${email.failed} error=${String(email.lastError).slice(0, 300)}`,
+        );
+      } else if (!email.skipped) {
+        this.logger.log(`[NOTIFY_EMAIL] pending=${email.pending} sent=${email.sent}`);
+      }
       if (!whatsappReady()) return;
       const payload = {
         ...stats,
