@@ -10,6 +10,7 @@ export interface LokalArticle {
     valid: boolean;
     score: number;
     reason: string;
+    segment: string | null;
   };
 }
 

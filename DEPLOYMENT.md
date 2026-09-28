@@ -98,7 +98,19 @@ An empty `WHATSAPP_RECIPIENTS` list makes the chatbot stay silent. News alerts s
 
     The chatbot facts file is `server/src/chatbot/data/knowledge.json`. Replace that file and redeploy when the answers should change. A missing file does not stop the API. The process logs a warning and answers without those facts.
 
-    ### When YouTube or Sakshi block Railway
+### Which news is kept
+
+Only news from the seven assembly segments of the Narasaraopet Parliamentary Constituency is fetched and stored: Pedakurapadu, Chilakaluripet, Narasaraopet, Sattenapalle (also spelled Sattenapalli or Sattenpalli), Vinukonda, Gurazala, and Macherla.
+
+Every article must map to one of those seven segments by the segment name, one of its mandals, or a landmark. The article is stored with `assembly_segment` set to that segment. An article that maps to none of them is dropped, and the log shows `[SEGMENT_GATE] dropped`. The district name (Palnadu), "Narasaraopet MP", and names shared with other places (such as Nadendla or Amaravati) do not map an article on their own. The news page and the chatbot show only stored articles that carry a segment.
+
+The places for each segment live in `server/src/pipeline/data/location_dictionary.json`. The API refuses to load that file if it names a segment outside the seven.
+
+| Name | Value |
+| --- | --- |
+| `SAKSHI_TAG_URLS` | Leave empty. Sakshi is read from the tag page of each segment. A comma-separated list replaces those pages. |
+
+### When YouTube or Sakshi block Railway
 
 YouTube captions and the Sakshi website sometimes refuse cloud server addresses. Railway can hand a new deployment a new outgoing address, so a source that worked can fail after a redeploy. The logs then show `youtube_blocked:…` or `sakshi_http_403`, and the `[YOUTUBE]` line shows the reason per video.
 

@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto';
-import { loadDictionary } from '../../pipeline/native/constituency';
+import { ASSEMBLY_SEGMENTS, constituencyKeywords } from '../../pipeline/native/constituency';
 import {
   SAKSHI_NON_LOCAL_PATH_MARKERS,
   SAKSHI_SKIP_URL_SUBSTRINGS,
 } from './sakshi.constants';
 
-const FALLBACK_KEYWORDS = ['narasaraopet', 'నరసరావుపేట', 'palnadu', 'పల్నాడు'];
+const FALLBACK_KEYWORDS = [...ASSEMBLY_SEGMENTS, 'నరసరావుపేట'];
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -45,20 +45,7 @@ export function isArticleUrl(url: string): boolean {
 
 export function loadUrlPriorityKeywords(): string[] {
   try {
-    const data = loadDictionary();
-    const keywords: string[] = [];
-    const groups = [
-      data.primary_keywords,
-      data.assembly_segments,
-      data.mandals,
-      data.villages,
-      data.district_aliases,
-    ];
-    for (const group of groups) {
-      for (const item of group || []) {
-        if (item.trim()) keywords.push(item.trim());
-      }
-    }
+    const keywords = constituencyKeywords();
     return keywords.length ? keywords : FALLBACK_KEYWORDS;
   } catch {
     return FALLBACK_KEYWORDS;

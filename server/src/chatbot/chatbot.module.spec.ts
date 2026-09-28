@@ -5,14 +5,23 @@ import { ArticleRepository } from '../database/repositories/article.repository';
 import { ChatbotModule } from './chatbot.module';
 import { ChatbotService } from './chatbot.service';
 
-const stored = [{
-  title: 'Cordon search in Narasaraopet',
-  summary: 'Police searched the Pedda Cheruvu area.',
-  category: 'Crime',
-  location: { town: 'Narasaraopet', district: 'Palnadu' },
-  source: 'youtube',
-  created_on: '2026-09-27T07:26:08Z',
-}];
+const stored = [
+  {
+    title: 'Cordon search in Narasaraopet',
+    summary: 'Police searched the Pedda Cheruvu area.',
+    category: 'Crime',
+    location: { town: 'Narasaraopet', district: 'Palnadu' },
+    source: 'youtube',
+    created_on: '2026-09-27T07:26:08Z',
+    assembly_segment: 'Narasaraopet',
+  },
+  {
+    title: 'Guntur city traffic jam',
+    summary: 'Not part of the constituency dataset.',
+    source: 'sakshi',
+    created_on: '2026-09-27T08:00:00Z',
+  },
+];
 
 @Global()
 @Module({

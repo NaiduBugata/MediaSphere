@@ -12,6 +12,7 @@ export interface CollectedArticle {
   source_url?: string;
   created_on?: string;
   thumbnail?: string;
+  assembly_segment?: string | null;
 }
 
 export interface SourceCollectionResult {

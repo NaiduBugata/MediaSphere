@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Document } from 'mongodb';
 import { ArticleRepository } from '../database/repositories/article.repository';
 import { PipelineStateRepository } from '../database/repositories/pipeline-state.repository';
+import { hasAssemblySegment } from '../pipeline/native/constituency';
 import {
   NormalizedArticle,
   NewsListResponse,
@@ -65,7 +66,13 @@ export class NewsService {
       created_on: falsyToEmptyString(doc.created_on),
       first_seen_at: falsyToEmptyString(doc.first_seen_at),
       last_updated_at: falsyToEmptyString(doc.last_updated_at),
+      assembly_segment: falsyToEmptyString(doc.assembly_segment),
     };
+  }
+
+  /** Only articles mapped to one of the seven assembly segments belong to the constituency dataset. */
+  private async constituencyDocs(): Promise<Document[]> {
+    return (await this.articles.findAll()).filter((doc) => hasAssemblySegment(doc));
   }
 
   private articleSortTimestamp(article: NormalizedArticle): number {
@@ -83,7 +90,7 @@ export class NewsService {
   }
 
   async listNews(sourceFilter = 'all'): Promise<NewsListResponse> {
-    const docs = await this.articles.findAll();
+    const docs = await this.constituencyDocs();
     let articles = this.sortNewestFirst(docs.map((d) => this.normalizeArticle(d)));
     // Flask: (request.args.get("source") or "all").lower()
     const filter = (sourceFilter || 'all').toLowerCase();
@@ -189,7 +196,7 @@ export class NewsService {
   }
 
   async getStats(): Promise<NewsStatsResponse> {
-    const docs = await this.articles.findAll();
+    const docs = await this.constituencyDocs();
     const articles = docs.map((d) => this.normalizeArticle(d));
     const stats = this.computeStats(articles);
     let data_revision: string | null = null;

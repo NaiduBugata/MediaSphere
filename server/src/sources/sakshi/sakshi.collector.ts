@@ -7,6 +7,7 @@ import {
   sakshiMaxArticles,
   sakshiRequestDelayMs,
   sakshiTagUrl,
+  sakshiTagUrls,
 } from './sakshi.constants';
 import { extractSakshiArticle } from './sakshi.extractor';
 import { PermanentHttpError, fetchSakshiHtml } from './sakshi.http';
@@ -37,6 +38,23 @@ export interface CollectSakshiOptions {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Round-robin across tag pages so one busy segment cannot use the whole per-run limit. */
+function interleaveUnique(lists: string[][]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const longest = Math.max(0, ...lists.map((list) => list.length));
+  for (let row = 0; row < longest; row += 1) {
+    for (const list of lists) {
+      const url = list[row];
+      if (url && !seen.has(url)) {
+        seen.add(url);
+        out.push(url);
+      }
+    }
+  }
+  return out;
 }
 
 /**
@@ -108,15 +126,21 @@ export async function collectSakshiNews(options: CollectSakshiOptions = {}): Pro
     },
   });
 
-  let html: string;
-  try {
-    html = await fetchSakshiHtml(tagUrl, fetchImpl, { retryDelayMs: options.retryDelayMs });
-  } catch (err) {
-    const status = err instanceof PermanentHttpError ? err.statusCode : 0;
-    return finish([], emptyStats(), 0, 0, status ? `sakshi_http_${status}` : 'sakshi_fetch_failed');
+  const perTag: string[][] = [];
+  let firstError: string | null = null;
+  for (const [index, url] of sakshiTagUrls().entries()) {
+    if (index > 0 && requestDelayMs > 0) await sleep(requestDelayMs);
+    try {
+      const html = await fetchSakshiHtml(url, fetchImpl, { retryDelayMs: options.retryDelayMs });
+      perTag.push(rankSakshiLinks(html));
+    } catch (err) {
+      const status = err instanceof PermanentHttpError ? err.statusCode : 0;
+      firstError ??= status ? `sakshi_http_${status}` : 'sakshi_fetch_failed';
+    }
   }
+  if (!perTag.length) return finish([], emptyStats(), 0, 0, firstError || 'sakshi_fetch_failed');
 
-  const links = rankSakshiLinks(html);
+  const links = interleaveUnique(perTag);
   const fresh = links.filter((url) => !existing.has(url));
   const pending = fresh.slice(0, maxArticles);
   const stats = emptyStats();
@@ -142,7 +166,7 @@ export async function collectSakshiNews(options: CollectSakshiOptions = {}): Pro
       continue;
     }
     stats.accepted += 1;
-    raw._constituency_validation = { valid: score.valid, score: score.score, reason: score.reason };
+    raw._constituency_validation = { valid: score.valid, score: score.score, reason: score.reason, segment: score.segment };
     articles.push(normalizeSakshiArticle(raw, now));
   }
 

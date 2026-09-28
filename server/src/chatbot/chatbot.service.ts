@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleInit, Optional } from '@nestjs/common';
 import { discoverGroqApiKeys } from '../ai/groq-keys';
 import { ArticleRepository } from '../database/repositories/article.repository';
+import { hasAssemblySegment } from '../pipeline/native/constituency';
 import { parseWebhookPayload, type WhatsAppEvent } from '../whatsapp/whatsapp.parser';
 import { normalizePhone, sendTextMessage } from '../whatsapp/whatsapp.send';
 import {
@@ -147,6 +148,7 @@ export class ChatbotService implements OnModuleInit {
     try {
       const docs = await this.articles.findAll();
       const briefs = docs
+        .filter((doc) => hasAssemblySegment(doc))
         .map((doc) => toBrief(doc as Record<string, unknown>))
         .filter((brief): brief is NewsBrief => brief !== null);
       this.newsCache = { at: Date.now(), briefs };

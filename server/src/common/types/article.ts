@@ -28,6 +28,7 @@ export interface NormalizedArticle {
   created_on: string;
   first_seen_at: string;
   last_updated_at: string;
+  assembly_segment: string;
 }
 
 export interface NewsListResponse {

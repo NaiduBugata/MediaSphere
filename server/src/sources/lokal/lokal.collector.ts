@@ -43,6 +43,7 @@ export async function collectLokalNews(
         valid: score.valid,
         score: score.score,
         reason: score.reason,
+        segment: score.segment,
       },
     });
   }

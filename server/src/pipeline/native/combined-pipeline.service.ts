@@ -16,6 +16,7 @@ import { collectYoutubeNews } from '../../sources/youtube/youtube.collector';
 import { mergeSourceResults } from '../combined-cycle';
 import { notifyFailureWhatsApp, notifyPendingWhatsApp, notifyPipelineWhatsApp } from '../../whatsapp/whatsapp.notify';
 import { describeFailure, FailureAlertGate, pipelineStatusWhatsAppEnabled } from './pipeline-alerts';
+import { ASSEMBLY_SEGMENTS, scoreConstituency, type AssemblySegment } from './constituency';
 import { whatsappReady } from '../../whatsapp/whatsapp.send';
 import { notifyPendingEmail } from '../../notifications/incremental-email';
 
@@ -75,7 +76,16 @@ export class CombinedPipelineService {
       await this.safeCollect('sakshi', () => this.collectSakshi(fetchImpl)),
     );
 
-    const articles = results.flatMap((r) => r.articles).slice(0, maxAnalyze);
+    const mapped: CollectedArticle[] = [];
+    for (const article of results.flatMap((r) => r.articles)) {
+      const segment = resolveSegment(article);
+      if (!segment) {
+        this.logger.warn(`[SEGMENT_GATE] dropped source=${article.source} post_id=${article.post_id}: not one of the 7 assembly segments`);
+        continue;
+      }
+      mapped.push({ ...article, assembly_segment: segment });
+    }
+    const articles = mapped.slice(0, maxAnalyze);
     let inserted = 0;
     let duplicates = 0;
     let aiFailed = 0;
@@ -153,6 +163,7 @@ export class CombinedPipelineService {
       created_on: article.created_on,
       source_url: article.url,
       thumbnail: lokalThumbnail(article.raw),
+      assembly_segment: article._constituency_validation?.segment ?? null,
     }));
     return {
       source: 'lokal',
@@ -194,6 +205,7 @@ export class CombinedPipelineService {
       thumbnail: article.video_id
         ? `https://i.ytimg.com/vi/${article.video_id}/hqdefault.jpg`
         : '',
+      assembly_segment: article.assembly_segment ?? null,
     }));
     if (!articles.length && collected.errors.length) {
       return this.emptyResult('youtube', startedAt, collected.errors.slice(0, 8));
@@ -232,6 +244,7 @@ export class CombinedPipelineService {
       created_on: article.created_on,
       source_url: article.source_url,
       thumbnail: article.thumbnail || '',
+      assembly_segment: article.assembly_segment,
     }));
     this.logger.log(
       `[SAKSHI] links=${collected.linksFound} already_saved=${collected.skippedExisting} new=${articles.length} rejected=${collected.envelope.filter_stats.rejected}`,
@@ -298,6 +311,8 @@ export class CombinedPipelineService {
       keywords: analyzed.keywords,
       source_url: article.source_url || null,
       created_on: article.created_on || null,
+      constituency: 'Narasaraopet',
+      assembly_segment: article.assembly_segment,
       ...(article.thumbnail ? { thumbnail: article.thumbnail } : {}),
       content_fingerprint: fingerprint,
       last_updated_at: now,
@@ -444,6 +459,14 @@ export function decide(
   const unrepaired = results.some((r) => r.severity === 'ERROR' && !r.repaired);
   if (unrepaired) return retriesRemaining > 0 ? 'retry' : 'reject';
   return 'accept';
+}
+
+/** The segment a collector assigned, or a fresh full check. Anything else is outside the constituency. */
+export function resolveSegment(article: CollectedArticle): AssemblySegment | null {
+  const assigned = article.assembly_segment;
+  if (assigned && (ASSEMBLY_SEGMENTS as readonly string[]).includes(assigned)) return assigned as AssemblySegment;
+  const checked = scoreConstituency(`${article.title || ''}\n${article.content || ''}`);
+  return checked.valid ? checked.segment : null;
 }
 
 function dedupeById(articles: CollectedArticle[]): CollectedArticle[] {

@@ -127,6 +127,7 @@ export async function collectYoutubeNews(options: CollectYoutubeOptions = {}): P
     const article = normalizeYoutubeVideo({ ...video, transcript }, content);
     article.constituency_score = score.score;
     article.constituency_match_reason = score.reason;
+    article.assembly_segment = score.segment;
     articles.push(article);
   }
 

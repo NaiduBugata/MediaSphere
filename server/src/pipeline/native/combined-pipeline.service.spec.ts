@@ -1,4 +1,4 @@
-import { CombinedPipelineService, decide } from './combined-pipeline.service';
+import { CombinedPipelineService, decide, resolveSegment } from './combined-pipeline.service';
 import { problemId } from './problem-id';
 import { repairJson } from './json-repair';
 import { DatabaseService } from '../../database/database.service';
@@ -32,6 +32,20 @@ describe('problem id and json repair', () => {
   });
 });
 
+describe('segment gate', () => {
+  const base = { source: 'lokal', post_id: '1', created_on: '', source_url: '' };
+
+  it('keeps an article already mapped to one of the seven segments', () => {
+    expect(resolveSegment({ ...base, title: 'x', content: 'y', assembly_segment: 'Vinukonda' } as never)).toBe('Vinukonda');
+  });
+
+  it('maps an unlabelled article from its text and rejects unknown labels', () => {
+    expect(resolveSegment({ ...base, title: 'Macherla bus stand', content: 'repairs' } as never)).toBe('Macherla');
+    expect(resolveSegment({ ...base, title: 'Guntur bus stand', content: 'repairs', assembly_segment: 'Guntur' } as never)).toBeNull();
+    expect(resolveSegment({ ...base, title: 'Palnadu district review', content: 'collector meeting' } as never)).toBeNull();
+  });
+});
+
 describe('CombinedPipelineService', () => {
   const originalEnv = { ...process.env };
 
@@ -49,6 +63,7 @@ describe('CombinedPipelineService', () => {
     process.env.EMAIL_ENABLED = 'false';
     process.env.WHATSAPP_ENABLED = 'false';
     process.env.PIPELINE_MAX_ANALYZE = '3';
+    process.env.SAKSHI_TAG_URLS = 'https://www.sakshi.com/tags/narasaraopet';
 
     const updates: Array<Record<string, unknown>> = [];
     const db = {
@@ -87,7 +102,7 @@ describe('CombinedPipelineService', () => {
           ok: true,
           status: 200,
           text: async () =>
-            '<a href="https://www.sakshi.com/news/palnadu/story-123456">x</a>',
+            '<a href="https://www.sakshi.com/news/palnadu/narasaraopet-story-123456">x</a>',
           json: async () => ({}),
         } as Response;
       }
@@ -123,6 +138,7 @@ describe('CombinedPipelineService', () => {
     expect(updates.some((row) => row.post_id === '42')).toBe(true);
     expect(updates.some((row) => String(row.post_id).startsWith('sakshi_'))).toBe(true);
     expect(updates[0].problem_id).toEqual(expect.stringMatching(/^PROB-/));
+    expect(updates.every((row) => row.assembly_segment === 'Narasaraopet' && row.constituency === 'Narasaraopet')).toBe(true);
     const again = await service.runCombinedOnce({ fetchImpl });
     expect(again.stats.inserted).toBeGreaterThanOrEqual(1);
   });

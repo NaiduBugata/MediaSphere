@@ -21,9 +21,21 @@ export function sakshiEnabled(): boolean {
   return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on';
 }
 
-/** Narasaraopet tag page. This is the only listing the collector downloads. */
+/** Tag pages for the seven assembly segments. Sattenapalle and Sattenapalli are two spellings Sakshi tags separately. */
+const SEGMENT_TAGS = ['narasaraopet', 'chilakaluripet', 'sattenapalle', 'sattenapalli', 'vinukonda', 'gurazala', 'macherla', 'pedakurapadu'];
+
+/** First tag page, kept for the envelope `source` field. */
 export function sakshiTagUrl(): string {
-  return (process.env.SAKSHI_TAG_URL || 'https://www.sakshi.com/tags/narasaraopet').trim();
+  return sakshiTagUrls()[0];
+}
+
+/** The only listings the collector downloads. `SAKSHI_TAG_URLS` (comma-separated) or `SAKSHI_TAG_URL` override the segment tags. */
+export function sakshiTagUrls(): string[] {
+  const list = (process.env.SAKSHI_TAG_URLS || process.env.SAKSHI_TAG_URL || '')
+    .split(',')
+    .map((url) => url.trim())
+    .filter(Boolean);
+  return list.length ? list : SEGMENT_TAGS.map((tag) => `https://www.sakshi.com/tags/${tag}`);
 }
 
 export function sakshiBaseUrl(): string {

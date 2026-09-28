@@ -32,5 +32,6 @@ export function normalizeSakshiArticle(raw: SakshiRawArticle, now: Date = new Da
     channel: 'Sakshi',
     constituency_score: validation?.score ?? null,
     constituency_match_reason: validation?.reason ?? null,
+    assembly_segment: validation?.segment ?? null,
   };
 }

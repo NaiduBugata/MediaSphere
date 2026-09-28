@@ -21,6 +21,7 @@ export interface YoutubeArticle {
   created_on: string;
   constituency_score?: number;
   constituency_match_reason?: string;
+  assembly_segment?: string | null;
 }
 
 export interface YoutubeCollectorEnvelope {

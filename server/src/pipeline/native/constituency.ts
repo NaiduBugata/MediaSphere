@@ -2,23 +2,49 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { discoverGroqApiKeys } from '../../ai/groq-keys';
 
-interface Dict {
-  scoring?: Record<string, number>;
-  primary_keywords?: string[];
-  assembly_segments?: string[];
+/** The only seven assembly segments of the Narasaraopet Parliamentary Constituency. */
+export const ASSEMBLY_SEGMENTS = [
+  'Pedakurapadu',
+  'Chilakaluripet',
+  'Narasaraopet',
+  'Sattenapalle',
+  'Vinukonda',
+  'Gurazala',
+  'Macherla',
+] as const;
+
+export type AssemblySegment = (typeof ASSEMBLY_SEGMENTS)[number];
+
+interface SegmentEntry {
+  names?: string[];
   mandals?: string[];
-  villages?: string[];
+  /** Names shared with surnames or places elsewhere. They count only beside another clue for the same segment or the district. */
+  ambiguous?: string[];
+  landmarks?: string[];
+}
+
+interface Dict {
+  constituency?: string;
+  segments?: Record<string, SegmentEntry>;
+  constituency_references?: string[];
   district_aliases?: string[];
+  scoring?: Record<string, number>;
   negative_keywords?: string[];
   negative_categories?: string[];
-  constituency?: string;
   ai_validation?: { enabled?: boolean };
+}
+
+export interface SegmentMatch {
+  segment: AssemblySegment | null;
+  evidence: number;
+  matches: string[];
 }
 
 export interface ScoreResult {
   valid: boolean;
   score: number;
   reason: string;
+  segment: AssemblySegment | null;
   ai_decision?: string | null;
 }
 
@@ -29,39 +55,95 @@ export function loadDictionary(): Dict {
   const path = process.env.LOCATION_DICTIONARY_PATH
     ? resolve(process.cwd(), process.env.LOCATION_DICTIONARY_PATH)
     : resolve(__dirname, '../data/location_dictionary.json');
-  cached = JSON.parse(readFileSync(path, 'utf8')) as Dict;
+  const data = JSON.parse(readFileSync(path, 'utf8')) as Dict;
+  const unknown = Object.keys(data.segments || {}).filter((name) => !(ASSEMBLY_SEGMENTS as readonly string[]).includes(name));
+  if (unknown.length) throw new Error(`location dictionary lists segments outside the constituency: ${unknown.join(', ')}`);
+  cached = data;
   return cached;
 }
 
-function findMatches(haystack: string, keywords: string[]): string[] {
-  const found: string[] = [];
-  const hayLower = haystack.toLowerCase();
-  for (const keyword of keywords) {
-    if (!keyword) continue;
-    if ([...keyword].some((ch) => ch.charCodeAt(0) > 127)) {
-      if (haystack.includes(keyword) || hayLower.includes(keyword)) found.push(keyword);
-      continue;
-    }
-    const pattern = keyword.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const re = new RegExp(`(?<!\\w)${pattern}(?!\\w)`, 'i');
-    if (re.test(hayLower) || (keyword.includes(' ') && hayLower.includes(keyword.toLowerCase()))) {
-      found.push(keyword);
-    }
-  }
-  return found;
+export function hasAssemblySegment(doc: { assembly_segment?: unknown }): boolean {
+  return typeof doc.assembly_segment === 'string' && (ASSEMBLY_SEGMENTS as readonly string[]).includes(doc.assembly_segment);
 }
 
-/** Port of ConstituencyValidator.score_text. */
-export function scoreConstituency(text: string, category = ''): ScoreResult {
+/** Every place word for the seven segments, for URL ranking and search. */
+export function constituencyKeywords(): string[] {
+  const data = loadDictionary();
+  const words: string[] = [];
+  for (const entry of Object.values(data.segments || {})) {
+    words.push(...(entry.names || []), ...(entry.mandals || []), ...(entry.ambiguous || []), ...(entry.landmarks || []));
+  }
+  return [...new Set(words.map((word) => word.trim()).filter(Boolean))];
+}
+
+function firstIndex(haystack: string, keyword: string): number {
+  if (!keyword) return -1;
+  if ([...keyword].some((ch) => ch.charCodeAt(0) > 127)) return haystack.indexOf(keyword);
+  const pattern = keyword.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+  const match = new RegExp(`(?<![\\p{L}\\p{N}])${pattern}(?![\\p{L}\\p{N}])`, 'iu').exec(haystack);
+  return match ? match.index : -1;
+}
+
+function findMatches(haystack: string, keywords: string[] = []): Array<{ word: string; at: number }> {
+  return keywords
+    .map((word) => ({ word, at: firstIndex(haystack, word) }))
+    .filter((hit) => hit.at >= 0);
+}
+
+function stripConstituencyReferences(text: string, references: string[] = []): string {
+  let out = text;
+  for (const phrase of references) {
+    if (!phrase) continue;
+    const pattern = phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s*');
+    out = out.replace(new RegExp(pattern, 'giu'), ' ');
+  }
+  return out;
+}
+
+/**
+ * Map text to exactly one of the seven segments, or none.
+ * "Narasaraopet MP" and similar name the parliamentary seat, not the Narasaraopet segment, so they are ignored.
+ * The district name alone never maps an article.
+ */
+export function mapSegment(text: string): SegmentMatch {
   const data = loadDictionary();
   const weights = {
-    primary: data.scoring?.primary ?? 10,
-    assembly: data.scoring?.assembly ?? 6,
+    name: data.scoring?.name ?? 10,
     mandal: data.scoring?.mandal ?? 4,
-    village: data.scoring?.village ?? 3,
-    district_alias: data.scoring?.district_alias ?? 2,
-    negative_penalty: data.scoring?.negative_penalty ?? 8,
+    landmark: data.scoring?.landmark ?? 6,
   };
+  const haystack = stripConstituencyReferences(text, data.constituency_references);
+  const districtNamed = findMatches(haystack, data.district_aliases).length > 0;
+  let best: { segment: AssemblySegment; evidence: number; at: number; matches: string[] } | null = null;
+
+  for (const segment of ASSEMBLY_SEGMENTS) {
+    const entry = data.segments?.[segment];
+    if (!entry) continue;
+    const names = findMatches(haystack, entry.names);
+    const mandals = findMatches(haystack, entry.mandals);
+    const landmarks = findMatches(haystack, entry.landmarks);
+    const ambiguous = findMatches(haystack, entry.ambiguous);
+    const corroborated = names.length > 0 || mandals.length > 0 || landmarks.length > 0 || districtNamed;
+    const usable = [...names, ...mandals, ...landmarks, ...(corroborated ? ambiguous : [])];
+    if (!usable.length) continue;
+    const distinctMandals = mandals.length + (corroborated ? ambiguous.length : 0);
+    let evidence = 0;
+    if (names.length) evidence += weights.name;
+    if (landmarks.length) evidence += weights.landmark;
+    if (distinctMandals) evidence += weights.mandal + Math.min(4, (distinctMandals - 1) * 2);
+    const at = Math.min(...usable.map((hit) => hit.at));
+    if (!best || evidence > best.evidence || (evidence === best.evidence && at < best.at)) {
+      best = { segment, evidence, at, matches: usable.map((hit) => hit.word) };
+    }
+  }
+  return best
+    ? { segment: best.segment, evidence: best.evidence, matches: best.matches }
+    : { segment: null, evidence: 0, matches: [] };
+}
+
+/** Segment evidence plus the city, national, sports, and cinema filter. */
+export function scoreConstituency(text: string, category = ''): ScoreResult {
+  const data = loadDictionary();
   const accept = Number(
     process.env.CONSTITUENCY_SCORE_THRESHOLD ||
       process.env.SAKSHI_CONSTITUENCY_SCORE_THRESHOLD ||
@@ -70,42 +152,22 @@ export function scoreConstituency(text: string, category = ''): ScoreResult {
   );
   const borderline = data.scoring?.borderline_low ?? 3;
   const override = data.scoring?.negative_override_score ?? 12;
+  const penalty = data.scoring?.negative_penalty ?? 8;
 
-  const primary = findMatches(text, data.primary_keywords || []);
-  const assembly = findMatches(text, data.assembly_segments || []);
-  const mandals = findMatches(text, data.mandals || []);
-  const villages = findMatches(text, data.villages || []);
-  const district = findMatches(text, data.district_aliases || []);
-  const negative = findMatches(text, data.negative_keywords || []);
+  const mapped = mapSegment(text);
+  if (!mapped.segment) return { valid: false, score: 0, reason: 'no_segment', segment: null };
+
+  const negative = findMatches(text, data.negative_keywords).map((hit) => hit.word);
   for (const neg of data.negative_categories || []) {
-    if (neg && category.toLowerCase().includes(neg.toLowerCase()) && !negative.includes(neg)) {
-      negative.push(neg);
-    }
+    if (neg && category.toLowerCase().includes(neg.toLowerCase()) && !negative.includes(neg)) negative.push(neg);
   }
-
-  let score = 0;
-  if (primary.length) score += weights.primary;
-  if (assembly.length) {
-    score += weights.assembly;
-    if (assembly.length > 1) score += Math.min(4, (assembly.length - 1) * 2);
-  }
-  if (mandals.length) {
-    score += weights.mandal;
-    if (mandals.length > 1) score += Math.min(4, (mandals.length - 1) * 2);
-  }
-  if (villages.length) {
-    score += weights.village;
-    if (villages.length > 1) score += Math.min(3, villages.length - 1);
-  }
-  if (district.length && !primary.length && !assembly.length && !mandals.length) {
-    score += weights.district_alias;
-  }
+  const score = mapped.evidence;
   if (negative.length && score < override) {
-    return { valid: false, score: Math.max(0, score - weights.negative_penalty), reason: 'negative_filter' };
+    return { valid: false, score: Math.max(0, score - penalty), reason: 'negative_filter', segment: mapped.segment };
   }
-  if (score >= accept) return { valid: true, score, reason: 'score_accept' };
-  if (score >= borderline) return { valid: false, score, reason: 'borderline' };
-  return { valid: false, score, reason: 'score_below_threshold' };
+  if (score >= accept) return { valid: true, score, reason: 'segment_match', segment: mapped.segment };
+  if (score >= borderline) return { valid: false, score, reason: 'borderline', segment: mapped.segment };
+  return { valid: false, score, reason: 'score_below_threshold', segment: mapped.segment };
 }
 
 export function buildSearchableText(raw: Record<string, unknown>): string {
@@ -137,34 +199,42 @@ function constituencyAiEnabled(useAi?: boolean): boolean {
   return loadDictionary().ai_validation?.enabled !== false;
 }
 
-function parseAiDecision(content: string): 'YES' | 'NO' | 'UNCERTAIN' {
+export function parseSegmentAnswer(content: string): AssemblySegment | 'NONE' | 'UNCERTAIN' {
   const upper = content.trim().toUpperCase();
-  for (const token of ['YES', 'NO', 'UNCERTAIN'] as const) {
-    if (upper.includes(token)) return token;
-  }
+  const aliases: Array<[string, AssemblySegment]> = [
+    ['SATTENAPALLI', 'Sattenapalle'],
+    ['SATTENPALLI', 'Sattenapalle'],
+    ['GURAJALA', 'Gurazala'],
+    ...ASSEMBLY_SEGMENTS.map((segment): [string, AssemblySegment] => [segment.toUpperCase(), segment]),
+  ];
+  const found = new Set(aliases.filter(([alias]) => upper.includes(alias)).map(([, segment]) => segment));
+  if (found.size === 1) return [...found][0];
+  if (found.size > 1) return 'UNCERTAIN';
+  if (upper.includes('NONE') || upper === 'NO') return 'NONE';
   return 'UNCERTAIN';
 }
 
-/** Groq YES/NO/UNCERTAIN for scores between borderline_low and the accept threshold. */
+/** Groq names the one segment the article belongs to, or NONE. Used only for weak evidence. */
 export async function checkBorderlineConstituency(
   raw: Record<string, unknown>,
   text: string,
   fetchImpl: typeof fetch = fetch,
-): Promise<'YES' | 'NO' | 'UNCERTAIN'> {
+): Promise<AssemblySegment | 'NONE' | 'UNCERTAIN'> {
   const keys = discoverGroqApiKeys();
   if (!keys.length) return 'UNCERTAIN';
-  const data = loadDictionary();
-  const name = data.constituency || 'Narasaraopet Parliamentary Constituency';
   const title = String(raw.title || '').slice(0, 300);
   const prompt =
-    `Does this Telugu/English news article primarily belong to the ` +
-    `${name} in Andhra Pradesh (Palnadu district), ` +
-    `including its assembly segments (Pedakurapadu, Chilakaluripet, ` +
-    `Narasaraopet, Sattenapalle, Vinukonda, Gurazala, Macherla) and ` +
-    `their mandals/villages?\n\n` +
-    `Answer with exactly one word: YES, NO, or UNCERTAIN.\n\n` +
+    'The Narasaraopet Parliamentary Constituency in Andhra Pradesh has exactly seven assembly segments: ' +
+    `${ASSEMBLY_SEGMENTS.join(', ')}. Sattenapalli is the same segment as Sattenapalle.\n\n` +
+    'Which one of these seven segments is this news article primarily about? ' +
+    'If it is about a place outside these seven segments, or you cannot tell, answer NONE.\n\n' +
+    'Answer with exactly one segment name from the list, or NONE.\n\n' +
     `Title: ${title}\n\nArticle excerpt:\n${text.slice(0, 2500)}`;
   try {
+    const model =
+      process.env.CONSTITUENCY_AI_VALIDATION_MODEL ||
+      process.env.SAKSHI_AI_VALIDATION_MODEL ||
+      'openai/gpt-oss-20b';
     const response = await fetchImpl('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -172,17 +242,14 @@ export async function checkBorderlineConstituency(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model:
-          process.env.CONSTITUENCY_AI_VALIDATION_MODEL ||
-          process.env.SAKSHI_AI_VALIDATION_MODEL ||
-          'openai/gpt-oss-20b',
+        model,
         temperature: 0,
-        max_tokens: 10,
+        max_tokens: 300,
+        ...(model.startsWith('openai/gpt-oss') ? { reasoning_effort: 'low' } : {}),
         messages: [
           {
             role: 'system',
-            content:
-              'You classify whether a news article is primarily about the Narasaraopet Parliamentary Constituency. Reply with only YES, NO, or UNCERTAIN.',
+            content: `You map news articles to one of these assembly segments: ${ASSEMBLY_SEGMENTS.join(', ')}. Reply with only one segment name or NONE.`,
           },
           { role: 'user', content: prompt },
         ],
@@ -190,24 +257,28 @@ export async function checkBorderlineConstituency(
     });
     if (!response.ok) return 'UNCERTAIN';
     const body = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
-    return parseAiDecision(body.choices?.[0]?.message?.content || '');
+    return parseSegmentAnswer(body.choices?.[0]?.message?.content || '');
   } catch {
     return 'UNCERTAIN';
   }
 }
 
-/** Full dictionary score plus the optional borderline Groq check. */
+/**
+ * Accept an article only when it maps to one of the seven segments.
+ * Weak evidence (one mandal or landmark) also needs Groq to name the same segment.
+ */
 export async function validateConstituency(
   raw: Record<string, unknown>,
   fetchImpl: typeof fetch = fetch,
   useAi?: boolean,
 ): Promise<ScoreResult> {
   const category = String(raw.category || '');
-  const result = scoreConstituency(buildSearchableText(raw), category);
+  const text = buildSearchableText(raw);
+  const result = scoreConstituency(text, category);
   if (result.valid || result.reason !== 'borderline') return result;
   if (!constituencyAiEnabled(useAi)) return { ...result, reason: 'borderline_no_ai' };
-  const decision = await checkBorderlineConstituency(raw, buildSearchableText(raw), fetchImpl);
-  if (decision === 'YES') return { ...result, valid: true, reason: 'ai_yes', ai_decision: decision };
-  if (decision === 'NO') return { ...result, valid: false, reason: 'ai_no', ai_decision: decision };
-  return { ...result, valid: false, reason: 'ai_uncertain', ai_decision: decision };
+  const decision = await checkBorderlineConstituency(raw, text, fetchImpl);
+  if (decision === result.segment) return { ...result, valid: true, reason: 'ai_confirmed_segment', ai_decision: decision };
+  if (decision === 'UNCERTAIN') return { ...result, valid: false, reason: 'ai_uncertain', ai_decision: decision };
+  return { ...result, valid: false, reason: 'ai_other_segment_or_none', ai_decision: decision };
 }

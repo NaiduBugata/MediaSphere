@@ -39,24 +39,22 @@ export function youtubeMaxContentChars(): number {
 
 export const YOUTUBE_TRANSCRIPT_LANGUAGES = ['te'];
 
-/** Constituency searches from server/sources/youtube/config.py. */
+/** One Telugu and one English search per assembly segment. No district or nearby-area searches. */
 export const YOUTUBE_SEARCH_KEYWORDS = [
   'నరసరావుపేట',
-  'పల్నాడు',
   'Narasaraopet',
-  'Palnadu',
   'చిలకలూరిపేట',
-  'సత్తెనపల్లి',
-  'వినుకొండ',
   'Chilakaluripet',
+  'సత్తెనపల్లి',
   'Sattenapalli',
+  'వినుకొండ',
   'Vinukonda',
-  'పిడుగురాళ్ళ',
-  'Piduguralla',
+  'గురజాల',
+  'Gurazala',
   'మాచర్ల',
   'Macherla',
-  'రొంపిచర్ల',
-  'Rompicherla',
+  'పెదకూరపాడు',
+  'Pedakurapadu',
 ];
 
 export const YOUTUBE_COLLECTOR_NAME = 'YouTube News Collector';

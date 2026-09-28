@@ -15,6 +15,7 @@ export interface SakshiRawArticle {
     valid: boolean;
     score: number;
     reason: string;
+    segment: string | null;
   };
 }
 
@@ -44,6 +45,7 @@ export interface SakshiArticle {
   channel: 'Sakshi';
   constituency_score: number | null;
   constituency_match_reason: string | null;
+  assembly_segment: string | null;
 }
 
 export interface SakshiFilterStats {
