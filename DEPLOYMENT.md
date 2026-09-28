@@ -68,7 +68,7 @@
     | `SAKSHI_ENABLED` | `true` or `false` |
     | `EMAIL_ENABLED` | `true` only when daily report mail should send |
     | `EMAIL_PROVIDER` | `resend` |
-    | `REPORT_RECIPIENTS` | Comma-separated report inboxes |
+    | `REPORT_RECIPIENTS` | Comma-separated report inboxes, such as `desk@example.com,mp@example.com`. No quotes, no brackets. With the sender `onboarding@resend.dev`, Resend only delivers to the email address that owns the Resend account. |
     | `RESEND_API_KEY` | Resend API key |
 
     WhatsApp and the inbound chatbot:
@@ -87,11 +87,32 @@
 | `CHATBOT_ADDRESSEE` | Leave empty for `Sri Lavu Sri Krishna Devarayalu Sir`. The first reply of each conversation (after 4 hours of silence) starts with "Good morning/afternoon/evening, <addressee>! I'm your Media Assistant." using India time. |
     | `CHATBOT_GROQ_MODEL` | Leave empty to use `GROQ_MODEL`, then `openai/gpt-oss-20b` |
 
-    An empty `WHATSAPP_RECIPIENTS` list makes the chatbot stay silent. News alerts stay on WhatsApp templates. Chat replies are ordinary session text, which Meta accepts after that person has messaged the business inside the last 24 hours.
+    Pipeline alerts on WhatsApp:
+
+| Name | Value |
+| --- | --- |
+| `WHATSAPP_PIPELINE_STATUS` | Leave empty (off). `true` sends a status message after every hourly cycle. |
+| `PIPELINE_ALERT_REPEAT_HOURS` | `12`. A failed cycle alerts once. The same problem is alerted again only after this many hours, or at once when the problem changes. |
+
+An empty `WHATSAPP_RECIPIENTS` list makes the chatbot stay silent. News alerts stay on WhatsApp templates. Chat replies are ordinary session text, which Meta accepts after that person has messaged the business inside the last 24 hours.
 
     The chatbot facts file is `server/src/chatbot/data/knowledge.json`. Replace that file and redeploy when the answers should change. A missing file does not stop the API. The process logs a warning and answers without those facts.
 
-    ### Public URL
+    ### When YouTube or Sakshi block Railway
+
+YouTube captions and the Sakshi website sometimes refuse cloud server addresses. Railway can hand a new deployment a new outgoing address, so a source that worked can fail after a redeploy. The logs then show `youtube_blocked:…` or `sakshi_http_403`, and the `[YOUTUBE]` line shows the reason per video.
+
+Send only those two sources through a residential or ISP proxy. Node 24 reads the proxy from environment variables, so no code change is needed:
+
+| Name | Value |
+| --- | --- |
+| `NODE_USE_ENV_PROXY` | `1` |
+| `HTTPS_PROXY` | `http://USER:PASSWORD@PROXY-HOST:PORT` from the proxy provider |
+| `NO_PROXY` | `api.groq.com,graph.facebook.com,api.resend.com,www.googleapis.com,telugu.getlokalapp.com,localhost` |
+
+`NO_PROXY` keeps Groq, Meta, Resend, the YouTube search API, and Lokal on the direct connection. Neon does not use HTTP, so it never goes through the proxy.
+
+### Public URL
 
     1. Open the service **Settings**, then **Networking**.
     2. Choose **Generate Domain**. Railway gives you a host such as `mediasphere-api.up.railway.app`.

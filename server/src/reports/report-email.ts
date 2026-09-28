@@ -18,9 +18,32 @@ function enabled(): boolean {
   return ['1', 'true', 'yes', 'on'].includes((process.env.EMAIL_ENABLED || '').trim().toLowerCase());
 }
 
+const EMAIL = /^[^@\s<>"',;[\]]+@[^@\s<>"',;[\]]+\.[^@\s<>"',;[\]]+$/;
+
+/** Accepts `a@x.com,b@y.com`, `;` or space separators, and stray quotes, brackets, or `Name <a@x.com>` wrappers. */
+export function parseRecipients(raw: string): { valid: string[]; invalid: number } {
+  const valid: string[] = [];
+  let invalid = 0;
+  for (const piece of raw.split(/[,;\s]+/)) {
+    const angle = piece.match(/<([^>]+)>/);
+    const item = (angle ? angle[1] : piece).replace(/^[\s"'[\]<(]+|[\s"'[\]>)]+$/g, '').replace(/^mailto:/i, '');
+    if (!item) continue;
+    if (EMAIL.test(item)) {
+      if (!valid.includes(item)) valid.push(item);
+    } else {
+      invalid += 1;
+    }
+  }
+  return { valid, invalid };
+}
+
 function recipientsOf(override?: string[]): string[] {
-  if (override?.length) return override;
-  return (process.env.REPORT_RECIPIENTS || '').split(',').map((item) => item.trim()).filter(Boolean);
+  const raw = override?.length ? override.join(',') : process.env.REPORT_RECIPIENTS || '';
+  const { valid, invalid } = parseRecipients(raw);
+  if (!valid.length && invalid) {
+    throw new EmailConfigError(`REPORT_RECIPIENTS has no valid email address (${invalid} unreadable entr${invalid === 1 ? 'y' : 'ies'}). Use a@x.com,b@y.com.`);
+  }
+  return valid;
 }
 
 function provider(): 'resend' | 'smtp' {

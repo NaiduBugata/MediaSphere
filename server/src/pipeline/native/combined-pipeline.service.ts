@@ -15,6 +15,7 @@ import { collectSakshiNews } from '../../sources/sakshi/sakshi.collector';
 import { collectYoutubeNews } from '../../sources/youtube/youtube.collector';
 import { mergeSourceResults } from '../combined-cycle';
 import { notifyFailureWhatsApp, notifyPendingWhatsApp, notifyPipelineWhatsApp } from '../../whatsapp/whatsapp.notify';
+import { describeFailure, FailureAlertGate, pipelineStatusWhatsAppEnabled } from './pipeline-alerts';
 import { whatsappReady } from '../../whatsapp/whatsapp.send';
 import { notifyPendingEmail } from '../../notifications/incremental-email';
 
@@ -55,6 +56,7 @@ export interface NativeCycleHooks {
 @Injectable()
 export class CombinedPipelineService {
   private readonly logger = new Logger(CombinedPipelineService.name);
+  private readonly failureAlerts = new FailureAlertGate();
 
   constructor(private readonly db: DatabaseService) {}
 
@@ -178,6 +180,10 @@ export class CombinedPipelineService {
     if (collected.error) {
       return this.emptyResult('youtube', startedAt, [collected.error]);
     }
+    const blockedReasons = Object.entries(collected.blocked).map(([reason, count]) => `${reason}=${count}`).join(',') || 'none';
+    this.logger.log(
+      `[YOUTUBE] videos=${collected.videosFound} articles=${collected.envelope.articles.length} no_captions=${collected.noCaptions} blocked=${blockedReasons} non_news=${collected.nonNews} other_constituency=${collected.constituencyRejected}`,
+    );
     const articles: CollectedArticle[] = collected.envelope.articles.map((article) => ({
       post_id: `yt_${article.video_id}`,
       source: 'youtube',
@@ -227,9 +233,13 @@ export class CombinedPipelineService {
       source_url: article.source_url,
       thumbnail: article.thumbnail || '',
     }));
+    this.logger.log(
+      `[SAKSHI] links=${collected.linksFound} already_saved=${collected.skippedExisting} new=${articles.length} rejected=${collected.envelope.filter_stats.rejected}`,
+    );
+    if (!collected.linksFound) return this.emptyResult('sakshi', startedAt, ['sakshi_no_links']);
     return {
       source: 'sakshi',
-      status: articles.length ? 'success' : 'failed',
+      status: 'success',
       startedAt,
       completedAt: new Date().toISOString(),
       durationMs: Date.now() - started,
@@ -237,9 +247,9 @@ export class CombinedPipelineService {
       itemsNew: articles.length,
       itemsDuplicate: collected.skippedExisting,
       itemsFailed: collected.envelope.filter_stats.rejected,
-      errors: articles.length ? [] : ['sakshi_no_articles'],
+      errors: [],
       articles,
-      exitCode: articles.length ? 0 : 1,
+      exitCode: 0,
     };
   }
 
@@ -385,10 +395,16 @@ export class CombinedPipelineService {
           await this.db.collection(this.db.articlesCollectionName).updateOne({ post_id: postId }, { $set: update });
         },
       });
-      await notifyPipelineWhatsApp(payload, fetchImpl);
-      if (exitCode !== 0) {
-        const reason = stats.errors.join('; ').slice(0, 500) || 'non-zero exit';
-        await notifyFailureWhatsApp('combined_pipeline', reason, 'N/A', fetchImpl);
+      if (pipelineStatusWhatsAppEnabled()) await notifyPipelineWhatsApp(payload, fetchImpl);
+      if (exitCode === 0) {
+        this.failureAlerts.clear();
+      } else {
+        const reason = describeFailure(stats.errors).slice(0, 500);
+        if (this.failureAlerts.shouldAlert(stats.errors, Date.now())) {
+          await notifyFailureWhatsApp('combined_pipeline', reason, 'N/A', fetchImpl);
+        } else {
+          this.logger.warn(`[NOTIFY_FAILURE] same problem as the last alert; WhatsApp skipped: ${reason}`);
+        }
       }
     } catch (err) {
       this.logger.error(

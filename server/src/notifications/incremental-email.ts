@@ -51,7 +51,12 @@ export async function notifyPendingEmail(deps: PendingEmailDeps): Promise<Pendin
   let lastError: string | null = null;
   for (const doc of docs) {
     const postId = doc.post_id ? String(doc.post_id) : '';
-    const result = await sendReportEmail(subjectFor(doc), htmlFor(doc), null, undefined, deps.fetchImpl || fetch);
+    let result;
+    try {
+      result = await sendReportEmail(subjectFor(doc), htmlFor(doc), null, undefined, deps.fetchImpl || fetch);
+    } catch (err) {
+      return { sent, failed: failed + 1, skipped: false, pending: docs.length, lastError: err instanceof Error ? err.message : String(err) };
+    }
     if (result.success && postId) {
       sent += 1;
       await deps.markSent(postId, batchId);

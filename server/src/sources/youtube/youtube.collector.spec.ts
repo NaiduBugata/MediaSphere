@@ -157,4 +157,52 @@ describe('collectYoutubeNews', () => {
     expect(collected.nonNews).toBe(1);
     expect(collected.envelope.lookback_days).toBe(2);
   });
+
+  function searchWith(ids: string[], player: (id: string) => Response) {
+    return (async (url: string, init?: RequestInit) => {
+      const target = String(url);
+      if (target.includes('googleapis.com')) {
+        return jsonResponse({
+          items: ids.map((id) => ({ id: { videoId: id }, snippet: { title: 'నరసరావుపేట వార్త', channelTitle: 'TV9 Telugu', publishedAt: '2026-07-10T08:30:00Z' } })),
+        });
+      }
+      if (target.includes('youtubei/v1/player')) {
+        const body = JSON.parse(String(init?.body || '{}')) as { videoId: string };
+        return player(body.videoId);
+      }
+      return jsonResponse({}, 404);
+    }) as typeof fetch;
+  }
+
+  it('reports one youtube_blocked error when YouTube refuses the server', async () => {
+    process.env.YOUTUBE_API_KEY = 'yt-test';
+    const collected = await collectYoutubeNews({
+      fetchImpl: searchWith(['a1', 'a2'], () => jsonResponse({ playabilityStatus: { status: 'LOGIN_REQUIRED' } })),
+      now: new Date('2026-07-10T12:00:00Z'),
+      maxNew: 10,
+    });
+    expect(collected.errors).toEqual(['youtube_blocked:2/2(playability_login_required=2)']);
+    expect(collected.noCaptions).toBe(0);
+  });
+
+  it('skips videos without Telugu captions without calling it an error', async () => {
+    process.env.YOUTUBE_API_KEY = 'yt-test';
+    const collected = await collectYoutubeNews({
+      fetchImpl: searchWith(['b1', 'b2'], () => jsonResponse({ playabilityStatus: { status: 'OK' }, captions: {} })),
+      now: new Date('2026-07-10T12:00:00Z'),
+      maxNew: 10,
+    });
+    expect(collected.errors).toEqual([]);
+    expect(collected.noCaptions).toBe(2);
+  });
+
+  it('treats missing captions on every one of many videos as a block', async () => {
+    process.env.YOUTUBE_API_KEY = 'yt-test';
+    const collected = await collectYoutubeNews({
+      fetchImpl: searchWith(['c1', 'c2', 'c3', 'c4'], () => jsonResponse({ playabilityStatus: { status: 'OK' }, captions: {} })),
+      now: new Date('2026-07-10T12:00:00Z'),
+      maxNew: 10,
+    });
+    expect(collected.errors).toEqual(['youtube_blocked:4/4(no_captions_on_every_video=4)']);
+  });
 });

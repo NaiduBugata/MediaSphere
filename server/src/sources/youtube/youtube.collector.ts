@@ -11,13 +11,17 @@ import type { YoutubeArticle, YoutubeCollectorEnvelope, YoutubeVideo } from './y
 import { normalizeYoutubeVideo } from './youtube.normalizer';
 import { cleanTranscript, toRfc3339 } from './youtube.parser';
 import { searchYoutubeKeyword } from './youtube.search';
-import { fetchTeluguTranscript } from './youtube.transcript';
+import { fetchTeluguTranscriptResult } from './youtube.transcript';
 
 export interface YoutubeCollection {
   envelope: YoutubeCollectorEnvelope;
   videosFound: number;
   nonNews: number;
   constituencyRejected: number;
+  /** Videos YouTube served normally but without usable Telugu captions. Not an error. */
+  noCaptions: number;
+  /** Videos whose captions YouTube refused to this server, keyed by reason. */
+  blocked: Record<string, number>;
   errors: string[];
   error?: string;
 }
@@ -46,6 +50,8 @@ export async function collectYoutubeNews(options: CollectYoutubeOptions = {}): P
   const errors: string[] = [];
   const seen = new Set<string>();
   const videos: YoutubeVideo[] = [];
+  const blocked: Record<string, number> = {};
+  let noCaptions = 0;
 
   const finish = (
     articles: YoutubeArticle[],
@@ -56,6 +62,8 @@ export async function collectYoutubeNews(options: CollectYoutubeOptions = {}): P
     videosFound: videos.length,
     nonNews,
     constituencyRejected,
+    noCaptions,
+    blocked,
     errors,
     error,
     envelope: {
@@ -94,13 +102,15 @@ export async function collectYoutubeNews(options: CollectYoutubeOptions = {}): P
   let constituencyRejected = 0;
   for (const video of videos) {
     if (articles.length >= maxNew) break;
-    const transcript = await fetchTeluguTranscript(video.video_id, fetchImpl);
+    const result = await fetchTeluguTranscriptResult(video.video_id, fetchImpl);
+    const transcript = result.text;
     if (!transcript) {
-      errors.push(`youtube_transcript_unavailable:${video.video_id}`);
+      if (result.reason === 'no_captions') noCaptions += 1;
+      else blocked[result.reason] = (blocked[result.reason] || 0) + 1;
       continue;
     }
     if (transcript.length < minChars) {
-      errors.push(`youtube_transcript_short:${video.video_id}`);
+      noCaptions += 1;
       continue;
     }
     const cleaned = cleanTranscript(transcript, video.title, video.channel);
@@ -120,5 +130,15 @@ export async function collectYoutubeNews(options: CollectYoutubeOptions = {}): P
     articles.push(article);
   }
 
+  // A few videos lack captions; every one of four or more lacking them means YouTube is hiding tracks from this server.
+  if (videos.length >= 4 && noCaptions === videos.length) {
+    blocked.no_captions_on_every_video = noCaptions;
+    noCaptions = 0;
+  }
+  const blockedCount = Object.values(blocked).reduce((sum, count) => sum + count, 0);
+  if (blockedCount) {
+    const reasons = Object.entries(blocked).map(([reason, count]) => `${reason}=${count}`).join(',');
+    errors.push(`youtube_blocked:${blockedCount}/${videos.length}(${reasons})`);
+  }
   return finish(articles, nonNews, constituencyRejected);
 }
