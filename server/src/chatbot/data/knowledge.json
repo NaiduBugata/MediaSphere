@@ -1,98 +1,32 @@
 [
   {
-    "id": "assistant-001",
-    "title": "Assistant Identity",
-    "content": "SAMPLE DATA. I am a knowledge-based AI assistant. I answer questions using my available knowledge and recent conversation context.",
-    "keywords": ["assistant", "who", "identity", "name"]
+    "id": "mediasphere-identity",
+    "title": "About this assistant",
+    "content": "I am the MediaSphere WhatsApp assistant. I answer questions about the constituency news that MediaSphere has collected, such as the latest updates, news from a place, or issues in a category.",
+    "keywords": ["who", "you", "assistant", "identity", "name", "mediasphere", "help"]
   },
   {
-    "id": "assistant-002",
-    "title": "Capabilities",
-    "content": "SAMPLE DATA. I can answer questions using my available knowledge and recent conversation context. I do not invent facts that are not in the knowledge I have been given.",
-    "keywords": ["capabilities", "help", "what", "can"]
+    "id": "mediasphere-platform",
+    "title": "What MediaSphere is",
+    "content": "MediaSphere, also called JanaVignanam, is a constituency intelligence platform for Andhra Pradesh. It helps MPs, their staff, and field teams follow local news, public problems, and sentiment in their area.",
+    "keywords": ["mediasphere", "janavignanam", "platform", "what", "about", "constituency"]
   },
   {
-    "id": "akshay-about-001",
-    "title": "About Akshay",
-    "content": "Who is Akshay? Akshay is a Computer Science and Engineering student at Vignan's Foundation for Science, Technology and Research. He is currently in his fourth year. He prefers building complete working AI systems and practical applications.",
-    "keywords": ["akshay", "about akshay", "student", "cse", "vignan", "fourth year"]
+    "id": "mediasphere-sources",
+    "title": "News sources",
+    "content": "MediaSphere collects news from three sources: the Lokal app, local YouTube news channels, and the Sakshi newspaper website. Each article is summarized, categorized, tagged with a place, and given a sentiment and severity.",
+    "keywords": ["sources", "source", "lokal", "youtube", "sakshi", "where", "collect"]
   },
   {
-    "id": "akshay-education-001",
-    "title": "Akshay Education",
-    "content": "What does Akshay study? Akshay studies Computer Science and Engineering at Vignan's Foundation for Science, Technology and Research. His education is a fourth-year CSE program.",
-    "keywords": ["study", "studies", "education", "vignan", "cse", "fourth year", "computer science"]
+    "id": "mediasphere-schedule",
+    "title": "How often news is updated",
+    "content": "New articles are collected automatically every hour. After each collection, new articles are sent as WhatsApp alerts to the registered numbers.",
+    "keywords": ["often", "schedule", "hourly", "hour", "frequency", "refresh", "alerts", "when"]
   },
   {
-    "id": "akshay-skills-001",
-    "title": "Programming Languages",
-    "content": "Akshay knows these programming languages and application tools: Python, JavaScript, TypeScript, React, Node.js, NestJS, and FastAPI.",
-    "keywords": ["programming", "languages", "know", "python", "javascript", "typescript", "react", "nodejs", "nestjs", "fastapi"]
-  },
-  {
-    "id": "akshay-aiml-001",
-    "title": "AI and Machine Learning Skills",
-    "content": "Akshay works with Artificial Intelligence, Generative AI, Agentic AI, Machine Learning, Deep Learning, RAG, Voice AI, Computer Vision, and LLM applications. His AI tooling includes PyTorch, TensorFlow, YOLO, ResNet, Transformers, FAISS, Sentence Transformers, Groq, Gemini, and Whisper.",
-    "keywords": ["machine learning", "deep learning", "generative ai", "agentic ai", "rag", "voice ai", "computer vision", "pytorch", "tensorflow", "transformers", "whisper", "gemini"]
-  },
-  {
-    "id": "akshay-projects-001",
-    "title": "AI Projects",
-    "content": "What AI projects has Akshay built? The named projects are Vignan Counselling Bot Bujji, Aura AI, Smart Waste Detection, Legal AI Guardian AI, and JARVIS Voice Assistant.",
-    "keywords": ["projects", "built", "portfolio", "ai projects"]
-  },
-  {
-    "id": "akshay-bujji-001",
-    "title": "Bujji",
-    "content": "Tell me about Bujji. Bujji is the Vignan Counselling Bot, an AI project by Akshay.",
-    "keywords": ["bujji", "counselling", "vignan counselling bot"]
-  },
-  {
-    "id": "akshay-aura-001",
-    "title": "Aura AI",
-    "content": "What is Aura AI? Aura AI is an AI project built by Akshay.",
-    "keywords": ["aura", "aura ai"]
-  },
-  {
-    "id": "akshay-waste-001",
-    "title": "Smart Waste Detection",
-    "content": "Tell me about the Smart Waste Detection project. Smart Waste Detection is an AI project by Akshay.",
-    "keywords": ["smart", "waste", "detection", "smart waste"]
-  },
-  {
-    "id": "akshay-legal-001",
-    "title": "Legal AI Guardian AI",
-    "content": "Legal AI, also called Guardian AI, is an AI project by Akshay.",
-    "keywords": ["legal", "guardian", "legal ai", "guardian ai"]
-  },
-  {
-    "id": "akshay-jarvis-001",
-    "title": "JARVIS Voice Assistant",
-    "content": "JARVIS Voice Assistant is a voice AI project by Akshay.",
-    "keywords": ["jarvis", "voice assistant"]
-  },
-  {
-    "id": "akshay-her2-001",
-    "title": "HER2-SISH Research",
-    "content": "Akshay HER2-SISH research is a hybrid YOLO plus ResNet pipeline for HER2-SISH classification.",
-    "keywords": ["her2", "sish", "research", "yolo", "resnet", "classification"]
-  },
-  {
-    "id": "akshay-hackathons-001",
-    "title": "Hackathons and Achievements",
-    "content": "What hackathons has Akshay won? Akshay has participated in multiple hackathons, ideathons, and technical events, including first-place achievements.",
-    "keywords": ["hackathons", "hackathon", "ideathon", "won", "first place", "achievements"]
-  },
-  {
-    "id": "akshay-career-001",
-    "title": "AI Jobs and Career Interests",
-    "content": "What kind of AI jobs is Akshay interested in? He is interested in Agentic AI Developer work, Generative AI, Machine Learning, Deep Learning, RAG, Voice AI, Computer Vision, and AI application development.",
-    "keywords": ["jobs", "interested", "kind", "career", "agentic ai developer"]
-  },
-  {
-    "id": "akshay-current-001",
-    "title": "Current Development Work",
-    "content": "Akshay is currently developing a WhatsApp AI chatbot. The practical system uses NestJS, a local knowledge file, conversation context, and Groq.",
-    "keywords": ["current", "development", "whatsapp", "chatbot", "nestjs"]
+    "id": "mediasphere-dashboard",
+    "title": "Dashboard",
+    "content": "The full list of articles, charts, and filters by source, place, and sentiment is on the MediaSphere dashboard at https://janavignanam-three.vercel.app",
+    "keywords": ["dashboard", "website", "link", "site", "charts", "full", "more"]
   }
 ]

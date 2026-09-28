@@ -1,4 +1,4 @@
-import { ChatbotService } from './chatbot.service';
+import { ChatbotService, toWhatsAppFormat } from './chatbot.service';
 
 const document = {
   id: 'assistant-001',
@@ -76,6 +76,61 @@ describe('ChatbotService', () => {
       entry: [{ changes: [{ value: { statuses: [{ id: 'wamid.1', status: 'delivered', recipient_id: '919876543210' }] } }] }],
     }, { env: env(), fetchImpl: fetchImpl(calls) });
     expect(calls).toEqual([]);
+  });
+
+  it('gives Groq the stored news so a vague request for updates can be answered', async () => {
+    const prompts: string[] = [];
+    const recording = (async (url: string | URL | Request, init?: RequestInit) => {
+      if (String(url).includes('groq.com')) prompts.push(String(init?.body || ''));
+      return { ok: true, json: async () => ({ choices: [{ message: { content: 'Update' } }], messages: [{ id: 'out' }] }) } as Response;
+    }) as typeof fetch;
+    const news = [{
+      title: 'Cordon search in Narasaraopet',
+      summary: 'Police searched the Pedda Cheruvu area.',
+      category: 'Crime',
+      sentiment: 'Statement',
+      severity: 'moderate',
+      place: 'Narasaraopet, Palnadu',
+      source: 'youtube',
+      url: 'https://www.youtube.com/watch?v=x',
+      publishedAt: '2026-09-27T07:26:08Z',
+      collectedAt: '2026-09-28T04:32:17Z',
+    }];
+    const bot = new ChatbotService();
+    await bot.handle(payload('can you tell me latest updates', 'wamid.news'), { env: env(), fetchImpl: recording, documents: [document], news });
+    expect(prompts).toHaveLength(1);
+    const body = JSON.parse(prompts[0]) as { messages: Array<{ content: string }>; reasoning_effort?: string };
+    expect(body.messages[0].content).toContain('Cordon search in Narasaraopet');
+    expect(body.messages[0].content).toContain('Narasaraopet, Palnadu');
+    expect(body.reasoning_effort).toBe('low');
+  });
+
+  it('tries the next Groq key when the first one is rejected', async () => {
+    const keys: string[] = [];
+    const calls: string[] = [];
+    const rotating = (async (url: string | URL | Request, init?: RequestInit) => {
+      if (String(url).includes('groq.com')) {
+        const auth = String((init?.headers as Record<string, string>).Authorization);
+        keys.push(auth);
+        if (auth.endsWith('key-1')) return { ok: false, status: 429, json: async () => ({}) } as Response;
+        return { ok: true, json: async () => ({ choices: [{ message: { content: 'Hi' } }] }) } as Response;
+      }
+      calls.push('send');
+      return { ok: true, json: async () => ({ messages: [{ id: 'out' }] }) } as Response;
+    }) as typeof fetch;
+    const bot = new ChatbotService();
+    await bot.handle(payload('Hi', 'wamid.rotate'), {
+      env: env({ GROQ_API_KEY: '', GROQ_API_KEY_1: 'key-1', GROQ_API_KEY_2: 'key-2' }),
+      fetchImpl: rotating,
+      documents: [document],
+      news: [],
+    });
+    expect(keys).toEqual(['Bearer key-1', 'Bearer key-2']);
+    expect(calls).toEqual(['send']);
+  });
+
+  it('converts markdown bold and headings to WhatsApp formatting', () => {
+    expect(toWhatsAppFormat('## Today\n**Narasaraopet** – *Crime* – __theft__')).toBe('Today\n*Narasaraopet* – *Crime* – _theft_');
   });
 
   it('lets a failed send be tried again', async () => {
