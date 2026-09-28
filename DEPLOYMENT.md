@@ -124,9 +124,11 @@
 
     ## 3. WhatsApp callback
 
-    Meta must call Railway. The Vercel domain does not receive WhatsApp events. No tunnel is required once the Railway domain exists.
+Meta must call Railway. The Vercel domain does not receive WhatsApp events. No tunnel is required once the Railway domain exists.
 
-    1. In Meta for Developers, open the app, then **WhatsApp**, then **Configuration**.
+All Meta and WhatsApp traffic runs on the **NeuralTrix AI** app (id `1010944024633533`). `WHATSAPP_ACCESS_TOKEN` is a system user token for that app, and it is the only app that should be subscribed to the WhatsApp Business account. The account-level callback was set through the Graph API with `POST /{WABA_ID}/subscribed_apps` and `override_callback_uri`, so it points at Railway even if the app dashboard shows another URL.
+
+1. In Meta for Developers, open **NeuralTrix AI**, then **WhatsApp**, then **Configuration**.
     2. Set the callback URL to `https://YOUR-RAILWAY-DOMAIN/webhook`.
     3. Set the verify token to the same value as Railway `WHATSAPP_VERIFY_TOKEN`.
     4. Save. Meta sends `GET /webhook`. Railway returns the challenge only when the token matches. A 403 means the two token values differ. A 503 means `WHATSAPP_WEBHOOK_ENABLED` is off.
