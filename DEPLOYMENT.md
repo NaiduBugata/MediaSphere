@@ -82,8 +82,9 @@
     | `WHATSAPP_VERIFY_TOKEN` | A private string you invent. The same string goes in the Meta callback screen. |
     | `WHATSAPP_WEBHOOK_ENABLED` | `true` |
     | `CHATBOT_ENABLED` | `true`. If this variable is omitted, the chatbot still turns on whenever `WHATSAPP_ENABLED` is true. Set `false` to keep alerts and stop chat replies. |
-    | `CHATBOT_NAME` | `AI Assistant`, or another display name used in the prompt |
-    | `CHATBOT_LANGUAGE` | `English` |
+| `CHATBOT_NAME` | Leave empty for `MediaSphere Assistant`, or another display name used in the prompt |
+| `CHATBOT_LANGUAGE` | Leave empty to reply in the user's language, or force one such as `English` |
+| `CHATBOT_ADDRESSEE` | Leave empty for `Sri Lavu Sri Krishna Devarayalu Sir`. The first reply of each conversation (after 4 hours of silence) starts with "Good morning/afternoon/evening, <addressee>! I'm your Media Assistant." using India time. |
     | `CHATBOT_GROQ_MODEL` | Leave empty to use `GROQ_MODEL`, then `openai/gpt-oss-20b` |
 
     An empty `WHATSAPP_RECIPIENTS` list makes the chatbot stay silent. News alerts stay on WhatsApp templates. Chat replies are ordinary session text, which Meta accepts after that person has messaged the business inside the last 24 hours.

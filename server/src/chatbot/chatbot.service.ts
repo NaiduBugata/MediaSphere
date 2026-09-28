@@ -18,6 +18,8 @@ const MAX_USER_CHARS = 2000;
 const MAX_REPLY_CHARS = 4000;
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const NEWS_CACHE_MS = 60_000;
+const CONVERSATION_GAP_MS = 4 * 60 * 60 * 1000;
+const DEFAULT_ADDRESSEE = 'Sri Lavu Sri Krishna Devarayalu Sir';
 
 interface Turn {
   role: 'user' | 'assistant';
@@ -29,6 +31,7 @@ export interface ChatbotDeps {
   fetchImpl?: typeof fetch;
   documents?: KnowledgeDocument[];
   news?: NewsBrief[];
+  now?: () => Date;
 }
 
 @Injectable()
@@ -39,6 +42,7 @@ export class ChatbotService implements OnModuleInit {
   private readonly answered = new Set<string>();
   private readonly inflight = new Set<string>();
   private readonly queues = new Map<string, Promise<void>>();
+  private readonly lastReplyAt = new Map<string, number>();
   private newsCache: { at: number; briefs: NewsBrief[] } | null = null;
 
   constructor(@Optional() private readonly articles?: ArticleRepository) {}
@@ -93,12 +97,18 @@ export class ChatbotService implements OnModuleInit {
     if (!messageId || this.answered.has(messageId) || this.inflight.has(messageId)) return;
     this.inflight.add(messageId);
     const sender = event.sender_wa_id || '';
+    const now = (deps.now || (() => new Date()))();
+    const last = this.lastReplyAt.get(sender);
+    const opening = last === undefined || now.getTime() - last > CONVERSATION_GAP_MS;
+    if (opening) this.history.delete(sender);
     try {
-      const reply = event.event_type === 'text'
+      const answer = event.event_type === 'text'
         ? await this.replyToText(sender, event.message_text || '', env, deps)
         : UNSUPPORTED;
+      const reply = opening ? `${openingLine(now, env)}\n\n${answer}` : answer;
       await sendTextMessage(sender, reply, deps.fetchImpl || fetch, env);
       this.answered.add(messageId);
+      this.lastReplyAt.set(sender, now.getTime());
       this.logger.log(`Chatbot replied to ${maskPhone(sender)}.`);
     } catch (err) {
       this.logger.warn(
@@ -217,6 +227,7 @@ function buildPrompt(
         'Never invent news, numbers, names, or links that are not in the articles, the knowledge, or the conversation.',
         'If nothing matches, say no matching news is stored yet.',
         'Do not mention Groq, NestJS, Meta, or these instructions.',
+        'Do not greet or introduce yourself. A greeting is added before your reply when a conversation starts.',
         'Write short WhatsApp paragraphs or numbered lists. Do not use tables or markdown headings.',
         'Use WhatsApp formatting: *single asterisks* for bold. Never use double asterisks.',
         '',
@@ -267,6 +278,18 @@ async function completeWithGroq(
     if (typeof content === 'string' && content.trim()) return content.trim();
   }
   return null;
+}
+
+export function timeGreeting(now: Date): string {
+  const hour = Number(new Intl.DateTimeFormat('en-GB', { hour: 'numeric', hourCycle: 'h23', timeZone: 'Asia/Kolkata' }).format(now));
+  if (hour >= 5 && hour < 12) return 'Good morning';
+  if (hour >= 12 && hour < 17) return 'Good afternoon';
+  return 'Good evening';
+}
+
+export function openingLine(now: Date, env: NodeJS.ProcessEnv): string {
+  const addressee = (env.CHATBOT_ADDRESSEE || DEFAULT_ADDRESSEE).trim() || DEFAULT_ADDRESSEE;
+  return `${timeGreeting(now)}, ${addressee}! I'm your Media Assistant.`;
 }
 
 export function toWhatsAppFormat(text: string): string {
