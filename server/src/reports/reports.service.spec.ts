@@ -78,7 +78,30 @@ describe('daily reports', () => {
     expect(read).toBe(false);
   });
 
-  it('builds a report without email or Mongo when delivery is disabled', async () => {
+  it('never emails the daily report, even with email configured', async () => {
+    process.env.EMAIL_ENABLED = 'true';
+    process.env.EMAIL_PROVIDER = 'resend';
+    process.env.RESEND_API_KEY = 'test';
+    process.env.SMTP_FROM_EMAIL = 'from@example.com';
+    process.env.REPORT_RECIPIENTS = 'desk@example.com';
+    const repo = {
+      alreadySent: async () => false,
+      recordGeneration: async () => null,
+      recordFailed: async () => null,
+      recordSent: async () => null,
+    };
+    const service = new ReportsService(repo as unknown as DailyReportRepository, { findAll: async () => [] } as unknown as ArticleRepository);
+    const calls: string[] = [];
+    const fetchImpl = (async (url: string) => {
+      calls.push(String(url));
+      throw new Error('network');
+    }) as typeof fetch;
+    const result = await service.generateAndSend('2026-09-25', { articles: [], fetchImpl });
+    expect(calls.some((url) => url.includes('resend.com'))).toBe(false);
+    expect(result.notifications?.results.map((row) => row.channel)).toEqual(['whatsapp']);
+  });
+
+  it('builds a report without Mongo when WhatsApp is disabled', async () => {
     const stored: Array<Record<string, unknown>> = [];
     const repo = {
       alreadySent: async () => false,
@@ -107,12 +130,12 @@ describe('daily reports', () => {
     }) as typeof fetch;
     const result = await service.generateAndSend('2026-09-25', { articles: [article], fetchImpl });
     expect(result.status).toBe('failed');
-    expect(result.error).toBe('EMAIL_ENABLED=false');
+    expect(result.error).toBe('whatsapp_skipped: whatsapp_disabled_or_misconfigured');
     expect(result.articles_included).toBe(1);
     expect(result.subject).toBe('MediaSphere Daily Constituency Report - 25 September 2026');
     expect(String(result.pdf_path)).toContain('Daily_Report_2026_09_25.pdf');
     expect(stored.some((row) => row.status === 'pending')).toBe(true);
-    expect(stored.some((row) => row.error === 'EMAIL_ENABLED=false')).toBe(true);
+    expect(stored.some((row) => row.error === result.error)).toBe(true);
   });
 
   it('does not arm the scheduler while Flask is the sender', () => {

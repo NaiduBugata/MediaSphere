@@ -3,7 +3,6 @@ import { resolve } from 'node:path';
 import { Document } from 'mongodb';
 import { ArticleRepository } from '../database/repositories/article.repository';
 import { DailyReportRepository } from '../database/repositories/daily-report.repository';
-import { sendReportEmail } from './report-email';
 import { buildEmailHtml } from './report-html';
 import { writeTextPdf } from './report-pdf';
 import { generateExecutiveSummary } from './report-summary';
@@ -59,7 +58,7 @@ export class ReportsService {
     return this.reports.getById(reportId);
   }
 
-  /** Build and record a report. Email is sent only when EMAIL_ENABLED=true and Resend is configured. */
+  /** Build and record a report, then send the summary on WhatsApp. Reports are never emailed. */
   async generateAndSend(target: string | null, options: GenerateOptions = {}): Promise<ReportRunResult> {
     const day = target || previousReportDay(options.now || new Date());
     if (!options.force && (await this.reports.alreadySent(day))) {
@@ -68,46 +67,23 @@ export class ReportsService {
     }
     try {
       const built = await this.build(day, options);
-      const recipients = options.recipients || (process.env.REPORT_RECIPIENTS || '').split(',').map((item) => item.trim()).filter(Boolean);
+      const recipients: string[] = [];
       await this.reports.recordGeneration(day, built.stats, recipients, built.pdfPath);
-      const email = await sendReportEmail(built.subject, built.html, built.pdfPath, recipients, options.fetchImpl || fetch);
       const whatsapp = await notifyDailyWhatsApp(
         { total: built.stats.total, positive: built.stats.positive, negative: built.stats.negative, problems: built.stats.problems },
         day,
         options.fetchImpl || fetch,
       );
-      const notifications = {
-        results: [
-          email as unknown as Record<string, unknown>,
-          { channel: 'whatsapp', ...whatsapp },
-        ],
-      };
-      if (email.skipped && email.skip_reason === 'email_disabled') {
-        await this.reports.recordFailed(day, 0, 'EMAIL_ENABLED=false');
-        return this.outcome('failed', day, built, recipients, 0, 'EMAIL_ENABLED=false', notifications);
+      const notifications = { results: [{ channel: 'whatsapp', ...whatsapp }] };
+      if (whatsapp.success && !whatsapp.skipped) {
+        await this.reports.recordSent(day, whatsapp.attempts);
+        return this.outcome('sent', day, built, recipients, whatsapp.attempts, null, notifications);
       }
-      if (email.error && email.error.toLowerCase().includes('config')) {
-        await this.reports.recordFailed(day, 0, `config_error: ${email.error}`);
-        return {
-          status: 'error',
-          reason: 'email_config',
-          error: email.error,
-          report_date: day,
-          pdf_path: built.pdfPath,
-        };
-      }
-      if (email.success) {
-        await this.reports.recordSent(day, email.attempts);
-        return this.outcome('sent', day, built, recipients, email.attempts, null, notifications);
-      }
-      await this.reports.recordFailed(day, email.attempts, email.error || 'unknown');
-      return this.outcome('failed', day, built, recipients, email.attempts, email.error, notifications);
+      const error = whatsapp.skipped ? `whatsapp_skipped: ${whatsapp.skip_reason || 'unknown'}` : whatsapp.error || 'unknown';
+      await this.reports.recordFailed(day, whatsapp.attempts, error);
+      return this.outcome('failed', day, built, recipients, whatsapp.attempts, error, notifications);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      if (message.toLowerCase().includes('config')) {
-        await this.reports.recordFailed(day, 0, `config_error: ${message}`);
-        return { status: 'error', reason: 'email_config', error: message, report_date: day };
-      }
       this.logger.error(`Report build failed for ${day}: ${message}`);
       await this.reports.recordFailed(day, 0, `build_failed: ${message}`);
       return { status: 'error', reason: 'build_failed', error: message, report_date: day };

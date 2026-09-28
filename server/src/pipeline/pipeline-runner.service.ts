@@ -273,6 +273,14 @@ export class PipelineRunnerService {
               : String(persistErr)),
         );
       }
+      try {
+        await this.nativePipeline.alertFailure([`pipeline_crashed: ${message.slice(0, 200)}`]);
+      } catch (alertErr) {
+        this.logger.error(
+          'Failed to send pipeline crash alert: ' +
+            (alertErr instanceof Error ? alertErr.message : String(alertErr)),
+        );
+      }
       return {
         runId,
         status: 'failed',

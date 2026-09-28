@@ -18,7 +18,7 @@ import { notifyFailureWhatsApp, notifyPendingWhatsApp, notifyPipelineWhatsApp } 
 import { describeFailure, FailureAlertGate, pipelineStatusWhatsAppEnabled } from './pipeline-alerts';
 import { ASSEMBLY_SEGMENTS, scoreConstituency, type AssemblySegment } from './constituency';
 import { whatsappReady } from '../../whatsapp/whatsapp.send';
-import { notifyPendingEmail } from '../../notifications/incremental-email';
+import { sendPipelineFailureEmail } from '../../notifications/failure-email';
 
 function httpUrl(value: unknown): string {
   if (typeof value !== 'string') return '';
@@ -51,6 +51,7 @@ export interface NativeCycleHooks {
 
 /**
  * Nest combined cycle: Lokal → YouTube → Sakshi → Groq stages → upsert → notify.
+ * News goes to WhatsApp only. Email is sent only when a cycle fails.
  * Sequential, matching Flask pipeline/runner.py. Notification errors never roll back writes.
  * PIPELINE_EXECUTOR=python keeps the Phase 3 bridge for tests.
  */
@@ -338,7 +339,6 @@ export class CombinedPipelineService {
           $set: doc,
           $setOnInsert: {
             first_seen_at: now,
-            email_sent: false,
             whatsapp_sent: false,
           },
         },
@@ -358,31 +358,12 @@ export class CombinedPipelineService {
     fetchImpl: typeof fetch,
     durationMs: number,
   ): Promise<void> {
+    this.logger.log(
+      `[NOTIFY_PIPELINE] exit=${exitCode} inserted=${stats.inserted} errors=${stats.errors.length}`,
+    );
+    if (exitCode === 0) this.failureAlerts.clear();
+    else await this.alertFailure(stats.errors, fetchImpl);
     try {
-      this.logger.log(
-        `[NOTIFY_PIPELINE] exit=${exitCode} inserted=${stats.inserted} errors=${stats.errors.length}`,
-      );
-      const email = await notifyPendingEmail({
-        fetchImpl,
-        findPending: async () => {
-          await this.db.ensureConnected();
-          const rows = await this.db.collection(this.db.articlesCollectionName).find({ email_sent: false }).toArray();
-          return rows as Array<Record<string, unknown>>;
-        },
-        markSent: async (postId, batchId) => {
-          await this.db.collection(this.db.articlesCollectionName).updateOne(
-            { post_id: postId },
-            { $set: { email_sent: true, email_sent_at: new Date().toISOString(), email_batch_id: batchId } },
-          );
-        },
-      });
-      if (email.failed) {
-        this.logger.error(
-          `[NOTIFY_EMAIL] pending=${email.pending} sent=${email.sent} failed=${email.failed} error=${String(email.lastError).slice(0, 300)}`,
-        );
-      } else if (!email.skipped) {
-        this.logger.log(`[NOTIFY_EMAIL] pending=${email.pending} sent=${email.sent}`);
-      }
       if (!whatsappReady()) return;
       const payload = {
         ...stats,
@@ -411,20 +392,37 @@ export class CombinedPipelineService {
         },
       });
       if (pipelineStatusWhatsAppEnabled()) await notifyPipelineWhatsApp(payload, fetchImpl);
-      if (exitCode === 0) {
-        this.failureAlerts.clear();
-      } else {
-        const reason = describeFailure(stats.errors).slice(0, 500);
-        if (this.failureAlerts.shouldAlert(stats.errors, Date.now())) {
-          await notifyFailureWhatsApp('combined_pipeline', reason, 'N/A', fetchImpl);
-        } else {
-          this.logger.warn(`[NOTIFY_FAILURE] same problem as the last alert; WhatsApp skipped: ${reason}`);
-        }
-      }
     } catch (err) {
       this.logger.error(
         'notification failed (ignored): ' + (err instanceof Error ? err.message : String(err)),
       );
+    }
+  }
+
+  /**
+   * Failure alert on WhatsApp and email. A new problem alerts at once; the same problem
+   * repeats only after PIPELINE_ALERT_REPEAT_HOURS. Never throws.
+   */
+  async alertFailure(errors: readonly string[], fetchImpl: typeof fetch = fetch): Promise<void> {
+    const reason = describeFailure(errors).slice(0, 500);
+    if (!this.failureAlerts.shouldAlert(errors, Date.now())) {
+      this.logger.warn(`[NOTIFY_FAILURE] same problem as the last alert; WhatsApp and email skipped: ${reason}`);
+      return;
+    }
+    if (whatsappReady()) {
+      try {
+        await notifyFailureWhatsApp('combined_pipeline', reason, 'N/A', fetchImpl);
+      } catch (err) {
+        this.logger.error(`[NOTIFY_FAILURE] WhatsApp failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    try {
+      const email = await sendPipelineFailureEmail({ reason, errors, fetchImpl });
+      if (email.success) this.logger.log('[NOTIFY_FAILURE_EMAIL] sent');
+      else if (email.skipped) this.logger.log(`[NOTIFY_FAILURE_EMAIL] skipped: ${email.skip_reason}`);
+      else this.logger.error(`[NOTIFY_FAILURE_EMAIL] failed: ${String(email.error).slice(0, 300)}`);
+    } catch (err) {
+      this.logger.error(`[NOTIFY_FAILURE_EMAIL] failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 

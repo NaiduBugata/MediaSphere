@@ -16,10 +16,6 @@ export class ArticleRepository {
     return this.db.articles().countDocuments({});
   }
 
-  async countEmailPending(): Promise<number> {
-    return this.db.articles().countDocuments({ email_sent: false });
-  }
-
   async countWhatsappPending(): Promise<number> {
     return this.db.articles().countDocuments({ whatsapp_sent: false });
   }

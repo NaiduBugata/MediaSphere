@@ -22,7 +22,6 @@ describe('NotificationsService snapshot', () => {
     } as ConfigService;
 
     const articles = {
-      countEmailPending: async () => 0,
       countWhatsappPending: async () => 0,
     };
     const statusStore = {

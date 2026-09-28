@@ -12,6 +12,7 @@ interface Harness {
   state: { getState: jest.Mock; updateState: jest.Mock };
   history: { record: jest.Mock };
   python: { runCombinedOnce: jest.Mock };
+  native: { alertFailure: jest.Mock };
   concurrentPythonRuns: () => number;
 }
 
@@ -67,7 +68,7 @@ function makeHarness(
   const config = {
     get: (key: string) => (key === 'pipeline.executor' ? 'python' : undefined),
   };
-  const native = { runCombinedOnce: jest.fn() };
+  const native = { runCombinedOnce: jest.fn(), alertFailure: jest.fn().mockResolvedValue(undefined) };
   const runner = new PipelineRunnerService(
     lock as unknown as PipelineLockService,
     state as unknown as PipelineStateService,
@@ -83,6 +84,7 @@ function makeHarness(
     state,
     history,
     python,
+    native,
     concurrentPythonRuns: () => maxInFlight,
   };
 }
@@ -176,6 +178,16 @@ describe('PipelineRunnerService (canonical single-writer runner)', () => {
     expect(result.status).toBe('failed');
     expect(result.errors).toContain('spawn exploded');
     expect(h.lock.release).toHaveBeenCalledWith('owner-1');
+    expect(h.runner.busy).toBe(false);
+    expect(h.native.alertFailure).toHaveBeenCalledWith(['pipeline_crashed: spawn exploded']);
+  });
+
+  it('still finishes a crashed run when the crash alert itself fails', async () => {
+    const h = makeHarness();
+    h.python.runCombinedOnce.mockRejectedValueOnce(new Error('db down'));
+    h.native.alertFailure.mockRejectedValueOnce(new Error('resend down'));
+    const result = await h.runner.run({ trigger: 'interval' });
+    expect(result.status).toBe('failed');
     expect(h.runner.busy).toBe(false);
   });
 

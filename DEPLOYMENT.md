@@ -66,9 +66,9 @@
     | `YOUTUBE_ENABLED` | `true` or `false` |
     | `YOUTUBE_API_KEY` | YouTube collection |
     | `SAKSHI_ENABLED` | `true` or `false` |
-    | `EMAIL_ENABLED` | `true` only when daily report mail should send |
+    | `EMAIL_ENABLED` | `true` to get an email when the automatic pipeline fails. News and the daily report are never emailed; they go to WhatsApp. |
     | `EMAIL_PROVIDER` | `resend` |
-    | `REPORT_RECIPIENTS` | Comma-separated report inboxes, such as `desk@example.com,mp@example.com`. No quotes, no brackets. With the sender `onboarding@resend.dev`, Resend only delivers to the email address that owns the Resend account. |
+    | `REPORT_RECIPIENTS` | Comma-separated inboxes for the failure email, such as `desk@example.com,mp@example.com`. No quotes, no brackets. With the sender `onboarding@resend.dev`, Resend only delivers to the email address that owns the Resend account. |
     | `RESEND_API_KEY` | Resend API key |
 
     WhatsApp and the inbound chatbot:
@@ -92,7 +92,7 @@
 | Name | Value |
 | --- | --- |
 | `WHATSAPP_PIPELINE_STATUS` | Leave empty (off). `true` sends a status message after every hourly cycle. |
-| `PIPELINE_ALERT_REPEAT_HOURS` | `12`. A failed cycle alerts once. The same problem is alerted again only after this many hours, or at once when the problem changes. |
+| `PIPELINE_ALERT_REPEAT_HOURS` | `12`. A failed cycle alerts once on WhatsApp and by email. The same problem is alerted again only after this many hours, or at once when the problem changes. The logs show `[NOTIFY_FAILURE_EMAIL] sent`, `skipped`, or `failed`. |
 
 An empty `WHATSAPP_RECIPIENTS` list makes the chatbot stay silent. News alerts stay on WhatsApp templates. Chat replies are ordinary session text, which Meta accepts after that person has messaged the business inside the last 24 hours.
 

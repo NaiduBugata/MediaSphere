@@ -143,6 +143,67 @@ describe('CombinedPipelineService', () => {
     expect(again.stats.inserted).toBeGreaterThanOrEqual(1);
   });
 
+  it('emails only when a cycle fails, once per problem, and never emails news', async () => {
+    process.env.GROQ_API_KEY = 'test-key';
+    process.env.EMAIL_ENABLED = 'true';
+    process.env.EMAIL_PROVIDER = 'resend';
+    process.env.RESEND_API_KEY = 'test';
+    process.env.SMTP_FROM_EMAIL = 'from@example.com';
+    process.env.REPORT_RECIPIENTS = 'desk@example.com';
+    process.env.YOUTUBE_ENABLED = 'false';
+    process.env.SAKSHI_TAG_URLS = 'https://www.sakshi.com/tags/narasaraopet';
+    process.env.PIPELINE_MAX_ANALYZE = '2';
+
+    let postId = 100;
+    const db = {
+      ensureConnected: async () => true,
+      articlesCollectionName: 'articles',
+      collection: () => ({
+        find: () => ({ limit: () => ({ toArray: async () => [] }) }),
+        updateOne: async () => ({ upsertedCount: 1, matchedCount: 0 }),
+      }),
+    };
+    const service = new CombinedPipelineService(db as unknown as DatabaseService);
+    const emails: Array<{ subject: string }> = [];
+    const fetchImpl = (async (url: string, init?: RequestInit) => {
+      const target = String(url);
+      if (target.includes('getlokalapp.com')) {
+        if (!target.includes('page=1')) return jsonResponse({ results: [] });
+        postId += 1;
+        return jsonResponse({
+          results: [{ id: postId, title: `Narasaraopet road ${postId}`, content: 'Narasaraopet town roads need repair after rain', created_on: new Date().toISOString() }],
+        });
+      }
+      if (target.includes('sakshi.com')) return jsonResponse({}, 403);
+      if (target.includes('api.resend.com')) {
+        emails.push(JSON.parse(String(init?.body)));
+        return jsonResponse({ id: 'mail' });
+      }
+      return jsonResponse({
+        choices: [{ message: { content: '{"sentiment":"Problem","category":"roads","problem":"potholes","summary":"s","location":{"district":"Palnadu"},"people":[],"entities":[],"keywords":[]}' } }],
+      });
+    }) as typeof fetch;
+
+    const failed = await service.runCombinedOnce({ fetchImpl });
+    expect(failed.exitCode).not.toBe(0);
+    expect(failed.stats.inserted).toBe(1);
+    expect(emails).toHaveLength(1);
+    expect(emails[0].subject).toMatch(/^MediaSphere pipeline FAILED/);
+
+    await service.runCombinedOnce({ fetchImpl });
+    expect(emails).toHaveLength(1);
+
+    process.env.SAKSHI_ENABLED = 'false';
+    const ok = await service.runCombinedOnce({ fetchImpl });
+    expect(ok.exitCode).toBe(0);
+    expect(ok.stats.inserted).toBe(1);
+    expect(emails).toHaveLength(1);
+
+    process.env.SAKSHI_ENABLED = 'true';
+    await service.runCombinedOnce({ fetchImpl });
+    expect(emails).toHaveLength(2);
+  });
+
   it('second upsert of the same post_id is a duplicate', async () => {
     process.env.GROQ_API_KEY = 'test-key';
     process.env.YOUTUBE_ENABLED = 'false';

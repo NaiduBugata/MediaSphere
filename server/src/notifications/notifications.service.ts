@@ -59,13 +59,12 @@ export class NotificationsService {
   async buildStatusSnapshot() {
     const emailCfg = this.emailConfigured();
     const waCfg = this.whatsappConfigured();
-    let emailPending = 0;
+    // News is never emailed, so no article waits for email.
+    const emailPending = 0;
     let waPending = 0;
     try {
-      emailPending = await this.articles.countEmailPending();
       waPending = await this.articles.countWhatsappPending();
     } catch {
-      emailPending = 0;
       waPending = 0;
     }
 

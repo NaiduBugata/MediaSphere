@@ -53,7 +53,7 @@ export class ReportsSchedulerService implements OnModuleInit {
       await notifyHealthWhatsApp({
         Database: 'ok',
         Collectors: 'ok',
-        Email: truthy(process.env.EMAIL_ENABLED) ? 'ok' : 'disabled',
+        Email: truthy(process.env.EMAIL_ENABLED) ? 'failure alerts only' : 'disabled',
         WhatsApp: truthy(process.env.WHATSAPP_ENABLED) ? 'ok' : 'disabled',
         Scheduler: 'ok',
       });
