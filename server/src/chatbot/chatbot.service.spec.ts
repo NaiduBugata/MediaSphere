@@ -1,4 +1,4 @@
-import { ChatbotService, openingLine, timeGreeting, toWhatsAppFormat } from './chatbot.service';
+import { ChatbotService, isGreetingOnly, openingLine, timeGreeting, toWhatsAppFormat } from './chatbot.service';
 
 const document = {
   id: 'assistant-001',
@@ -119,7 +119,7 @@ describe('ChatbotService', () => {
       return { ok: true, json: async () => ({ messages: [{ id: 'out' }] }) } as Response;
     }) as typeof fetch;
     const bot = new ChatbotService();
-    await bot.handle(payload('Hi', 'wamid.rotate'), {
+    await bot.handle(payload('latest news', 'wamid.rotate'), {
       env: env({ GROQ_API_KEY: '', GROQ_API_KEY_1: 'key-1', GROQ_API_KEY_2: 'key-2' }),
       fetchImpl: rotating,
       documents: [document],
@@ -135,7 +135,36 @@ describe('ChatbotService', () => {
     expect(timeGreeting(new Date('2026-09-28T12:50:00Z'))).toBe('Good evening');
     expect(timeGreeting(new Date('2026-09-28T20:00:00Z'))).toBe('Good evening');
     expect(openingLine(new Date('2026-09-28T03:30:00Z'), {}))
-      .toBe("Good morning, Sri Lavu Sri Krishna Devarayalu Sir! I'm your Media Assistant.");
+      .toBe("Good morning, Sri. Lavu Sri Krishna Devarayalu Sir! I'm your Media Assistant.");
+  });
+
+  it('recognises a bare greeting but not a question', () => {
+    for (const text of ['Hi', 'hello sir', 'Good evening!', 'నమస్కారం', 'Namaste garu', 'hey 👋']) {
+      expect(isGreetingOnly(text)).toBe(true);
+    }
+    for (const text of ['hi, any news from Macherla?', 'latest updates', 'good news today?', '']) {
+      expect(isGreetingOnly(text)).toBe(false);
+    }
+  });
+
+  it('answers a greeting with the welcome and an offer to help, without calling the AI', async () => {
+    const sent: string[] = [];
+    let groq = 0;
+    const recording = (async (url: string | URL | Request, init?: RequestInit) => {
+      if (String(url).includes('groq.com')) {
+        groq += 1;
+        return { ok: true, json: async () => ({ choices: [{ message: { content: 'unused' } }] }) } as Response;
+      }
+      sent.push((JSON.parse(String(init?.body)) as { text: { body: string } }).text.body);
+      return { ok: true, json: async () => ({ messages: [{ id: 'out' }] }) } as Response;
+    }) as typeof fetch;
+    const bot = new ChatbotService();
+    const deps = { env: env(), fetchImpl: recording, documents: [document], news: [], now: () => new Date('2026-09-28T13:49:00Z') };
+    await bot.handle(payload('Hi', 'wamid.hi'), deps);
+    expect(sent).toEqual([
+      "Good evening, Sri. Lavu Sri Krishna Devarayalu Sir! I'm your Media Assistant.\n\nHow can I help you with the latest news?",
+    ]);
+    expect(groq).toBe(0);
   });
 
   it('opens each conversation with the greeting, but not every reply', async () => {
@@ -156,9 +185,9 @@ describe('ChatbotService', () => {
     clock = new Date('2026-09-29T03:30:00Z');
     await bot.handle(payload('any news?', 'wamid.g3'), deps);
     expect(sent).toEqual([
-      "Good evening, Sri Lavu Sri Krishna Devarayalu Sir! I'm your Media Assistant.\n\nHere is the news.",
+      "Good evening, Sri. Lavu Sri Krishna Devarayalu Sir! I'm your Media Assistant.\n\nHere is the news.",
       'Here is the news.',
-      "Good morning, Sri Lavu Sri Krishna Devarayalu Sir! I'm your Media Assistant.\n\nHere is the news.",
+      "Good morning, Sri. Lavu Sri Krishna Devarayalu Sir! I'm your Media Assistant.\n\nHere is the news.",
     ]);
   });
 

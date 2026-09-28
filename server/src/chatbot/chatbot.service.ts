@@ -20,7 +20,8 @@ const MAX_REPLY_CHARS = 4000;
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const NEWS_CACHE_MS = 60_000;
 const CONVERSATION_GAP_MS = 4 * 60 * 60 * 1000;
-const DEFAULT_ADDRESSEE = 'Sri Lavu Sri Krishna Devarayalu Sir';
+const DEFAULT_ADDRESSEE = 'Sri. Lavu Sri Krishna Devarayalu Sir';
+const INVITE = 'How can I help you with the latest news?';
 
 interface Turn {
   role: 'user' | 'assistant';
@@ -103,10 +104,16 @@ export class ChatbotService implements OnModuleInit {
     const opening = last === undefined || now.getTime() - last > CONVERSATION_GAP_MS;
     if (opening) this.history.delete(sender);
     try {
-      const answer = event.event_type === 'text'
-        ? await this.replyToText(sender, event.message_text || '', env, deps)
-        : UNSUPPORTED;
-      const reply = opening ? `${openingLine(now, env)}\n\n${answer}` : answer;
+      const text = event.message_text || '';
+      let reply: string;
+      if (event.event_type === 'text' && isGreetingOnly(text)) {
+        reply = `${openingLine(now, env)}\n\n${INVITE}`;
+      } else {
+        const answer = event.event_type === 'text'
+          ? await this.replyToText(sender, text, env, deps)
+          : UNSUPPORTED;
+        reply = opening ? `${openingLine(now, env)}\n\n${answer}` : answer;
+      }
       await sendTextMessage(sender, reply, deps.fetchImpl || fetch, env);
       this.answered.add(messageId);
       this.lastReplyAt.set(sender, now.getTime());
@@ -292,6 +299,18 @@ export function timeGreeting(now: Date): string {
 export function openingLine(now: Date, env: NodeJS.ProcessEnv): string {
   const addressee = (env.CHATBOT_ADDRESSEE || DEFAULT_ADDRESSEE).trim() || DEFAULT_ADDRESSEE;
   return `${timeGreeting(now)}, ${addressee}! I'm your Media Assistant.`;
+}
+
+const GREETING_WORDS = new Set([
+  'hi', 'hii', 'hiii', 'hello', 'helo', 'hey', 'hai', 'namaste', 'namasthe', 'namaskaram', 'namaskar',
+  'good', 'morning', 'afternoon', 'evening', 'gm', 'sir', 'garu', 'there', 'assistant', 'bot',
+  'నమస్కారం', 'నమస్తే', 'హాయ్', 'హలో', 'శుభోదయం', 'సార్', 'గారు',
+]);
+
+/** True for a bare greeting such as "Hi", "Hello sir", "Good evening", or "నమస్కారం". */
+export function isGreetingOnly(text: string): boolean {
+  const words = text.toLowerCase().replace(/[^\p{L}\p{M}\p{N}\s]/gu, ' ').split(/\s+/).filter(Boolean);
+  return words.length > 0 && words.length <= 4 && words.every((word) => GREETING_WORDS.has(word));
 }
 
 export function toWhatsAppFormat(text: string): string {

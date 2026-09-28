@@ -84,7 +84,7 @@
     | `CHATBOT_ENABLED` | `true`. If this variable is omitted, the chatbot still turns on whenever `WHATSAPP_ENABLED` is true. Set `false` to keep alerts and stop chat replies. |
 | `CHATBOT_NAME` | Leave empty for `MediaSphere Assistant`, or another display name used in the prompt |
 | `CHATBOT_LANGUAGE` | Leave empty to reply in the user's language, or force one such as `English` |
-| `CHATBOT_ADDRESSEE` | Leave empty for `Sri Lavu Sri Krishna Devarayalu Sir`. The first reply of each conversation (after 4 hours of silence) starts with "Good morning/afternoon/evening, <addressee>! I'm your Media Assistant." using India time. |
+| `CHATBOT_ADDRESSEE` | Leave empty for `Sri. Lavu Sri Krishna Devarayalu Sir`. A bare greeting such as "Hi" gets "Good morning/afternoon/evening, <addressee>! I'm your Media Assistant." followed by "How can I help you with the latest news?", using India time. A question that starts a conversation (after 4 hours of silence) gets the same first line, then the answer. |
     | `CHATBOT_GROQ_MODEL` | Leave empty to use `GROQ_MODEL`, then `openai/gpt-oss-20b` |
 
     Pipeline alerts on WhatsApp:
