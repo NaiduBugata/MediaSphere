@@ -140,6 +140,7 @@ export class ChatbotService implements OnModuleInit {
         .map((doc) => toBrief(doc as Record<string, unknown>))
         .filter((brief): brief is NewsBrief => brief !== null);
       this.newsCache = { at: Date.now(), briefs };
+      this.logger.log(`Chatbot news loaded (${briefs.length} articles).`);
       return briefs;
     } catch (err) {
       this.logger.warn(`Chatbot could not load news: ${err instanceof Error ? err.message : 'database error'}`);
