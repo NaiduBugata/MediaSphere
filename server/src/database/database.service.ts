@@ -132,6 +132,13 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
     return new PgDocumentCollection(this.pool, name, (fn) => this.exclusive(name, fn));
   }
 
+  /** Plain SQL for tables outside the document store (for example uploaded file bytes). */
+  async query<T extends Record<string, unknown> = Record<string, unknown>>(sql: string, params: unknown[] = []): Promise<T[]> {
+    if (!this.pool) throw new Error('Neon database is not initialized');
+    const result = await this.pool.query(sql, params);
+    return result.rows as T[];
+  }
+
   articles(): PgDocumentCollection {
     return this.collection(this.articlesCollectionName);
   }

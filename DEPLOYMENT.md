@@ -124,6 +124,16 @@ Send only those two sources through a residential or ISP proxy. Node 24 reads th
 
 `NO_PROXY` keeps Groq, Meta, Resend, the YouTube search API, and Lokal on the direct connection. Neon does not use HTTP, so it never goes through the proxy.
 
+### Visits
+
+Sign in at `/news/@admin` and choose **Visits**. Each visit has a title, an optional date, place, and description, and one PDF, Word (`.doc`, `.docx`), or Excel (`.xls`, `.xlsx`) file. The API checks the file contents as well as the extension, so a renamed image is refused.
+
+The file is stored in Neon in the `mediasphere.visit_files` table, which the API creates on first use. The visit itself is a `jv_records` row with section `visits`. Uploaded visits appear on the news page below the news, where a PDF opens in the browser and Word or Excel files download, and in the WhatsApp assistant's **Visits** button. Deleting a visit in the admin page removes both the row and the file.
+
+| Name | Value |
+| --- | --- |
+| `VISITS_MAX_UPLOAD_MB` | Leave empty for 10. The admin page also refuses files over 10 MB before uploading. |
+
 ### Public URL
 
     1. Open the service **Settings**, then **Networking**.

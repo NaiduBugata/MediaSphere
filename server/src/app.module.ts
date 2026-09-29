@@ -11,6 +11,7 @@ import { PipelineModule } from './pipeline/pipeline.module';
 import { ReportsModule } from './reports/reports.module';
 import { WhatsAppModule } from './whatsapp/whatsapp.module';
 import { WorkspaceModule } from './workspace/workspace.module';
+import { VisitsModule } from './visits/visits.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { WorkspaceModule } from './workspace/workspace.module';
     WhatsAppModule,
     WorkspaceModule,
     AdminModule,
+    VisitsModule,
   ],
 })
 export class AppModule {}

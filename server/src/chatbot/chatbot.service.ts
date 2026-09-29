@@ -220,9 +220,9 @@ export class ChatbotService {
       const rows = await this.db.collection(RECORDS).find({ section }).sort({ createdAt: -1 }).limit(TOP).toArray();
       return rows.map((row) => ({
         title: text(row.title),
-        detail: text(row.detail),
+        detail: [text(row.place), text(row.detail)].filter(Boolean).join(' – '),
         status: text(row.status),
-        date: text(row.createdAt),
+        date: text(row.visitDate) || text(row.createdAt),
       }));
     } catch (err) {
       this.logger.warn(`Chatbot could not load ${section}: ${err instanceof Error ? err.message : 'database error'}`);

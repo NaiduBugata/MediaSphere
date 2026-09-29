@@ -14,6 +14,7 @@ import {
   triggerAdminFetch,
 } from '../services/adminApi';
 import { formatDateTime, formatRelativeTime } from '../utils/format';
+import AdminVisits from '../components/visits/AdminVisits';
 
 const HEADLINE_META = {
   healthy: { label: 'HEALTHY', className: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
@@ -186,6 +187,7 @@ function AdminDashboard({ onLogout }) {
   const [actionMsg, setActionMsg] = useState('');
   const [detail, setDetail] = useState(null);
   const [error, setError] = useState('');
+  const [view, setView] = useState('fetch');
   const pendingRunIdRef = useRef('');
   const wasRunningRef = useRef(false);
 
@@ -345,7 +347,7 @@ function AdminDashboard({ onLogout }) {
         <div className="mx-auto max-w-7xl px-4 py-3 flex items-center justify-between gap-3">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-primary">Admin</p>
-            <h1 className="text-lg font-bold leading-tight">Fetch monitoring</h1>
+            <h1 className="text-lg font-bold leading-tight">{view === 'visits' ? 'Visits' : 'Fetch monitoring'}</h1>
           </div>
           <div className="flex items-center gap-2">
             <Link to="/news" className="text-sm text-msmuted hover:text-primary px-2">
@@ -353,11 +355,25 @@ function AdminDashboard({ onLogout }) {
             </Link>
             <button
               type="button"
-              onClick={load}
-              className="rounded-md border border-msline bg-surface px-3 py-1.5 text-sm font-medium"
+              onClick={() => setView((current) => (current === 'visits' ? 'fetch' : 'visits'))}
+              aria-pressed={view === 'visits'}
+              className={`rounded-md border px-3 py-1.5 text-sm font-medium ${
+                view === 'visits'
+                  ? 'border-primary bg-primary text-white hover:bg-primary-hover'
+                  : 'border-msline bg-surface'
+              }`}
             >
-              Refresh
+              {view === 'visits' ? 'Fetch monitoring' : 'Visits'}
             </button>
+            {view === 'fetch' ? (
+              <button
+                type="button"
+                onClick={load}
+                className="rounded-md border border-msline bg-surface px-3 py-1.5 text-sm font-medium"
+              >
+                Refresh
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={async () => {
@@ -372,6 +388,16 @@ function AdminDashboard({ onLogout }) {
         </div>
       </header>
 
+      {view === 'visits' ? (
+        <main className="mx-auto max-w-7xl px-4 py-6">
+          <AdminVisits
+            onUnauthorized={() => {
+              clearAdminToken();
+              onLogout();
+            }}
+          />
+        </main>
+      ) : (
       <main className="mx-auto max-w-7xl px-4 py-6 space-y-5">
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
@@ -574,6 +600,7 @@ function AdminDashboard({ onLogout }) {
           </div>
         </section>
       </main>
+      )}
 
       <DetailModal run={detail} onClose={() => setDetail(null)} onRetry={onRetry} />
     </div>

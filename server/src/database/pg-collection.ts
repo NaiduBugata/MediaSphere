@@ -295,6 +295,18 @@ export class PgDocumentCollection {
     });
   }
 
+  async deleteOne(filter: Filter): Promise<{ deletedCount: number }> {
+    return this.exclusive(async () => {
+      const hit = (await this.load()).find((doc) => matches(doc, filter));
+      if (!hit) return { deletedCount: 0 };
+      const result = await this.pool.query(
+        'DELETE FROM mediasphere.documents WHERE collection = $1 AND doc_id = $2',
+        [this.name, docId(hit)],
+      );
+      return { deletedCount: result.rowCount || 0 };
+    });
+  }
+
   async createIndex(_keys: Record<string, number>): Promise<string> {
     return 'ok';
   }

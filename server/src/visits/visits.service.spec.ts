@@ -1,0 +1,126 @@
+import { BadRequestException } from '@nestjs/common';
+import { ObjectId } from 'mongodb';
+import { DatabaseService } from '../database/database.service';
+import { matches } from '../database/pg-collection';
+import { VisitsService, detectVisitFile, safeFileName } from './visits.service';
+
+const PDF = Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.alloc(40)]);
+const ZIP = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(40)]);
+const OLE = Buffer.concat([Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]), Buffer.alloc(40)]);
+const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(40)]);
+
+function fakeDb() {
+  const docs: Array<Record<string, unknown>> = [];
+  const files = new Map<string, { name: string; mime: string; size: number; data: Buffer }>();
+  const queries: string[] = [];
+  const db = {
+    ensureConnected: async () => true,
+    query: async (sql: string, params: unknown[] = []) => {
+      queries.push(sql.trim().split(/\s+/).slice(0, 2).join(' '));
+      if (sql.includes('INSERT INTO mediasphere.visit_files')) {
+        const [id, name, mime, size, data] = params as [string, string, string, number, Buffer];
+        files.set(id, { name, mime, size, data });
+      } else if (sql.includes('SELECT name, mime, data')) {
+        const hit = files.get(String(params[0]));
+        return hit ? [hit] : [];
+      } else if (sql.includes('DELETE FROM mediasphere.visit_files')) {
+        files.delete(String(params[0]));
+      }
+      return [];
+    },
+    collection: () => ({
+      find: (filter: Record<string, unknown>) => ({ toArray: async () => docs.filter((doc) => matches(doc, filter)) }),
+      insertOne: async (doc: Record<string, unknown>) => {
+        const stored = { ...doc, _id: new ObjectId() };
+        docs.push(stored);
+        return { insertedId: stored._id };
+      },
+      deleteOne: async (filter: Record<string, unknown>) => {
+        const index = docs.findIndex((doc) => matches(doc, filter));
+        if (index >= 0) docs.splice(index, 1);
+        return { deletedCount: index >= 0 ? 1 : 0 };
+      },
+    }),
+  };
+  return { db: db as unknown as DatabaseService, docs, files, queries };
+}
+
+describe('visit file checks', () => {
+  it('accepts PDF, Word, and Excel when the contents match the extension', () => {
+    expect(detectVisitFile('report.pdf', PDF)).toMatchObject({ kind: 'pdf', mime: 'application/pdf' });
+    expect(detectVisitFile('notes.DOCX', ZIP).kind).toBe('word');
+    expect(detectVisitFile('old.doc', OLE).kind).toBe('word');
+    expect(detectVisitFile('sheet.xlsx', ZIP).kind).toBe('excel');
+    expect(detectVisitFile('sheet.xls', OLE).kind).toBe('excel');
+  });
+
+  it('refuses other types and renamed files', () => {
+    expect(() => detectVisitFile('photo.png', PNG)).toThrow(BadRequestException);
+    expect(() => detectVisitFile('photo.pdf', PNG)).toThrow('not a valid .pdf');
+    expect(() => detectVisitFile('script.exe', PDF)).toThrow(BadRequestException);
+    expect(() => detectVisitFile('pdf', PDF)).toThrow(BadRequestException);
+  });
+
+  it('strips paths and unsafe characters from file names', () => {
+    expect(safeFileName('C:\\Users\\x\\Visit "Macherla".pdf')).toBe('Visit _Macherla_.pdf');
+    expect(safeFileName('../../etc/passwd')).toBe('passwd');
+  });
+});
+
+describe('VisitsService', () => {
+  it('stores the file, lists newest visit first, serves the bytes, and deletes both', async () => {
+    const { db, docs, files } = fakeDb();
+    const service = new VisitsService(db);
+    await service.create({ title: 'Older visit', visitDate: '2026-09-01' }, { originalname: 'a.pdf', size: PDF.length, buffer: PDF });
+    const created = await service.create(
+      { title: '  Macherla hospital visit ', place: 'Macherla', visitDate: '2026-09-28', detail: 'Reviewed new ward' },
+      { originalname: 'Visit report.docx', size: ZIP.length, buffer: ZIP },
+    );
+    expect(created).toMatchObject({
+      title: 'Macherla hospital visit',
+      place: 'Macherla',
+      visitDate: '2026-09-28',
+      file: { name: 'Visit report.docx', kind: 'word', size: ZIP.length },
+    });
+    expect(docs[1]).toMatchObject({ section: 'visits', status: 'Word', createdBy: 'admin' });
+
+    const list = await service.list();
+    expect(list.map((visit) => visit.title)).toEqual(['Macherla hospital visit', 'Older visit']);
+
+    const fileId = created.file!.id;
+    const file = await service.file(fileId);
+    expect(file.mime).toBe('application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    expect(file.data.equals(ZIP)).toBe(true);
+
+    await service.remove(created.id);
+    expect(docs).toHaveLength(1);
+    expect(files.has(fileId)).toBe(false);
+  });
+
+  it('lists hand-entered visits that have no file without inventing a download', async () => {
+    const { db, docs } = fakeDb();
+    docs.push({ _id: new ObjectId(), section: 'visits', title: 'Village meeting', place: 'Chilakaluripet', createdAt: '2026-09-20T10:00:00.000Z' });
+    docs.push({ _id: new ObjectId(), section: 'news', title: 'Not a visit' });
+    const [visit, ...rest] = await new VisitsService(db).list();
+    expect(rest).toEqual([]);
+    expect(visit).toMatchObject({ title: 'Village meeting', place: 'Chilakaluripet', file: null });
+  });
+
+  it('rejects a missing file, a missing title, a bad date, and an oversized file', async () => {
+    const { db, files } = fakeDb();
+    const service = new VisitsService(db);
+    const pdf = { originalname: 'a.pdf', size: PDF.length, buffer: PDF };
+    await expect(service.create({ title: 'x' }, undefined)).rejects.toThrow('Choose a PDF');
+    await expect(service.create({ title: '  ' }, pdf)).rejects.toThrow('Title is required');
+    await expect(service.create({ title: 'x', visitDate: '28/09/2026' }, pdf)).rejects.toThrow('Visit date');
+    await expect(service.create({ title: 'x' }, { ...pdf, size: 50 * 1024 * 1024 })).rejects.toThrow('larger than');
+    expect(files.size).toBe(0);
+  });
+
+  it('returns not found for unknown ids', async () => {
+    const service = new VisitsService(fakeDb().db);
+    await expect(service.file('nope')).rejects.toThrow('File not found');
+    await expect(service.file('a'.repeat(24))).rejects.toThrow('File not found');
+    await expect(service.remove('missing')).rejects.toThrow('Visit not found');
+  });
+});

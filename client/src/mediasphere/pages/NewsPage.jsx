@@ -11,6 +11,7 @@ import TrendingBar from '../components/editorial/TrendingBar';
 import FeaturedStory from '../components/editorial/FeaturedStory';
 import TopStoriesRail from '../components/editorial/TopStoriesRail';
 import LatestNewsRow from '../components/editorial/LatestNewsRow';
+import VisitsSection from '../components/visits/VisitsSection';
 
 const QUERY_MAP = {
   q: 'search',
@@ -118,6 +119,8 @@ export default function NewsPage() {
       ) : (
         <NewsTable articles={filteredArticles} onViewDetails={openArticle} />
       )}
+
+      <VisitsSection />
     </div>
   );
 }
