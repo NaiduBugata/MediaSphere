@@ -1,4 +1,4 @@
-import { ChatbotService, MENU_BUTTONS, formatSection, isGreetingOnly, openingLine, timeGreeting, toWhatsAppFormat } from './chatbot.service';
+import { ChatbotService, MAIN_BUTTONS, MORE_BUTTON, MORE_BUTTONS, formatSection, isGreetingOnly, openingLine, timeGreeting, toWhatsAppFormat } from './chatbot.service';
 
 function payload(body: string, id = 'wamid.1', from = '919876543210') {
   return {
@@ -114,10 +114,10 @@ describe('ChatbotService', () => {
     expect(first.type).toBe('button');
     expect(first.body.text).toContain("Good evening, Sri. Lavu Sri Krishna Devarayalu Sir! I'm your Media Assistant.");
     expect(first.body.text).toContain('Tap a section');
-    expect(first.action.buttons.map((button) => button.reply.title)).toEqual(['Grievances', 'Projects & reports', 'News']);
+    expect(first.action.buttons.map((button) => button.reply.title)).toEqual(['News', 'Grievances', 'Constituency']);
     expect(first.action.buttons.every((button) => button.type === 'reply')).toBe(true);
-    expect(second.body.text).toBe('More sections');
-    expect(second.action.buttons.map((button) => button.reply.title)).toEqual(['Constituency', 'Campaigns', 'Analytics']);
+    expect(second.body.text).toBe('More');
+    expect(second.action.buttons.map((button) => button.reply.title)).toEqual(['More']);
     expect(JSON.stringify(sent)).not.toContain('http');
   });
 
@@ -144,7 +144,22 @@ describe('ChatbotService', () => {
       const interactive = row.interactive as { action: { buttons: Array<{ reply: { title: string } }> } };
       return interactive.action.buttons.map((button) => button.reply.title);
     });
-    expect(titles).toEqual(MENU_BUTTONS.map((button) => button.title));
+    expect(titles).toEqual([...MAIN_BUTTONS, MORE_BUTTON].map((button) => button.title));
+  });
+
+  it('opens Projects, Campaigns, and Analytics from More', async () => {
+    const sent: Array<Record<string, unknown>> = [];
+    const bot = new ChatbotService();
+    await bot.handle(buttonPayload('more', 'More', 'wamid.more'), {
+      env: env(),
+      fetchImpl: capture(sent),
+      now: () => new Date('2026-09-28T13:49:00Z'),
+    });
+    expect(sent).toHaveLength(1);
+    const interactive = sent[0].interactive as { body: { text: string }; action: { buttons: Array<{ reply: { id: string; title: string } }> } };
+    expect(interactive.body.text).toBe('More');
+    expect(interactive.action.buttons.map((button) => button.reply.title)).toEqual(MORE_BUTTONS.map((button) => button.title));
+    expect(interactive.action.buttons.map((button) => button.reply.id)).toEqual(['projects', 'campaigns', 'analytics']);
   });
 
   it('returns the five newest grievances and keeps projects separate', async () => {

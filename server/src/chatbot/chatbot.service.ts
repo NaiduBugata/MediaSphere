@@ -12,19 +12,24 @@ const NEWS_CACHE_MS = 60_000;
 const CONVERSATION_GAP_MS = 4 * 60 * 60 * 1000;
 const DEFAULT_ADDRESSEE = 'Sri. Lavu Sri Krishna Devarayalu Sir';
 const MENU_PROMPT = 'Tap a section. The reply stays in this chat.';
-const MENU_MORE = 'More sections';
 const MENU_AGAIN = 'Choose another section';
 
-export const MENU_BUTTONS: ReplyButton[] = [
-  { id: 'grievances', title: 'Grievances' },
-  { id: 'projects', title: 'Projects & reports' },
+export const MAIN_BUTTONS: ReplyButton[] = [
   { id: 'news', title: 'News' },
+  { id: 'grievances', title: 'Grievances' },
   { id: 'constituency', title: 'Constituency' },
+];
+export const MORE_BUTTON: ReplyButton = { id: 'more', title: 'More' };
+export const MORE_BUTTONS: ReplyButton[] = [
+  { id: 'projects', title: 'Projects & reports' },
   { id: 'campaigns', title: 'Campaigns' },
   { id: 'analytics', title: 'Analytics' },
 ];
 
+const CHOICE_BUTTONS: ReplyButton[] = [...MAIN_BUTTONS, MORE_BUTTON, ...MORE_BUTTONS];
+
 export type MenuId = 'grievances' | 'projects' | 'news' | 'constituency' | 'campaigns' | 'analytics';
+export type MenuChoice = MenuId | 'more';
 
 const RECORD_SECTION: Partial<Record<MenuId, 'grievances' | 'projects' | 'people' | 'campaigns'>> = {
   grievances: 'grievances',
@@ -42,7 +47,7 @@ const SECTION_TITLE: Record<MenuId, string> = {
   analytics: 'Analytics',
 };
 
-const TEXT_ALIASES: Record<string, MenuId> = {
+const TEXT_ALIASES: Record<string, MenuChoice> = {
   grievance: 'grievances',
   grievances: 'grievances',
   project: 'projects',
@@ -58,6 +63,7 @@ const TEXT_ALIASES: Record<string, MenuId> = {
   'latest updates': 'news',
   constituency: 'constituency',
   people: 'constituency',
+  more: 'more',
   campaign: 'campaigns',
   campaigns: 'campaigns',
   analytic: 'analytics',
@@ -137,7 +143,9 @@ export class ChatbotService {
     const fetchImpl = deps.fetchImpl || fetch;
     try {
       const choice = menuChoice(event);
-      if (choice) {
+      if (choice === 'more') {
+        await this.sendMore(sender, fetchImpl, env);
+      } else if (choice) {
         const body = await this.renderSection(choice, deps);
         const text = opening ? `${openingLine(now, env)}\n\n${body}` : body;
         await sendTextMessage(sender, text, fetchImpl, env);
@@ -164,8 +172,16 @@ export class ChatbotService {
     fetchImpl: typeof fetch,
     env: NodeJS.ProcessEnv,
   ): Promise<void> {
-    await sendReplyButtons(sender, lead, MENU_BUTTONS.slice(0, 3), fetchImpl, env);
-    await sendReplyButtons(sender, MENU_MORE, MENU_BUTTONS.slice(3), fetchImpl, env);
+    await sendReplyButtons(sender, lead, MAIN_BUTTONS, fetchImpl, env);
+    await sendReplyButtons(sender, MORE_BUTTON.title, [MORE_BUTTON], fetchImpl, env);
+  }
+
+  private async sendMore(
+    sender: string,
+    fetchImpl: typeof fetch,
+    env: NodeJS.ProcessEnv,
+  ): Promise<void> {
+    await sendReplyButtons(sender, 'More', MORE_BUTTONS, fetchImpl, env);
   }
 
   private async renderSection(choice: MenuId, deps: ChatbotDeps): Promise<string> {
@@ -237,13 +253,13 @@ export function chatbotEnabled(env: NodeJS.ProcessEnv): boolean {
     && ['1', 'true', 'yes', 'on'].includes(whatsapp);
 }
 
-export function menuChoice(event: WhatsAppEvent): MenuId | null {
+export function menuChoice(event: WhatsAppEvent): MenuChoice | null {
   const reply = event.interactive_response?.button_reply;
   if (reply && typeof reply === 'object') {
     const row = reply as Record<string, unknown>;
     const id = text(row.id).toLowerCase();
-    const match = MENU_BUTTONS.find((button) => button.id === id);
-    if (match) return match.id as MenuId;
+    const match = CHOICE_BUTTONS.find((button) => button.id === id);
+    if (match) return match.id as MenuChoice;
     const fromTitle = menuFromText(text(row.title) || event.message_text || '');
     if (fromTitle) return fromTitle;
   }
@@ -253,7 +269,7 @@ export function menuChoice(event: WhatsAppEvent): MenuId | null {
   return null;
 }
 
-export function menuFromText(value: string): MenuId | null {
+export function menuFromText(value: string): MenuChoice | null {
   const key = value.toLowerCase().replace(/[^\p{L}\p{N}&]+/gu, ' ').replace(/\s+/g, ' ').trim();
   return TEXT_ALIASES[key] || null;
 }
