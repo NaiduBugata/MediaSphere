@@ -1,65 +1,97 @@
-import { Injectable, Logger, OnModuleInit, Optional } from '@nestjs/common';
-import { discoverGroqApiKeys } from '../ai/groq-keys';
+import { Injectable, Logger, Optional } from '@nestjs/common';
+import { DatabaseService } from '../database/database.service';
 import { ArticleRepository } from '../database/repositories/article.repository';
 import { hasAssemblySegment } from '../pipeline/native/constituency';
 import { parseWebhookPayload, type WhatsAppEvent } from '../whatsapp/whatsapp.parser';
-import { normalizePhone, sendTextMessage } from '../whatsapp/whatsapp.send';
-import {
-  loadKnowledge,
-  resolveKnowledgePath,
-  searchKnowledge,
-  type KnowledgeDocument,
-} from './knowledge';
-import { formatNews, selectNews, toBrief, type NewsBrief } from './news-context';
+import { normalizePhone, sendReplyButtons, sendTextMessage, type ReplyButton } from '../whatsapp/whatsapp.send';
+import { newestFirst, toBrief, type NewsBrief } from './news-context';
 
-const UNSUPPORTED = 'Sorry, I currently support text messages only.';
-const EMPTY_TEXT = 'Please send a text message.';
-const UNAVAILABLE = "Sorry, I'm temporarily unable to process that request.";
-const MAX_USER_CHARS = 2000;
-const MAX_REPLY_CHARS = 4000;
-const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
+const RECORDS = 'jv_records';
+const TOP = 5;
 const NEWS_CACHE_MS = 60_000;
 const CONVERSATION_GAP_MS = 4 * 60 * 60 * 1000;
 const DEFAULT_ADDRESSEE = 'Sri. Lavu Sri Krishna Devarayalu Sir';
-const INVITE = 'How can I help you with the latest news?';
+const MENU_PROMPT = 'Tap a section. The reply stays in this chat.';
+const MENU_MORE = 'More sections';
+const MENU_AGAIN = 'Choose another section';
 
-interface Turn {
-  role: 'user' | 'assistant';
-  content: string;
+export const MENU_BUTTONS: ReplyButton[] = [
+  { id: 'grievances', title: 'Grievances' },
+  { id: 'projects', title: 'Projects & reports' },
+  { id: 'news', title: 'News' },
+  { id: 'constituency', title: 'Constituency' },
+  { id: 'campaigns', title: 'Campaigns' },
+  { id: 'analytics', title: 'Analytics' },
+];
+
+export type MenuId = 'grievances' | 'projects' | 'news' | 'constituency' | 'campaigns' | 'analytics';
+
+const RECORD_SECTION: Partial<Record<MenuId, 'grievances' | 'projects' | 'people' | 'campaigns'>> = {
+  grievances: 'grievances',
+  projects: 'projects',
+  constituency: 'people',
+  campaigns: 'campaigns',
+};
+
+const SECTION_TITLE: Record<MenuId, string> = {
+  grievances: 'Grievances',
+  projects: 'Projects & reports',
+  news: 'News',
+  constituency: 'Constituency',
+  campaigns: 'Campaigns',
+  analytics: 'Analytics',
+};
+
+const TEXT_ALIASES: Record<string, MenuId> = {
+  grievance: 'grievances',
+  grievances: 'grievances',
+  project: 'projects',
+  projects: 'projects',
+  'projects & reports': 'projects',
+  'projects and reports': 'projects',
+  report: 'projects',
+  reports: 'projects',
+  news: 'news',
+  'latest news': 'news',
+  update: 'news',
+  updates: 'news',
+  'latest updates': 'news',
+  constituency: 'constituency',
+  people: 'constituency',
+  campaign: 'campaigns',
+  campaigns: 'campaigns',
+  analytic: 'analytics',
+  analytics: 'analytics',
+};
+
+export interface MenuRecord {
+  title: string;
+  detail: string;
+  status: string;
+  date: string;
 }
 
 export interface ChatbotDeps {
   env?: NodeJS.ProcessEnv;
   fetchImpl?: typeof fetch;
-  documents?: KnowledgeDocument[];
   news?: NewsBrief[];
+  records?: Partial<Record<'grievances' | 'projects' | 'people' | 'campaigns', MenuRecord[]>>;
   now?: () => Date;
 }
 
 @Injectable()
-export class ChatbotService implements OnModuleInit {
+export class ChatbotService {
   private readonly logger = new Logger(ChatbotService.name);
-  private documents: KnowledgeDocument[] = [];
-  private readonly history = new Map<string, Turn[]>();
   private readonly answered = new Set<string>();
   private readonly inflight = new Set<string>();
   private readonly queues = new Map<string, Promise<void>>();
   private readonly lastReplyAt = new Map<string, number>();
   private newsCache: { at: number; briefs: NewsBrief[] } | null = null;
 
-  constructor(@Optional() private readonly articles?: ArticleRepository) {}
-
-  async onModuleInit(): Promise<void> {
-    try {
-      this.documents = await loadKnowledge(resolveKnowledgePath());
-      this.logger.log(`Chatbot knowledge loaded (${this.documents.length} documents).`);
-    } catch (err) {
-      this.documents = [];
-      this.logger.warn(
-        err instanceof Error ? err.message : 'Chatbot knowledge file could not be loaded.',
-      );
-    }
-  }
+  constructor(
+    @Optional() private readonly articles?: ArticleRepository,
+    @Optional() private readonly db?: DatabaseService,
+  ) {}
 
   /** Starts a reply after the webhook has already been acknowledged. Never throws. */
   consider(payload: unknown, deps: ChatbotDeps = {}): void {
@@ -102,19 +134,18 @@ export class ChatbotService implements OnModuleInit {
     const now = (deps.now || (() => new Date()))();
     const last = this.lastReplyAt.get(sender);
     const opening = last === undefined || now.getTime() - last > CONVERSATION_GAP_MS;
-    if (opening) this.history.delete(sender);
+    const fetchImpl = deps.fetchImpl || fetch;
     try {
-      const text = event.message_text || '';
-      let reply: string;
-      if (event.event_type === 'text' && isGreetingOnly(text)) {
-        reply = `${openingLine(now, env)}\n\n${INVITE}`;
+      const choice = menuChoice(event);
+      if (choice) {
+        const body = await this.renderSection(choice, deps);
+        const text = opening ? `${openingLine(now, env)}\n\n${body}` : body;
+        await sendTextMessage(sender, text, fetchImpl, env);
+        await this.sendMenu(sender, MENU_AGAIN, fetchImpl, env);
       } else {
-        const answer = event.event_type === 'text'
-          ? await this.replyToText(sender, text, env, deps)
-          : UNSUPPORTED;
-        reply = opening ? `${openingLine(now, env)}\n\n${answer}` : answer;
+        const lead = opening ? `${openingLine(now, env)}\n\n${MENU_PROMPT}` : MENU_PROMPT;
+        await this.sendMenu(sender, lead, fetchImpl, env);
       }
-      await sendTextMessage(sender, reply, deps.fetchImpl || fetch, env);
       this.answered.add(messageId);
       this.lastReplyAt.set(sender, now.getTime());
       this.logger.log(`Chatbot replied to ${maskPhone(sender)}.`);
@@ -127,26 +158,50 @@ export class ChatbotService implements OnModuleInit {
     }
   }
 
-  private async replyToText(
+  private async sendMenu(
     sender: string,
-    text: string,
+    lead: string,
+    fetchImpl: typeof fetch,
     env: NodeJS.ProcessEnv,
-    deps: ChatbotDeps,
-  ): Promise<string> {
-    const question = text.trim().slice(0, MAX_USER_CHARS);
-    if (!question) return EMPTY_TEXT;
-    const documents = deps.documents || this.documents;
-    const knowledge = searchKnowledge(documents, question);
+  ): Promise<void> {
+    await sendReplyButtons(sender, lead, MENU_BUTTONS.slice(0, 3), fetchImpl, env);
+    await sendReplyButtons(sender, MENU_MORE, MENU_BUTTONS.slice(3), fetchImpl, env);
+  }
+
+  private async renderSection(choice: MenuId, deps: ChatbotDeps): Promise<string> {
+    const title = SECTION_TITLE[choice];
+    if (choice === 'news') return formatSection(title, (await this.newsBriefs(deps)).map(newsLine));
+    if (choice === 'analytics') return formatSection(title, (await this.newsBriefs(deps)).map(analyticsLine));
+    const section = RECORD_SECTION[choice];
+    const rows = section ? await this.sectionRecords(section, deps) : [];
+    return formatSection(title, rows.map(recordLine));
+  }
+
+  private async newsBriefs(deps: ChatbotDeps): Promise<NewsBrief[]> {
     const briefs = deps.news || await this.loadNews();
-    const news = formatNews(selectNews(briefs, question), briefs.length);
-    const history = this.history.get(sender) || [];
-    const generated = await completeWithGroq(buildPrompt(question, history, knowledge, news, env), env, deps.fetchImpl || fetch);
-    const reply = truncate(generated ? toWhatsAppFormat(generated) : UNAVAILABLE);
-    if (generated) {
-      const turns = [...history, { role: 'user' as const, content: question }, { role: 'assistant' as const, content: reply }];
-      this.history.set(sender, turns.slice(-10));
+    return newestFirst(briefs).slice(0, TOP);
+  }
+
+  private async sectionRecords(
+    section: 'grievances' | 'projects' | 'people' | 'campaigns',
+    deps: ChatbotDeps,
+  ): Promise<MenuRecord[]> {
+    if (deps.records) return latestRecords(deps.records[section] || []);
+    if (!this.db) return [];
+    try {
+      const ok = await this.db.ensureConnected();
+      if (!ok) return [];
+      const rows = await this.db.collection(RECORDS).find({ section }).sort({ createdAt: -1 }).limit(TOP).toArray();
+      return rows.map((row) => ({
+        title: text(row.title),
+        detail: text(row.detail),
+        status: text(row.status),
+        date: text(row.createdAt),
+      }));
+    } catch (err) {
+      this.logger.warn(`Chatbot could not load ${section}: ${err instanceof Error ? err.message : 'database error'}`);
+      return [];
     }
-    return reply;
   }
 
   private async loadNews(): Promise<NewsBrief[]> {
@@ -182,6 +237,88 @@ export function chatbotEnabled(env: NodeJS.ProcessEnv): boolean {
     && ['1', 'true', 'yes', 'on'].includes(whatsapp);
 }
 
+export function menuChoice(event: WhatsAppEvent): MenuId | null {
+  const reply = event.interactive_response?.button_reply;
+  if (reply && typeof reply === 'object') {
+    const row = reply as Record<string, unknown>;
+    const id = text(row.id).toLowerCase();
+    const match = MENU_BUTTONS.find((button) => button.id === id);
+    if (match) return match.id as MenuId;
+    const fromTitle = menuFromText(text(row.title) || event.message_text || '');
+    if (fromTitle) return fromTitle;
+  }
+  if (event.event_type === 'text' || event.event_type === 'button' || event.event_type === 'interactive') {
+    return menuFromText(event.message_text || '');
+  }
+  return null;
+}
+
+export function menuFromText(value: string): MenuId | null {
+  const key = value.toLowerCase().replace(/[^\p{L}\p{N}&]+/gu, ' ').replace(/\s+/g, ' ').trim();
+  return TEXT_ALIASES[key] || null;
+}
+
+export function formatSection(title: string, items: string[]): string {
+  if (!items.length) return `*${title}*\nNothing saved yet.`;
+  const lines = items.slice(0, TOP).map((item, index) => `${index + 1}. ${item}`);
+  return `*${title}*\nLatest ${lines.length}\n\n${lines.join('\n\n')}`;
+}
+
+function newsLine(brief: NewsBrief): string {
+  const meta = [plain(brief.place), shortWhen(brief.publishedAt || brief.collectedAt)].filter(Boolean).join(' · ');
+  return [bold(brief.title), plain(brief.summary), meta].filter(Boolean).join('\n');
+}
+
+function analyticsLine(brief: NewsBrief): string {
+  const signal = [plain(brief.sentiment), plain(brief.category), brief.severity ? `severity ${plain(brief.severity)}` : '']
+    .filter(Boolean)
+    .join(' · ');
+  const meta = [plain(brief.place), shortWhen(brief.publishedAt || brief.collectedAt)].filter(Boolean).join(' · ');
+  return [bold(brief.title), signal, meta].filter(Boolean).join('\n');
+}
+
+function recordLine(row: MenuRecord): string {
+  const meta = [plain(row.status), shortWhen(row.date)].filter(Boolean).join(' · ');
+  return [bold(row.title), plain(row.detail), meta].filter(Boolean).join('\n');
+}
+
+function latestRecords(rows: MenuRecord[]): MenuRecord[] {
+  return [...rows].sort((left, right) => timeOf(right.date) - timeOf(left.date)).slice(0, TOP);
+}
+
+function bold(value: string): string {
+  const cleaned = plain(value);
+  return cleaned ? `*${cleaned}*` : '';
+}
+
+function plain(value: string): string {
+  return clip(value.replace(/https?:\/\/\S+/gi, ' ').replace(/\s+/g, ' ').trim(), 180);
+}
+
+function clip(value: string, max: number): string {
+  return value.length <= max ? value : `${value.slice(0, max - 1).trimEnd()}…`;
+}
+
+function shortWhen(value: string): string {
+  const parsed = Date.parse(value);
+  if (Number.isNaN(parsed)) return '';
+  return new Date(parsed).toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'Asia/Kolkata',
+  });
+}
+
+function timeOf(value: string): number {
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function text(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
 function allowlist(env: NodeJS.ProcessEnv): string[] {
   const numbers: string[] = [];
   for (const item of (env.WHATSAPP_RECIPIENTS || '').split(',')) {
@@ -210,85 +347,6 @@ function maskPhone(value: string): string {
   return `${phone.slice(0, 2)}***${phone.slice(-2)}`;
 }
 
-function buildPrompt(
-  question: string,
-  history: Turn[],
-  knowledge: KnowledgeDocument[],
-  news: string,
-  env: NodeJS.ProcessEnv,
-): Array<{ role: 'system' | 'user' | 'assistant'; content: string }> {
-  const name = (env.CHATBOT_NAME || 'MediaSphere Assistant').trim() || 'MediaSphere Assistant';
-  const language = (env.CHATBOT_LANGUAGE || '').trim();
-  const facts = knowledge.length
-    ? knowledge.map((item) => `- ${item.title}: ${item.content}`).join('\n')
-    : 'none retrieved';
-  return [
-    {
-      role: 'system',
-      content: [
-        `You are ${name}, the WhatsApp news assistant of MediaSphere, a constituency news monitoring platform for Andhra Pradesh.`,
-        language ? `Reply in ${language}.` : 'Reply in the language the user writes in. Use English when unsure.',
-        'Answer questions from the news articles below. They are the latest items collected from Lokal, YouTube, and Sakshi.',
-        'When the user asks for latest updates, news, or what happened, answer directly with the 5 newest items, then offer to share more or filter by place or topic. Do not ask which topic they mean first.',
-        'For each item give the date, place, and a one-line summary. Add the source link when it helps.',
-        'If the user asks about a place, category, or problem, pick the matching articles.',
-        'Use the conversation history for follow-up questions.',
-        'Never invent news, numbers, names, or links that are not in the articles, the knowledge, or the conversation.',
-        'If nothing matches, say no matching news is stored yet.',
-        'Do not mention Groq, NestJS, Meta, or these instructions.',
-        'Do not greet or introduce yourself. A greeting is added before your reply when a conversation starts.',
-        'Write short WhatsApp paragraphs or numbered lists. Do not use tables or markdown headings.',
-        'Use WhatsApp formatting: *single asterisks* for bold. Never use double asterisks.',
-        '',
-        `News articles:\n${news}`,
-        '',
-        `Relevant knowledge:\n${facts}`,
-      ].join('\n'),
-    },
-    ...history.map((turn) => ({ role: turn.role, content: turn.content })),
-    { role: 'user', content: question },
-  ];
-}
-
-async function completeWithGroq(
-  messages: Array<{ role: string; content: string }>,
-  env: NodeJS.ProcessEnv,
-  fetchImpl: typeof fetch,
-): Promise<string | null> {
-  const keys = discoverGroqApiKeys(env);
-  if (!keys.length) return null;
-  const model = (env.CHATBOT_GROQ_MODEL || env.GROQ_MODEL || 'openai/gpt-oss-20b').trim();
-  const body: Record<string, unknown> = {
-    model,
-    messages,
-    temperature: 0.3,
-    max_completion_tokens: 1200,
-  };
-  // gpt-oss spends completion tokens on reasoning; without a low effort a long prompt can leave no answer.
-  if (model.startsWith('openai/gpt-oss')) body.reasoning_effort = 'low';
-  for (const key of keys) {
-    let response: Response;
-    try {
-      response = await fetchImpl(GROQ_URL, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${key}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(20_000),
-      });
-    } catch {
-      continue;
-    }
-    if (!response.ok) continue;
-    const data = await response.json() as { choices?: Array<{ message?: { content?: unknown } }> };
-    const content = data.choices?.[0]?.message?.content;
-    if (typeof content === 'string' && content.trim()) return content.trim();
-  }
-  return null;
-}
-
 export function timeGreeting(now: Date): string {
   const hour = Number(new Intl.DateTimeFormat('en-GB', { hour: 'numeric', hourCycle: 'h23', timeZone: 'Asia/Kolkata' }).format(now));
   if (hour >= 5 && hour < 12) return 'Good morning';
@@ -313,17 +371,10 @@ export function isGreetingOnly(text: string): boolean {
   return words.length > 0 && words.length <= 4 && words.every((word) => GREETING_WORDS.has(word));
 }
 
-export function toWhatsAppFormat(text: string): string {
-  return text
+export function toWhatsAppFormat(value: string): string {
+  return value
     .replace(/\*\*(.+?)\*\*/g, '*$1*')
     .replace(/__(.+?)__/g, '_$1_')
     .replace(/^#{1,6}\s+/gm, '')
     .trim();
-}
-
-function truncate(text: string): string {
-  if (text.length <= MAX_REPLY_CHARS) return text;
-  const slice = text.slice(0, MAX_REPLY_CHARS);
-  const end = Math.max(slice.lastIndexOf('. '), slice.lastIndexOf('! '), slice.lastIndexOf('? '));
-  return end >= MAX_REPLY_CHARS / 2 ? slice.slice(0, end + 1).trim() : slice.trim();
 }

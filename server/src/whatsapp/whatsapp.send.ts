@@ -111,6 +111,43 @@ export async function sendTextMessage(
   }, fetchImpl, env);
 }
 
+export interface ReplyButton {
+  id: string;
+  title: string;
+}
+
+/** Session reply buttons. Meta allows at most three per message, and none of them are links. */
+export async function sendReplyButtons(
+  recipient: string,
+  message: string,
+  buttons: ReplyButton[],
+  fetchImpl: typeof fetch = fetch,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<Record<string, unknown>> {
+  const body = message.trim();
+  if (!body) throw new Error('message must not be empty');
+  if (buttons.length < 1 || buttons.length > 3) throw new Error('reply buttons must be 1 to 3');
+  return postGraph({
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    to: normalizePhone(recipient),
+    type: 'interactive',
+    interactive: {
+      type: 'button',
+      body: { text: body.slice(0, 1024) },
+      action: {
+        buttons: buttons.map((button) => ({
+          type: 'reply',
+          reply: {
+            id: button.id.trim().slice(0, 256),
+            title: button.title.trim().slice(0, 20),
+          },
+        })),
+      },
+    },
+  }, fetchImpl, env);
+}
+
 export async function sendTemplateMessage(
   recipient: string,
   templateName: string,

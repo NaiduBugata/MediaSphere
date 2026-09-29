@@ -9,7 +9,7 @@ import {
   notifyPendingWhatsApp,
   notifyPipelineWhatsApp,
 } from './whatsapp.notify';
-import { deliverWhatsApp, sendTemplateMessage, setWhatsAppStatusRecorder } from './whatsapp.send';
+import { deliverWhatsApp, sendReplyButtons, sendTemplateMessage, setWhatsAppStatusRecorder } from './whatsapp.send';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return {
@@ -144,6 +144,27 @@ describe('WhatsApp sending', () => {
     expect(calls[0].type).toBe('template');
     expect(calls[1].type).toBe('text');
     expect((calls[1].text as { body: string }).body).toBe('Road update');
+  });
+
+  it('sends reply buttons and never a link button', async () => {
+    process.env.WHATSAPP_ACCESS_TOKEN = 'test-token';
+    process.env.WHATSAPP_PHONE_NUMBER_ID = '987654321';
+    const calls: Array<Record<string, unknown>> = [];
+    const fetchImpl = (async (_url: string, init?: RequestInit) => {
+      calls.push(JSON.parse(String(init?.body)));
+      return jsonResponse({ messages: [{ id: 'wamid.menu' }] });
+    }) as typeof fetch;
+    await sendReplyButtons('919876543210', 'Tap a section', [
+      { id: 'grievances', title: 'Grievances' },
+      { id: 'projects', title: 'Projects & reports' },
+      { id: 'news', title: 'News' },
+    ], fetchImpl);
+    const interactive = calls[0].interactive as { type: string; action: { buttons: Array<{ type: string; reply: { id: string } }> } };
+    expect(calls[0].type).toBe('interactive');
+    expect(interactive.type).toBe('button');
+    expect(interactive.action.buttons.map((button) => button.type)).toEqual(['reply', 'reply', 'reply']);
+    expect(interactive.action.buttons.map((button) => button.reply.id)).toEqual(['grievances', 'projects', 'news']);
+    expect(JSON.stringify(calls[0])).not.toContain('url');
   });
 
   it('rejects a recipient that is not a phone number', async () => {
