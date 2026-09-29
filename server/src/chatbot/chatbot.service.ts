@@ -3,7 +3,7 @@ import { DatabaseService } from '../database/database.service';
 import { ArticleRepository } from '../database/repositories/article.repository';
 import { hasAssemblySegment } from '../pipeline/native/constituency';
 import { parseWebhookPayload, type WhatsAppEvent } from '../whatsapp/whatsapp.parser';
-import { normalizePhone, sendReplyButtons, sendTextMessage, type ReplyButton } from '../whatsapp/whatsapp.send';
+import { normalizePhone, sendReplyButtons, type ReplyButton } from '../whatsapp/whatsapp.send';
 import { newestFirst, toBrief, type NewsBrief } from './news-context';
 
 const RECORDS = 'jv_records';
@@ -13,29 +13,37 @@ const CONVERSATION_GAP_MS = 4 * 60 * 60 * 1000;
 const DEFAULT_ADDRESSEE = 'Sri. Lavu Sri Krishna Devarayalu Sir';
 const MENU_PROMPT = 'Tap a section. The reply stays in this chat.';
 
+export const MORE_BUTTON: ReplyButton = { id: 'more', title: 'More' };
+export const HOME_BUTTON: ReplyButton = { id: 'home', title: 'More' };
 export const MAIN_BUTTONS: ReplyButton[] = [
   { id: 'news', title: 'News' },
-  { id: 'grievances', title: 'Grievances' },
-  { id: 'constituency', title: 'Constituency' },
+  { id: 'visits', title: 'Visits' },
+  MORE_BUTTON,
 ];
-export const MORE_BUTTON: ReplyButton = { id: 'more', title: 'More' };
-export const RESTORE_BUTTON: ReplyButton = { id: 'menu', title: 'More' };
 export const MORE_BUTTONS: ReplyButton[] = [
+  { id: 'grievances', title: 'Grievances' },
+  { id: 'analytics', title: 'Analytics' },
+  HOME_BUTTON,
+];
+
+const CHOICE_BUTTONS: ReplyButton[] = [
+  ...MAIN_BUTTONS,
+  ...MORE_BUTTONS,
+  { id: 'menu', title: 'More' },
   { id: 'projects', title: 'Projects & reports' },
   { id: 'campaigns', title: 'Campaigns' },
-  { id: 'analytics', title: 'Analytics' },
+  { id: 'constituency', title: 'Constituency' },
 ];
 
-const CHOICE_BUTTONS: ReplyButton[] = [...MAIN_BUTTONS, MORE_BUTTON, RESTORE_BUTTON, ...MORE_BUTTONS];
+export type MenuId = 'grievances' | 'projects' | 'news' | 'constituency' | 'campaigns' | 'analytics' | 'visits';
+export type MenuChoice = MenuId | 'more' | 'home' | 'menu';
 
-export type MenuId = 'grievances' | 'projects' | 'news' | 'constituency' | 'campaigns' | 'analytics';
-export type MenuChoice = MenuId | 'more' | 'menu';
-
-const RECORD_SECTION: Partial<Record<MenuId, 'grievances' | 'projects' | 'people' | 'campaigns'>> = {
+const RECORD_SECTION: Partial<Record<MenuId, 'grievances' | 'projects' | 'people' | 'campaigns' | 'visits'>> = {
   grievances: 'grievances',
   projects: 'projects',
   constituency: 'people',
   campaigns: 'campaigns',
+  visits: 'visits',
 };
 
 const SECTION_TITLE: Record<MenuId, string> = {
@@ -45,6 +53,7 @@ const SECTION_TITLE: Record<MenuId, string> = {
   constituency: 'Constituency',
   campaigns: 'Campaigns',
   analytics: 'Analytics',
+  visits: 'Visits',
 };
 
 const TEXT_ALIASES: Record<string, MenuChoice> = {
@@ -61,6 +70,8 @@ const TEXT_ALIASES: Record<string, MenuChoice> = {
   update: 'news',
   updates: 'news',
   'latest updates': 'news',
+  visit: 'visits',
+  visits: 'visits',
   constituency: 'constituency',
   people: 'constituency',
   more: 'more',
@@ -81,7 +92,7 @@ export interface ChatbotDeps {
   env?: NodeJS.ProcessEnv;
   fetchImpl?: typeof fetch;
   news?: NewsBrief[];
-  records?: Partial<Record<'grievances' | 'projects' | 'people' | 'campaigns', MenuRecord[]>>;
+  records?: Partial<Record<'grievances' | 'projects' | 'people' | 'campaigns' | 'visits', MenuRecord[]>>;
   now?: () => Date;
 }
 
@@ -145,16 +156,13 @@ export class ChatbotService {
       const choice = menuChoice(event);
       if (choice === 'more') {
         await this.sendMore(sender, fetchImpl, env);
-      } else if (choice === 'menu') {
-        const lead = opening ? `${openingLine(now, env)}\n\n${MENU_PROMPT}` : MENU_PROMPT;
-        await this.sendMenu(sender, lead, fetchImpl, env);
+      } else if (choice === 'home' || choice === 'menu') {
+        await this.sendMenu(sender, '\u200b', fetchImpl, env);
       } else if (choice) {
         const body = await this.renderSection(choice, deps);
-        const text = opening ? `${openingLine(now, env)}\n\n${body}` : body;
-        await sendTextMessage(sender, text, fetchImpl, env);
-        await sendReplyButtons(sender, RESTORE_BUTTON.title, [RESTORE_BUTTON], fetchImpl, env);
+        await sendReplyButtons(sender, body, [MORE_BUTTON], fetchImpl, env);
       } else {
-        const lead = opening ? `${openingLine(now, env)}\n\n${MENU_PROMPT}` : MENU_PROMPT;
+        const lead = opening ? `${openingLine(now, env)}\n\n${MENU_PROMPT}` : '\u200b';
         await this.sendMenu(sender, lead, fetchImpl, env);
       }
       this.answered.add(messageId);
@@ -176,7 +184,6 @@ export class ChatbotService {
     env: NodeJS.ProcessEnv,
   ): Promise<void> {
     await sendReplyButtons(sender, lead, MAIN_BUTTONS, fetchImpl, env);
-    await sendReplyButtons(sender, MORE_BUTTON.title, [MORE_BUTTON], fetchImpl, env);
   }
 
   private async sendMore(
@@ -184,7 +191,7 @@ export class ChatbotService {
     fetchImpl: typeof fetch,
     env: NodeJS.ProcessEnv,
   ): Promise<void> {
-    await sendReplyButtons(sender, 'More', MORE_BUTTONS, fetchImpl, env);
+    await sendReplyButtons(sender, '\u200b', MORE_BUTTONS, fetchImpl, env);
   }
 
   private async renderSection(choice: MenuId, deps: ChatbotDeps): Promise<string> {
@@ -202,7 +209,7 @@ export class ChatbotService {
   }
 
   private async sectionRecords(
-    section: 'grievances' | 'projects' | 'people' | 'campaigns',
+    section: 'grievances' | 'projects' | 'people' | 'campaigns' | 'visits',
     deps: ChatbotDeps,
   ): Promise<MenuRecord[]> {
     if (deps.records) return latestRecords(deps.records[section] || []);

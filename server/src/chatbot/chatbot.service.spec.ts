@@ -1,4 +1,4 @@
-import { ChatbotService, MAIN_BUTTONS, MORE_BUTTON, MORE_BUTTONS, RESTORE_BUTTON, formatSection, isGreetingOnly, openingLine, timeGreeting, toWhatsAppFormat } from './chatbot.service';
+import { ChatbotService, HOME_BUTTON, MAIN_BUTTONS, MORE_BUTTON, MORE_BUTTONS, formatSection, isGreetingOnly, openingLine, timeGreeting, toWhatsAppFormat } from './chatbot.service';
 
 function payload(body: string, id = 'wamid.1', from = '919876543210') {
   return {
@@ -78,7 +78,7 @@ describe('ChatbotService', () => {
     const bot = new ChatbotService();
     await bot.handle(payload('Who are you?'), { env: env(), fetchImpl: fetchImpl(calls) });
     await bot.handle(payload('Who are you?'), { env: env(), fetchImpl: fetchImpl(calls) });
-    expect(calls).toEqual(['interactive:919876543210', 'interactive:919876543210']);
+    expect(calls).toEqual(['interactive:919876543210']);
   });
 
   it('does not reply when the allowlist is empty or the sender is not listed', async () => {
@@ -107,17 +107,13 @@ describe('ChatbotService', () => {
       fetchImpl: capture(sent),
       now: () => new Date('2026-09-28T13:49:00Z'),
     });
-    expect(sent).toHaveLength(2);
-    expect(sent.every((row) => row.type === 'interactive')).toBe(true);
+    expect(sent).toHaveLength(1);
     const first = sent[0].interactive as { type: string; body: { text: string }; action: { buttons: Array<{ type: string; reply: { id: string; title: string } }> } };
-    const second = sent[1].interactive as { body: { text: string }; action: { buttons: Array<{ reply: { title: string } }> } };
     expect(first.type).toBe('button');
     expect(first.body.text).toContain("Good evening, Sri. Lavu Sri Krishna Devarayalu Sir! I'm your Media Assistant.");
     expect(first.body.text).toContain('Tap a section');
-    expect(first.action.buttons.map((button) => button.reply.title)).toEqual(['News', 'Grievances', 'Constituency']);
+    expect(first.action.buttons.map((button) => button.reply.title)).toEqual(['News', 'Visits', 'More']);
     expect(first.action.buttons.every((button) => button.type === 'reply')).toBe(true);
-    expect(second.body.text).toBe('More');
-    expect(second.action.buttons.map((button) => button.reply.title)).toEqual(['More']);
     expect(JSON.stringify(sent)).not.toContain('http');
   });
 
@@ -130,25 +126,23 @@ describe('ChatbotService', () => {
       news,
       now: () => new Date('2026-09-28T13:49:00Z'),
     });
-    const text = sent[0].text as { body: string };
-    expect(sent[0].type).toBe('text');
-    expect(text.body).toContain('*News*');
-    expect(text.body).toContain('Latest 5');
-    expect(text.body).toContain('Cordon search in Narasaraopet');
-    expect(text.body).toContain('Second item');
-    expect(text.body).not.toContain('Sixth item');
-    expect(text.body).not.toContain('Older road work');
-    expect(text.body).not.toContain('http');
-    expect(sent).toHaveLength(2);
-    const follow = sent[1].interactive as { action: { buttons: Array<{ reply: { id: string; title: string } }> } };
-    expect(follow.action.buttons).toHaveLength(1);
-    expect(follow.action.buttons[0].reply).toEqual({ id: RESTORE_BUTTON.id, title: 'More' });
+    expect(sent).toHaveLength(1);
+    const interactive = sent[0].interactive as { body: { text: string }; action: { buttons: Array<{ reply: { id: string; title: string } }> } };
+    expect(interactive.body.text).toContain('*News*');
+    expect(interactive.body.text).toContain('Latest 5');
+    expect(interactive.body.text).toContain('Cordon search in Narasaraopet');
+    expect(interactive.body.text).toContain('Second item');
+    expect(interactive.body.text).not.toContain('Sixth item');
+    expect(interactive.body.text).not.toContain('Older road work');
+    expect(interactive.body.text).not.toContain('http');
+    expect(interactive.body.text).not.toContain("I'm your Media Assistant");
+    expect(interactive.action.buttons).toEqual([{ type: 'reply', reply: { id: MORE_BUTTON.id, title: 'More' } }]);
   });
 
-  it('restores News, Grievances, Constituency, and More after that More button', async () => {
+  it('returns to News, Visits, and More from the second More without another message', async () => {
     const sent: Array<Record<string, unknown>> = [];
     const bot = new ChatbotService();
-    await bot.handle(buttonPayload('menu', 'More', 'wamid.menu'), {
+    await bot.handle(buttonPayload('home', 'More', 'wamid.menu'), {
       env: env(),
       fetchImpl: capture(sent),
       now: () => new Date('2026-09-28T13:49:00Z'),
@@ -157,10 +151,12 @@ describe('ChatbotService', () => {
       const interactive = row.interactive as { action: { buttons: Array<{ reply: { title: string } }> } };
       return interactive.action.buttons.map((button) => button.reply.title);
     });
-    expect(titles).toEqual([...MAIN_BUTTONS, MORE_BUTTON].map((button) => button.title));
+    expect(titles).toEqual(MAIN_BUTTONS.map((button) => button.title));
+    const body = (sent[0].interactive as { body: { text: string } }).body.text;
+    expect(body).not.toContain("I'm your Media Assistant");
   });
 
-  it('opens Projects, Campaigns, and Analytics from More', async () => {
+  it('opens Grievances, Analytics, and More from More', async () => {
     const sent: Array<Record<string, unknown>> = [];
     const bot = new ChatbotService();
     await bot.handle(buttonPayload('more', 'More', 'wamid.more'), {
@@ -170,9 +166,9 @@ describe('ChatbotService', () => {
     });
     expect(sent).toHaveLength(1);
     const interactive = sent[0].interactive as { body: { text: string }; action: { buttons: Array<{ reply: { id: string; title: string } }> } };
-    expect(interactive.body.text).toBe('More');
+    expect(interactive.body.text.replace(/\u200b/g, '').trim()).toBe('');
     expect(interactive.action.buttons.map((button) => button.reply.title)).toEqual(MORE_BUTTONS.map((button) => button.title));
-    expect(interactive.action.buttons.map((button) => button.reply.id)).toEqual(['projects', 'campaigns', 'analytics']);
+    expect(interactive.action.buttons.map((button) => button.reply.id)).toEqual(['grievances', 'analytics', HOME_BUTTON.id]);
   });
 
   it('returns the five newest grievances and keeps projects separate', async () => {
@@ -196,7 +192,7 @@ describe('ChatbotService', () => {
       records,
       now: () => new Date('2026-09-28T04:00:00Z'),
     });
-    const body = (sent[0].text as { body: string }).body;
+    const body = (sent[0].interactive as { body: { text: string } }).body.text;
     expect(body).toContain('*Grievances*');
     expect(body).toContain('Ration card');
     expect(body).toContain('Street light');
@@ -222,11 +218,10 @@ describe('ChatbotService', () => {
     await bot.handle(payload('Hello', 'wamid.g2'), deps);
     clock = new Date('2026-09-29T03:30:00Z');
     await bot.handle(payload('any news?', 'wamid.g3'), deps);
-    expect(sent[0]).toContain("Good evening, Sri. Lavu Sri Krishna Devarayalu Sir! I'm your Media Assistant.");
     expect(sent[0]).toContain('*News*');
-    expect(sent[1]).toBe('More');
-    expect(sent[2]).toBe('Tap a section. The reply stays in this chat.');
-    expect(sent[4]).toContain("Good morning, Sri. Lavu Sri Krishna Devarayalu Sir! I'm your Media Assistant.");
+    expect(sent[0]).not.toContain("I'm your Media Assistant");
+    expect(sent[1].replace(/\u200b/g, '').trim()).toBe('');
+    expect(sent[2]).toContain("Good morning, Sri. Lavu Sri Krishna Devarayalu Sir! I'm your Media Assistant.");
   });
 
   it('greets by India time of day', () => {
