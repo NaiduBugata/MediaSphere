@@ -1,4 +1,4 @@
-import { ChatbotService, MAIN_BUTTONS, MORE_BUTTON, MORE_BUTTONS, formatSection, isGreetingOnly, openingLine, timeGreeting, toWhatsAppFormat } from './chatbot.service';
+import { ChatbotService, MAIN_BUTTONS, MORE_BUTTON, MORE_BUTTONS, RESTORE_BUTTON, formatSection, isGreetingOnly, openingLine, timeGreeting, toWhatsAppFormat } from './chatbot.service';
 
 function payload(body: string, id = 'wamid.1', from = '919876543210') {
   return {
@@ -121,7 +121,7 @@ describe('ChatbotService', () => {
     expect(JSON.stringify(sent)).not.toContain('http');
   });
 
-  it('returns only the latest five news items when News is tapped, then shows the menu again', async () => {
+  it('returns only the latest five news items when News is tapped, then a single More button', async () => {
     const sent: Array<Record<string, unknown>> = [];
     const bot = new ChatbotService();
     await bot.handle(buttonPayload('news', 'News', 'wamid.news'), {
@@ -139,8 +139,21 @@ describe('ChatbotService', () => {
     expect(text.body).not.toContain('Sixth item');
     expect(text.body).not.toContain('Older road work');
     expect(text.body).not.toContain('http');
-    expect(sent.slice(1).map((row) => row.type)).toEqual(['interactive', 'interactive']);
-    const titles = sent.slice(1).flatMap((row) => {
+    expect(sent).toHaveLength(2);
+    const follow = sent[1].interactive as { action: { buttons: Array<{ reply: { id: string; title: string } }> } };
+    expect(follow.action.buttons).toHaveLength(1);
+    expect(follow.action.buttons[0].reply).toEqual({ id: RESTORE_BUTTON.id, title: 'More' });
+  });
+
+  it('restores News, Grievances, Constituency, and More after that More button', async () => {
+    const sent: Array<Record<string, unknown>> = [];
+    const bot = new ChatbotService();
+    await bot.handle(buttonPayload('menu', 'More', 'wamid.menu'), {
+      env: env(),
+      fetchImpl: capture(sent),
+      now: () => new Date('2026-09-28T13:49:00Z'),
+    });
+    const titles = sent.flatMap((row) => {
       const interactive = row.interactive as { action: { buttons: Array<{ reply: { title: string } }> } };
       return interactive.action.buttons.map((button) => button.reply.title);
     });
@@ -211,8 +224,9 @@ describe('ChatbotService', () => {
     await bot.handle(payload('any news?', 'wamid.g3'), deps);
     expect(sent[0]).toContain("Good evening, Sri. Lavu Sri Krishna Devarayalu Sir! I'm your Media Assistant.");
     expect(sent[0]).toContain('*News*');
-    expect(sent[3]).toBe('Tap a section. The reply stays in this chat.');
-    expect(sent[5]).toContain("Good morning, Sri. Lavu Sri Krishna Devarayalu Sir! I'm your Media Assistant.");
+    expect(sent[1]).toBe('More');
+    expect(sent[2]).toBe('Tap a section. The reply stays in this chat.');
+    expect(sent[4]).toContain("Good morning, Sri. Lavu Sri Krishna Devarayalu Sir! I'm your Media Assistant.");
   });
 
   it('greets by India time of day', () => {

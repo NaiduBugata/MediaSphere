@@ -12,7 +12,6 @@ const NEWS_CACHE_MS = 60_000;
 const CONVERSATION_GAP_MS = 4 * 60 * 60 * 1000;
 const DEFAULT_ADDRESSEE = 'Sri. Lavu Sri Krishna Devarayalu Sir';
 const MENU_PROMPT = 'Tap a section. The reply stays in this chat.';
-const MENU_AGAIN = 'Choose another section';
 
 export const MAIN_BUTTONS: ReplyButton[] = [
   { id: 'news', title: 'News' },
@@ -20,16 +19,17 @@ export const MAIN_BUTTONS: ReplyButton[] = [
   { id: 'constituency', title: 'Constituency' },
 ];
 export const MORE_BUTTON: ReplyButton = { id: 'more', title: 'More' };
+export const RESTORE_BUTTON: ReplyButton = { id: 'menu', title: 'More' };
 export const MORE_BUTTONS: ReplyButton[] = [
   { id: 'projects', title: 'Projects & reports' },
   { id: 'campaigns', title: 'Campaigns' },
   { id: 'analytics', title: 'Analytics' },
 ];
 
-const CHOICE_BUTTONS: ReplyButton[] = [...MAIN_BUTTONS, MORE_BUTTON, ...MORE_BUTTONS];
+const CHOICE_BUTTONS: ReplyButton[] = [...MAIN_BUTTONS, MORE_BUTTON, RESTORE_BUTTON, ...MORE_BUTTONS];
 
 export type MenuId = 'grievances' | 'projects' | 'news' | 'constituency' | 'campaigns' | 'analytics';
-export type MenuChoice = MenuId | 'more';
+export type MenuChoice = MenuId | 'more' | 'menu';
 
 const RECORD_SECTION: Partial<Record<MenuId, 'grievances' | 'projects' | 'people' | 'campaigns'>> = {
   grievances: 'grievances',
@@ -145,11 +145,14 @@ export class ChatbotService {
       const choice = menuChoice(event);
       if (choice === 'more') {
         await this.sendMore(sender, fetchImpl, env);
+      } else if (choice === 'menu') {
+        const lead = opening ? `${openingLine(now, env)}\n\n${MENU_PROMPT}` : MENU_PROMPT;
+        await this.sendMenu(sender, lead, fetchImpl, env);
       } else if (choice) {
         const body = await this.renderSection(choice, deps);
         const text = opening ? `${openingLine(now, env)}\n\n${body}` : body;
         await sendTextMessage(sender, text, fetchImpl, env);
-        await this.sendMenu(sender, MENU_AGAIN, fetchImpl, env);
+        await sendReplyButtons(sender, RESTORE_BUTTON.title, [RESTORE_BUTTON], fetchImpl, env);
       } else {
         const lead = opening ? `${openingLine(now, env)}\n\n${MENU_PROMPT}` : MENU_PROMPT;
         await this.sendMenu(sender, lead, fetchImpl, env);
