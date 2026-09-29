@@ -126,7 +126,7 @@ Send only those two sources through a residential or ISP proxy. Node 24 reads th
 
 ### Visits
 
-Sign in at `/news/@admin` and choose **Visits**. The page offers two ways to add visits.
+Sign in at `/@admin` and choose **Visits**. The page offers two ways to add visits.
 
 **Upload all visits (one file).** One Excel (`.xlsx`), Word (`.docx`), or PDF file with a table of all visits, one row per visit. The page has **Download Excel template** and **Download Word template** buttons (`GET /api/visits/template/xlsx` and `/docx`) with the exact columns: `S.No`, `Date (DD-MM-YYYY)`, `Place`, `Purpose / Title`, `Details`.
 - Headers are matched by meaning, so `Date`/`తేదీ`, `Place`/`Village`/`ప్రదేశం`, `Purpose`/`Subject`/`Title`/`విషయం`, and `Details`/`Description`/`Remarks`/`వివరాలు` all work.

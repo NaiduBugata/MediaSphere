@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
-import { BrowserRouter } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import App from "./App.tsx";
+import AdminDesk from "./news/AdminDesk.tsx";
 
 try {
 	let theme = localStorage.getItem("theme");
@@ -16,6 +17,10 @@ try {
 
 createRoot(document.getElementById("root")!).render(
 	<BrowserRouter>
-		<App />
+		<Routes>
+			<Route path="/@admin" element={<AdminDesk />} />
+			<Route path="/news/@admin" element={<Navigate to="/@admin" replace />} />
+			<Route path="*" element={<App />} />
+		</Routes>
 	</BrowserRouter>,
 );

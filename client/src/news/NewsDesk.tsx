@@ -6,7 +6,6 @@ import ProblemsPage from "@/mediasphere/pages/ProblemsPage.jsx";
 import AnalyticsPage from "@/mediasphere/pages/AnalyticsPage.jsx";
 import DepartmentsPage from "@/mediasphere/pages/DepartmentsPage.jsx";
 import ProfilePage from "@/mediasphere/pages/ProfilePage.jsx";
-import AdminPage from "@/mediasphere/pages/AdminPage.jsx";
 import "@/mediasphere/mediasphere.css";
 
 export default function NewsDesk() {
@@ -14,7 +13,6 @@ export default function NewsDesk() {
     <div className="mediasphere h-full min-h-0 overflow-auto">
       <NewsProvider>
         <Routes>
-          <Route path="/news/@admin" element={<AdminPage />} />
           <Route path="/news" element={<AppShell embed />}>
             <Route index element={<NewsPage />} />
             <Route path="problems" element={<ProblemsPage />} />
