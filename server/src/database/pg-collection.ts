@@ -254,6 +254,25 @@ export class PgDocumentCollection {
     });
   }
 
+  /** New documents only: every `_id` is freshly generated, so there is no duplicate check. */
+  async insertMany(docs: Doc[]): Promise<{ insertedIds: unknown[] }> {
+    if (!docs.length) return { insertedIds: [] };
+    return this.exclusive(async () => {
+      const stored = docs.map((doc) => {
+        const copy = { ...doc };
+        delete copy._id;
+        return copy;
+      });
+      const ids = stored.map((doc) => docId(doc));
+      await this.pool.query(
+        `INSERT INTO mediasphere.documents (collection, doc_id, doc)
+         SELECT $1, t.id, t.doc::jsonb FROM unnest($2::text[], $3::text[]) AS t(id, doc)`,
+        [this.name, ids, stored.map(serialize)],
+      );
+      return { insertedIds: stored.map((doc) => doc._id) };
+    });
+  }
+
   async updateOne(
     filter: Filter,
     update: { $set?: Doc; $setOnInsert?: Doc },

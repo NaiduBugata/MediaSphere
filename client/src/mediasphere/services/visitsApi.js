@@ -3,6 +3,7 @@ import { getAdminToken } from './adminApi';
 import { newsApiBase } from '../../lib/apiBase';
 
 export const VISIT_ACCEPT = '.pdf,.doc,.docx,.xls,.xlsx';
+export const IMPORT_ACCEPT = '.xlsx,.docx,.pdf';
 export const VISIT_MAX_MB = 10;
 
 export const VISIT_KIND_LABEL = { pdf: 'PDF', word: 'Word', excel: 'Excel' };
@@ -23,16 +24,32 @@ export async function uploadVisit({ title, place, visitDate, detail, file }, onP
   if (place) form.append('place', place);
   if (visitDate) form.append('visitDate', visitDate);
   if (detail) form.append('detail', detail);
+  if (file) form.append('file', file);
+  const { data } = await api.post('/admin/visits', form, multipartConfig(onProgress));
+  return data?.visit;
+}
+
+/** One file listing many visits; resolves to { fileName, found, imported, duplicates, rejected }. */
+export async function importVisits(file, onProgress) {
+  const form = new FormData();
   form.append('file', file);
-  const { data } = await api.post('/admin/visits', form, {
+  const { data } = await api.post('/admin/visits/import', form, multipartConfig(onProgress));
+  return data;
+}
+
+function multipartConfig(onProgress) {
+  return {
     // axios would JSON-encode FormData under the instance's JSON default; the browser fills in the boundary.
     headers: { ...authHeader(), 'Content-Type': 'multipart/form-data' },
     timeout: 120000,
     onUploadProgress: (event) => {
       if (onProgress && event.total) onProgress(Math.round((event.loaded / event.total) * 100));
     },
-  });
-  return data?.visit;
+  };
+}
+
+export function templateUrl(format) {
+  return `${newsApiBase()}/visits/template/${format}`;
 }
 
 export async function deleteVisit(id) {

@@ -126,9 +126,23 @@ Send only those two sources through a residential or ISP proxy. Node 24 reads th
 
 ### Visits
 
-Sign in at `/news/@admin` and choose **Visits**. Each visit has a title, an optional date, place, and description, and one PDF, Word (`.doc`, `.docx`), or Excel (`.xls`, `.xlsx`) file. The API checks the file contents as well as the extension, so a renamed image is refused.
+Sign in at `/news/@admin` and choose **Visits**. The page offers two ways to add visits.
 
-The file is stored in Neon in the `mediasphere.visit_files` table, which the API creates on first use. The visit itself is a `jv_records` row with section `visits`. Uploaded visits appear on the news page below the news, where a PDF opens in the browser and Word or Excel files download, and in the WhatsApp assistant's **Visits** button. Deleting a visit in the admin page removes both the row and the file.
+**Upload all visits (one file).** One Excel (`.xlsx`), Word (`.docx`), or PDF file with a table of all visits, one row per visit. The page has **Download Excel template** and **Download Word template** buttons (`GET /api/visits/template/xlsx` and `/docx`) with the exact columns: `S.No`, `Date (DD-MM-YYYY)`, `Place`, `Purpose / Title`, `Details`.
+- Headers are matched by meaning, so `Date`/`తేదీ`, `Place`/`Village`/`ప్రదేశం`, `Purpose`/`Subject`/`Title`/`విషయం`, and `Details`/`Description`/`Remarks`/`వివరాలు` all work.
+- Dates are read day first, as in 28-09-2026, 28/09/2026, or 28 Sep 2026.
+- A row with no title uses "Visit to <place>".
+- Uploads add to the existing visits. A row with the same date, place, and title as a visit already on the site, or as another row in the file, is skipped, so the same file can be uploaded again after adding rows.
+- Rows that cannot be read, such as a bad date, are listed with their row number and are not saved.
+- Old `.xls` and `.doc` files are refused with a message to save them as `.xlsx` or `.docx`.
+- PDF reading works on table PDFs exported from Word or Excel. Scanned PDFs have no text and are refused. Excel and Word are the most reliable.
+- Imported visits have no attached file.
+
+**Add a single visit.** A title, optional date, place, and details, and an optional PDF, Word (`.doc`, `.docx`), or Excel (`.xls`, `.xlsx`) attachment. The API checks the file contents as well as the extension, so a renamed image is refused.
+
+Attachments are stored in Neon in the `mediasphere.visit_files` table, which the API creates on first use. Each visit is a `jv_records` row with section `visits`. Visits appear on the news page below the news and in the WhatsApp assistant's **Visits** button. When a visit has an attachment, a PDF opens in the browser and Word or Excel files download. Deleting a visit in the admin page removes the row and its file.
+
+`npm test` reads the test PDFs in a separate Node process because `pdfjs-dist` is ESM-only and Jest runs as CommonJS.
 
 | Name | Value |
 | --- | --- |

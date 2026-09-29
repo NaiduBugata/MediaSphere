@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { DatabaseService } from '../database/database.service';
+import { readVisitRows, type ImportedVisitRow, type RejectedRow } from './visits-import';
 
 /** Shared with the WhatsApp chatbot, which lists the same records under "Visits". */
 const RECORDS = 'jv_records';
@@ -41,6 +42,15 @@ export interface Visit {
   detail: string;
   createdAt: string;
   file: { id: string; name: string; kind: VisitFileKind; size: number } | null;
+  source: 'manual' | 'import';
+}
+
+export interface ImportResult {
+  fileName: string;
+  found: number;
+  imported: number;
+  duplicates: number;
+  rejected: RejectedRow[];
 }
 
 export function maxUploadBytes(env: NodeJS.ProcessEnv = process.env): number {
@@ -98,42 +108,83 @@ export class VisitsService {
     return rows.map(toVisit).sort((a, b) => sortKey(b).localeCompare(sortKey(a)));
   }
 
+  /** A single visit typed in by hand; the attachment is optional. */
   async create(input: VisitInput, file: UploadedVisitFile | undefined): Promise<Visit> {
-    if (!file || !file.buffer?.length) throw new BadRequestException('Choose a PDF, Word, or Excel file to upload.');
-    if (file.size > maxUploadBytes()) {
-      throw new BadRequestException(`The file is larger than ${Math.round(maxUploadBytes() / 1024 / 1024)} MB.`);
-    }
+    const attached = file && file.buffer?.length ? file : undefined;
+    if (attached) checkSize(attached);
     const title = text(input.title, 200);
     if (!title) throw new BadRequestException('Title is required.');
     const visitDate = isoDay(input.visitDate);
-    const detected = detectVisitFile(file.originalname || '', file.buffer);
-    const name = safeFileName(file.originalname);
+    const detected = attached ? detectVisitFile(attached.originalname || '', attached.buffer) : null;
     await this.ready();
 
-    const fileId = randomBytes(12).toString('hex');
-    await this.db.query(
-      'INSERT INTO mediasphere.visit_files (id, name, mime, size, data) VALUES ($1, $2, $3, $4, $5)',
-      [fileId, name, detected.mime, file.buffer.length, file.buffer],
-    );
-    const createdAt = new Date().toISOString();
-    const doc = {
+    let stored: Visit['file'] = null;
+    if (attached && detected) {
+      const name = safeFileName(attached.originalname);
+      const fileId = randomBytes(12).toString('hex');
+      await this.db.query(
+        'INSERT INTO mediasphere.visit_files (id, name, mime, size, data) VALUES ($1, $2, $3, $4, $5)',
+        [fileId, name, detected.mime, attached.buffer.length, attached.buffer],
+      );
+      stored = { id: fileId, name, kind: detected.kind, size: attached.buffer.length };
+    }
+    const doc: Record<string, unknown> = {
       section: SECTION,
       title,
       place: text(input.place, 120),
       visitDate,
       detail: text(input.detail, 2000),
-      status: KIND_LABEL[detected.kind],
-      file: { id: fileId, name, kind: detected.kind, size: file.buffer.length },
-      createdAt,
+      status: detected ? KIND_LABEL[detected.kind] : 'Manual',
+      source: 'manual',
+      createdAt: new Date().toISOString(),
       createdBy: 'admin',
     };
+    if (stored) doc.file = stored;
     try {
       const inserted = await this.db.collection(RECORDS).insertOne(doc);
       return toVisit({ ...doc, _id: inserted.insertedId });
     } catch (err) {
-      await this.db.query('DELETE FROM mediasphere.visit_files WHERE id = $1', [fileId]).catch(() => undefined);
+      if (stored) await this.db.query('DELETE FROM mediasphere.visit_files WHERE id = $1', [stored.id]).catch(() => undefined);
       throw err;
     }
+  }
+
+  /** One file holding many visits: every table row becomes a visit, and rows already on the site are skipped. */
+  async importFile(file: UploadedVisitFile | undefined): Promise<ImportResult> {
+    if (!file || !file.buffer?.length) throw new BadRequestException('Choose the Excel, Word, or PDF file that lists the visits.');
+    checkSize(file);
+    const detected = detectVisitFile(file.originalname || '', file.buffer);
+    const { rows, rejected } = await readVisitRows(detected.kind, detected.ext, file.buffer);
+    await this.ready();
+
+    const coll = this.db.collection(RECORDS);
+    const seen = new Set((await coll.find({ section: SECTION }).toArray()).map((doc) => visitKey(doc)));
+    const fileName = safeFileName(file.originalname);
+    const importedAt = new Date().toISOString();
+    const fresh: Record<string, unknown>[] = [];
+    let duplicates = 0;
+    for (const row of rows) {
+      const key = visitKey(row);
+      if (seen.has(key)) {
+        duplicates++;
+        continue;
+      }
+      seen.add(key);
+      fresh.push({
+        section: SECTION,
+        title: row.title,
+        place: row.place,
+        visitDate: row.visitDate,
+        detail: row.detail,
+        status: 'From file',
+        source: 'import',
+        importFile: fileName,
+        createdAt: importedAt,
+        createdBy: 'admin',
+      });
+    }
+    await coll.insertMany(fresh);
+    return { fileName, found: rows.length, imported: fresh.length, duplicates, rejected };
   }
 
   async file(id: string): Promise<{ name: string; mime: string; data: Buffer }> {
@@ -175,6 +226,18 @@ export class VisitsService {
   }
 }
 
+function checkSize(file: UploadedVisitFile): void {
+  if (file.size > maxUploadBytes()) {
+    throw new BadRequestException(`The file is larger than ${Math.round(maxUploadBytes() / 1024 / 1024)} MB.`);
+  }
+}
+
+/** Same date, place, and title (ignoring case and spacing) means the same visit. */
+function visitKey(row: Record<string, unknown> | ImportedVisitRow): string {
+  const part = (value: unknown) => String(value || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  return [part(row.visitDate), part(row.place), part(row.title)].join('|');
+}
+
 function sortKey(visit: Visit): string {
   return `${visit.visitDate || visit.createdAt.slice(0, 10)}|${visit.createdAt}`;
 }
@@ -192,5 +255,6 @@ function toVisit(doc: Record<string, unknown>): Visit {
     file: file.id
       ? { id: String(file.id), name: String(file.name || ''), kind, size: Number(file.size || 0) }
       : null,
+    source: doc.source === 'import' ? 'import' : 'manual',
   };
 }

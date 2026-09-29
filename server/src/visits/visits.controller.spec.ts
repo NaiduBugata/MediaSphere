@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
+import ExcelJS from 'exceljs';
 import request from 'supertest';
 import { AdminAuthService } from '../admin/auth/admin-auth.service';
 import { AdminAuthGuard } from '../common/guards/admin-auth.guard';
@@ -36,6 +37,11 @@ function fakeDb(): DatabaseService {
         const stored = { ...doc, _id: new ObjectId() };
         docs.push(stored);
         return { insertedId: stored._id };
+      },
+      insertMany: async (rows: Array<Record<string, unknown>>) => {
+        const stored = rows.map((doc) => ({ ...doc, _id: new ObjectId() }));
+        docs.push(...stored);
+        return { insertedIds: stored.map((doc) => doc._id) };
       },
       deleteOne: async (filter: Record<string, unknown>) => {
         const index = docs.findIndex((doc) => matches(doc, filter));
@@ -110,6 +116,36 @@ describe('Visits HTTP API', () => {
     const after = await request(server).get('/api/visits').expect(200);
     expect(after.body.visits).toEqual([]);
     await request(server).get(`/api/visits/files/${visit.file.id}`).expect(404);
+  });
+
+  it('serves the Excel and Word templates to anyone', async () => {
+    const server = app.getHttpServer();
+    const xlsx = await request(server).get('/api/visits/template/xlsx').responseType('blob').expect(200);
+    expect(xlsx.headers['content-disposition']).toBe('attachment; filename="visits-template.xlsx"');
+    expect((xlsx.body as Buffer).subarray(0, 2).toString()).toBe('PK');
+    const docx = await request(server).get('/api/visits/template/docx').responseType('blob').expect(200);
+    expect(docx.headers['content-type']).toContain('wordprocessingml');
+    expect((docx.body as Buffer).subarray(0, 2).toString()).toBe('PK');
+    await request(server).get('/api/visits/template/pdf').expect(404);
+  });
+
+  it('imports a visits file only for the admin', async () => {
+    const server = app.getHttpServer();
+    const workbook = new ExcelJS.Workbook();
+    workbook.addWorksheet('Visits').addRows([
+      ['Date', 'Place', 'Purpose', 'Details'],
+      ['01-10-2026', 'Sattenapalle', 'Grievance day', 'Collected 40 petitions'],
+    ]);
+    const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
+    await request(server).post('/api/admin/visits/import').attach('file', buffer, 'visits.xlsx').expect(401);
+    const res = await request(server)
+      .post('/api/admin/visits/import')
+      .set('Authorization', `Bearer ${token}`)
+      .attach('file', buffer, 'visits.xlsx')
+      .expect(201);
+    expect(res.body).toEqual({ fileName: 'visits.xlsx', found: 1, imported: 1, duplicates: 0, rejected: [] });
+    const list = await request(server).get('/api/visits').expect(200);
+    expect(list.body.visits[0]).toMatchObject({ title: 'Grievance day', place: 'Sattenapalle', file: null, source: 'import' });
   });
 
   it('rejects an image renamed to .pdf', async () => {

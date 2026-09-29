@@ -5,6 +5,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  NotFoundException,
   Param,
   Post,
   Query,
@@ -17,6 +18,12 @@ import type { Response } from 'express';
 import { IsOptional, IsString, MaxLength } from 'class-validator';
 import { AdminOnly } from '../common/decorators/admin.decorator';
 import { VisitsService, maxUploadBytes, type UploadedVisitFile } from './visits.service';
+import { excelTemplate, wordTemplate } from './visits-template';
+
+const TEMPLATES: Record<string, { mime: string; build: () => Promise<Buffer> }> = {
+  xlsx: { mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', build: excelTemplate },
+  docx: { mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', build: wordTemplate },
+};
 
 export class CreateVisitDto {
   @IsString()
@@ -62,6 +69,25 @@ export class VisitsController {
     );
     res.setHeader('Cache-Control', 'private, max-age=300');
     res.end(file.data);
+  }
+
+  /** Blank Excel or Word file with the exact columns the import reads. */
+  @Get('visits/template/:format')
+  async template(@Param('format') format: string, @Res() res: Response) {
+    const kind = TEMPLATES[format];
+    if (!kind) throw new NotFoundException('Template format must be xlsx or docx');
+    const data = await kind.build();
+    res.setHeader('Content-Type', kind.mime);
+    res.setHeader('Content-Length', String(data.length));
+    res.setHeader('Content-Disposition', `attachment; filename="visits-template.${format}"`);
+    res.end(data);
+  }
+
+  @Post('admin/visits/import')
+  @AdminOnly()
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: maxUploadBytes(), files: 1 } }))
+  async importFile(@UploadedFile() file: UploadedVisitFile | undefined) {
+    return await this.visits.importFile(file);
   }
 
   @Post('admin/visits')

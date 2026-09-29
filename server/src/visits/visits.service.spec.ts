@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import ExcelJS from 'exceljs';
 import { ObjectId } from 'mongodb';
 import { DatabaseService } from '../database/database.service';
 import { matches } from '../database/pg-collection';
@@ -34,6 +35,11 @@ function fakeDb() {
         const stored = { ...doc, _id: new ObjectId() };
         docs.push(stored);
         return { insertedId: stored._id };
+      },
+      insertMany: async (rows: Array<Record<string, unknown>>) => {
+        const stored = rows.map((doc) => ({ ...doc, _id: new ObjectId() }));
+        docs.push(...stored);
+        return { insertedIds: stored.map((doc) => doc._id) };
       },
       deleteOne: async (filter: Record<string, unknown>) => {
         const index = docs.findIndex((doc) => matches(doc, filter));
@@ -106,11 +112,70 @@ describe('VisitsService', () => {
     expect(visit).toMatchObject({ title: 'Village meeting', place: 'Chilakaluripet', file: null });
   });
 
-  it('rejects a missing file, a missing title, a bad date, and an oversized file', async () => {
+  it('saves a typed-in visit without a file', async () => {
+    const { db, docs, files } = fakeDb();
+    const visit = await new VisitsService(db).create({ title: 'Ward meeting', place: 'Narasaraopet', visitDate: '2026-09-25' }, undefined);
+    expect(visit).toMatchObject({ title: 'Ward meeting', place: 'Narasaraopet', visitDate: '2026-09-25', file: null, source: 'manual' });
+    expect(docs[0]).toMatchObject({ status: 'Manual', source: 'manual' });
+    expect(docs[0]).not.toHaveProperty('file');
+    expect(files.size).toBe(0);
+  });
+
+  it('imports every row of a visits file, skips rows already on the site, and reports unreadable rows', async () => {
+    const { db, docs } = fakeDb();
+    const service = new VisitsService(db);
+    await service.create({ title: 'Hospital visit', place: 'Vinukonda', visitDate: '2026-09-28' }, undefined);
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Visits');
+    sheet.addRows([
+      ['S.No', 'Date', 'Place', 'Purpose / Title', 'Details'],
+      [1, '28-09-2026', 'vinukonda', 'Hospital  visit', 'already typed in by hand'],
+      [2, '30-09-2026', 'Macherla', 'Road review', 'Bypass works'],
+      [3, '30-09-2026', 'Macherla', 'Road review', 'same row twice in the file'],
+      [4, 'soon', 'Gurazala', 'Farmers meet', ''],
+    ]);
+    const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
+    const result = await service.importFile({ originalname: 'September visits.xlsx', size: buffer.length, buffer });
+    expect(result).toEqual({
+      fileName: 'September visits.xlsx',
+      found: 3,
+      imported: 1,
+      duplicates: 2,
+      rejected: [{ where: 'Row 5', reason: 'Date "soon" is not a date like 28-09-2026.' }],
+    });
+    expect(docs[1]).toMatchObject({
+      section: 'visits',
+      title: 'Road review',
+      place: 'Macherla',
+      visitDate: '2026-09-30',
+      detail: 'Bypass works',
+      status: 'From file',
+      source: 'import',
+      importFile: 'September visits.xlsx',
+    });
+    const list = await service.list();
+    expect(list.map((visit) => [visit.title, visit.source])).toEqual([
+      ['Road review', 'import'],
+      ['Hospital visit', 'manual'],
+    ]);
+
+    const again = await service.importFile({ originalname: 'September visits.xlsx', size: buffer.length, buffer });
+    expect(again).toMatchObject({ imported: 0, duplicates: 3 });
+    expect(docs).toHaveLength(2);
+  });
+
+  it('refuses an import without a file or with an unsupported type', async () => {
+    const service = new VisitsService(fakeDb().db);
+    await expect(service.importFile(undefined)).rejects.toThrow('Choose the Excel, Word, or PDF file');
+    await expect(service.importFile({ originalname: 'photo.png', size: PNG.length, buffer: PNG })).rejects.toThrow(
+      BadRequestException,
+    );
+  });
+
+  it('rejects a missing title, a bad date, and an oversized file', async () => {
     const { db, files } = fakeDb();
     const service = new VisitsService(db);
     const pdf = { originalname: 'a.pdf', size: PDF.length, buffer: PDF };
-    await expect(service.create({ title: 'x' }, undefined)).rejects.toThrow('Choose a PDF');
     await expect(service.create({ title: '  ' }, pdf)).rejects.toThrow('Title is required');
     await expect(service.create({ title: 'x', visitDate: '28/09/2026' }, pdf)).rejects.toThrow('Visit date');
     await expect(service.create({ title: 'x' }, { ...pdf, size: 50 * 1024 * 1024 })).rejects.toThrow('larger than');

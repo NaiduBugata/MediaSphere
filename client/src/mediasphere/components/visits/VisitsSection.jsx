@@ -29,7 +29,7 @@ function VisitCard({ visit }) {
           </span>
         ) : null}
       </div>
-      {visit.detail ? <p className="mt-2 text-sm text-msmuted line-clamp-3">{visit.detail}</p> : null}
+      {visit.detail ? <p className="mt-2 text-sm text-msmuted line-clamp-3 whitespace-pre-line">{visit.detail}</p> : null}
       {file ? (
         <div className="mt-auto flex flex-wrap gap-2 pt-4">
           {file.kind === 'pdf' ? (
