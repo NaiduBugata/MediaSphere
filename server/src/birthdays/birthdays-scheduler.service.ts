@@ -22,7 +22,7 @@ export class BirthdaysSchedulerService implements OnModuleInit {
 
   onModuleInit(): void {
     if (!birthdayWishesEnabled()) {
-      this.logger.log('Birthday wishes are off (BIRTHDAY_WISHES_ENABLED is not true or WhatsApp is not configured).');
+      this.logger.log('Birthday wishes are off (BIRTHDAY_WISHES_ENABLED=false or WhatsApp is not configured).');
       return;
     }
     const job = new CronJob('*/15 * * * *', () => void this.tick(), null, false, BIRTHDAY_TIMEZONE);

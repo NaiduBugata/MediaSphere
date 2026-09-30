@@ -30,7 +30,7 @@ function WishCell({ wish, today }) {
 }
 
 export default function AdminBirthdays({ onUnauthorized }) {
-  const [info, setInfo] = useState({ contacts: [], today: '', automatic: false, hour: 9, templates: {} });
+  const [info, setInfo] = useState({ contacts: [], today: '', automatic: false, hour: 7, templates: {} });
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
@@ -140,7 +140,7 @@ export default function AdminBirthdays({ onUnauthorized }) {
             <span className={`font-semibold ${info.automatic ? 'text-emerald-600' : 'text-amber-600'}`}>
               {info.automatic ? 'on' : 'off'}
             </span>
-            {info.automatic ? '.' : ' (set BIRTHDAY_WISHES_ENABLED=true on the API). "Send now" still works.'}
+            {info.automatic ? '.' : ' (WhatsApp is not configured on the API, or BIRTHDAY_WISHES_ENABLED=false).'}
           </li>
           <li>One-way: replies from these numbers are ignored. They are not stored and the chatbot does not answer them.</li>
         </ul>

@@ -164,8 +164,8 @@ On the birthday the API sends the approved WhatsApp template, addressed by name:
 
 | Name | Value |
 | --- | --- |
-| `BIRTHDAY_WISHES_ENABLED` | `true` to send automatically. Needs `WHATSAPP_ENABLED`, `WHATSAPP_ACCESS_TOKEN`, and `WHATSAPP_PHONE_NUMBER_ID`, but not `WHATSAPP_RECIPIENTS` or `WHATSAPP_ALERTS_ENABLED`. |
-| `BIRTHDAY_HOUR` | Leave empty for 9 (09:00 India time). |
+| `BIRTHDAY_WISHES_ENABLED` | Leave empty (on). Wishes go out automatically wherever `WHATSAPP_ENABLED`, `WHATSAPP_ACCESS_TOKEN`, and `WHATSAPP_PHONE_NUMBER_ID` are set; `WHATSAPP_RECIPIENTS` and `WHATSAPP_ALERTS_ENABLED` are not needed. Set `false` on any copy of the API that must not send, such as a local run against the production database. |
+| `BIRTHDAY_HOUR` | Leave empty for 7 (07:00 India time). |
 | `BIRTHDAY_TEMPLATE_EN` / `BIRTHDAY_TEMPLATE_TE` | Leave empty for `bday_wishes_en` / `bday_wishes`. |
 
 ### Public URL

@@ -10,6 +10,7 @@ import {
   normalizeContactPhone,
   parseBirthday,
   sendBirthdayWish,
+  wishHour,
   type BirthdayContact,
 } from './birthdays';
 import { BirthdaysSchedulerService } from './birthdays-scheduler.service';
@@ -116,12 +117,22 @@ describe('birthday rules', () => {
     expect(calls[1]).toMatchObject({ template: { name: 'bday_wishes', language: { code: 'te' } } });
   });
 
-  it('stays off unless BIRTHDAY_WISHES_ENABLED and WhatsApp are both set', () => {
-    expect(birthdayWishesEnabled()).toBe(false);
-    process.env.BIRTHDAY_WISHES_ENABLED = 'true';
+  it('runs wherever WhatsApp can send, unless BIRTHDAY_WISHES_ENABLED=false', () => {
     expect(birthdayWishesEnabled()).toBe(false);
     Object.assign(process.env, { WHATSAPP_ENABLED: 'true', WHATSAPP_ACCESS_TOKEN: 't', WHATSAPP_PHONE_NUMBER_ID: '1' });
     expect(birthdayWishesEnabled()).toBe(true);
+    process.env.BIRTHDAY_WISHES_ENABLED = 'false';
+    expect(birthdayWishesEnabled()).toBe(false);
+    process.env.BIRTHDAY_WISHES_ENABLED = 'true';
+    expect(birthdayWishesEnabled()).toBe(true);
+  });
+
+  it('starts at 7:00 India time unless BIRTHDAY_HOUR says otherwise', () => {
+    expect(wishHour()).toBe(7);
+    process.env.BIRTHDAY_HOUR = '9';
+    expect(wishHour()).toBe(9);
+    process.env.BIRTHDAY_HOUR = 'soon';
+    expect(wishHour()).toBe(7);
   });
 });
 
@@ -173,12 +184,13 @@ describe('BirthdaysService', () => {
     expect(docs[0].lastWish).toMatchObject({ status: 'sent', tries: 2 });
   });
 
-  it('only sends between BIRTHDAY_HOUR and 21:00 India time', async () => {
+  it('only sends between 7:00 and 21:00 India time', async () => {
+    delete process.env.BIRTHDAY_HOUR;
     const sendDue = jest.fn(async () => ({ day: '', due: 0, sent: 0, failed: 0 }));
     const scheduler = new BirthdaysSchedulerService({} as never, { sendDue } as unknown as BirthdaysService);
-    await scheduler.tick(new Date('2026-09-30T03:00:00Z'));
+    await scheduler.tick(new Date('2026-09-30T01:15:00Z'));
     expect(sendDue).not.toHaveBeenCalled();
-    await scheduler.tick(new Date('2026-09-30T03:30:00Z'));
+    await scheduler.tick(new Date('2026-09-30T01:30:00Z'));
     expect(sendDue).toHaveBeenCalledTimes(1);
     await scheduler.tick(new Date('2026-09-30T15:30:00Z'));
     expect(sendDue).toHaveBeenCalledTimes(1);

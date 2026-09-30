@@ -34,9 +34,10 @@ export interface BirthdayContact {
   lastWish: WishRecord | null;
 }
 
-/** Automatic wishes need BIRTHDAY_WISHES_ENABLED on top of a working WhatsApp sender. */
+/** Automatic wishes run wherever WhatsApp can send, unless BIRTHDAY_WISHES_ENABLED=false. */
 export function birthdayWishesEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return truthy(env.BIRTHDAY_WISHES_ENABLED) && whatsappSenderReady(env);
+  const raw = (env.BIRTHDAY_WISHES_ENABLED ?? '').trim();
+  return (raw === '' || truthy(raw)) && whatsappSenderReady(env);
 }
 
 /** Enough to send one message. WHATSAPP_RECIPIENTS is not needed: wishes go to the contact list. */
@@ -48,8 +49,9 @@ export function whatsappSenderReady(env: NodeJS.ProcessEnv = process.env): boole
 
 /** Local hour (India time) from which the day's wishes go out. */
 export function wishHour(env: NodeJS.ProcessEnv = process.env): number {
-  const hour = Number(env.BIRTHDAY_HOUR ?? '9');
-  return Number.isInteger(hour) && hour >= 0 && hour <= 22 ? hour : 9;
+  const raw = (env.BIRTHDAY_HOUR ?? '').trim();
+  const hour = Number(raw || '7');
+  return Number.isInteger(hour) && hour >= 0 && hour <= 20 ? hour : 7;
 }
 
 /** A 10-digit Indian mobile gets the 91 country code; anything else must already include its country code. */
