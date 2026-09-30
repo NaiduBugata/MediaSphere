@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Cake, Send, Trash2, UserPlus } from 'lucide-react';
-import { addBirthday, deleteBirthday, formatBirthday, isBirthdayToday, listBirthdays, sendBirthdayWish } from '../../services/birthdaysApi';
+import {
+  addBirthday,
+  deleteBirthday,
+  formatBirthday,
+  isBirthdayToday,
+  listBirthdays,
+  sendBirthdayWish,
+  setBirthdayReplies,
+} from '../../services/birthdaysApi';
 import { apiErrorMessage } from '../../services/visitsApi';
 import { formatDateTime } from '../../utils/format';
 
@@ -108,6 +116,26 @@ export default function AdminBirthdays({ onUnauthorized }) {
     }
   };
 
+  const toggleReplies = async (contact) => {
+    const allow = !contact.allowReplies;
+    const question = allow
+      ? `Allow ${contact.name} to reply? Their messages will be received and the WhatsApp assistant can answer them.`
+      : `Block replies from ${contact.name}? Their messages will be ignored.`;
+    if (!window.confirm(question)) return;
+    setBusyId(contact.id);
+    setListMessage({ kind: '', text: '' });
+    try {
+      await setBirthdayReplies(contact.id, allow);
+      setListMessage({ kind: 'success', text: `${contact.name}: replies ${allow ? 'allowed' : 'blocked'}.` });
+      await load();
+    } catch (err) {
+      const text = handleError(err, 'Could not change replies');
+      if (text) setListMessage({ kind: 'error', text });
+    } finally {
+      setBusyId('');
+    }
+  };
+
   const remove = async (contact) => {
     if (!window.confirm(`Remove ${contact.name} from the birthday list?`)) return;
     setBusyId(contact.id);
@@ -142,7 +170,10 @@ export default function AdminBirthdays({ onUnauthorized }) {
             </span>
             {info.automatic ? '.' : ' (WhatsApp is not configured on the API, or BIRTHDAY_WISHES_ENABLED=false).'}
           </li>
-          <li>One-way: replies from these numbers are ignored. They are not stored and the chatbot does not answer them.</li>
+          <li>
+            One-way by default: replies are ignored, not stored, and the chatbot does not answer them. Click{' '}
+            <span className="font-semibold">Blocked</span> in the Replies column to let a person reply.
+          </li>
         </ul>
       </section>
 
@@ -235,6 +266,7 @@ export default function AdminBirthdays({ onUnauthorized }) {
                   <th className="py-2 pr-3">Place / designation</th>
                   <th className="py-2 pr-3">Language</th>
                   <th className="py-2 pr-3">Last wish</th>
+                  <th className="py-2 pr-3">Replies</th>
                   <th className="py-2">Action</th>
                 </tr>
               </thead>
@@ -262,6 +294,19 @@ export default function AdminBirthdays({ onUnauthorized }) {
                       <td className="py-2.5 pr-3">{contact.language === 'te' ? 'Telugu' : 'English'}</td>
                       <td className="py-2.5 pr-3 whitespace-nowrap">
                         <WishCell wish={contact.lastWish} today={info.today} />
+                      </td>
+                      <td className="py-2.5 pr-3 whitespace-nowrap">
+                        <button
+                          type="button"
+                          onClick={() => toggleReplies(contact)}
+                          disabled={busyId === contact.id}
+                          title={contact.allowReplies ? 'Click to block replies' : 'Click to allow replies'}
+                          className={`rounded-md px-2 py-0.5 text-xs font-semibold disabled:opacity-60 ${
+                            contact.allowReplies ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'
+                          }`}
+                        >
+                          {contact.allowReplies ? 'Allowed' : 'Blocked'}
+                        </button>
                       </td>
                       <td className="py-2.5 whitespace-nowrap">
                         <div className="flex items-center gap-3">

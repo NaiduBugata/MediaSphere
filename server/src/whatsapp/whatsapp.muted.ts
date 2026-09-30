@@ -1,27 +1,48 @@
 /**
  * Numbers that only receive one-way messages (birthday wishes). Their incoming messages are dropped
  * before the webhook stores them or the chatbot sees them, even when the number is on WHATSAPP_RECIPIENTS.
+ * A contact with replies allowed is in `contacts` but not in `muted`.
  */
 let muted = new Set<string>();
+let contacts = new Set<string>();
 let inboundRecorder: ((numbers: string[]) => Promise<void>) | null = null;
 
 function digits(value: unknown): string {
   return String(value ?? '').replace(/\D/g, '');
 }
 
-export function setMutedSenders(numbers: Iterable<string>): void {
+export function setMutedSenders(numbers: Iterable<string>, allContacts: Iterable<string> = numbers): void {
   muted = new Set([...numbers].map(digits).filter(Boolean));
+  contacts = new Set([...allContacts].map(digits).filter(Boolean));
 }
 
 /**
- * Told which one-way numbers just wrote in (never what they wrote), so the admin page knows
+ * Told which contacts just wrote in (never what they wrote), so the admin page knows
  * whether WhatsApp's 24-hour window for free text is open.
  */
-export function setMutedInboundRecorder(recorder: ((numbers: string[]) => Promise<void>) | null): void {
+export function setContactInboundRecorder(recorder: ((numbers: string[]) => Promise<void>) | null): void {
   inboundRecorder = recorder;
 }
 
-export async function noteMutedInbound(numbers: string[]): Promise<void> {
+/** Contact numbers that sent a message in this webhook payload, muted or not. */
+export function contactSenders(payload: unknown): string[] {
+  if (!contacts.size || !payload || typeof payload !== 'object') return [];
+  const found = new Set<string>();
+  for (const entry of Array.isArray((payload as Record<string, unknown>).entry) ? ((payload as Record<string, unknown>).entry as unknown[]) : []) {
+    const changes = entry && typeof entry === 'object' ? (entry as Record<string, unknown>).changes : null;
+    for (const change of Array.isArray(changes) ? changes : []) {
+      const value = change && typeof change === 'object' ? (change as Record<string, unknown>).value : null;
+      const messages = value && typeof value === 'object' ? (value as Record<string, unknown>).messages : null;
+      for (const message of Array.isArray(messages) ? messages : []) {
+        const from = digits(message && typeof message === 'object' ? (message as Record<string, unknown>).from : '');
+        if (contacts.has(from)) found.add(from);
+      }
+    }
+  }
+  return [...found];
+}
+
+export async function noteContactInbound(numbers: string[]): Promise<void> {
   if (!inboundRecorder || !numbers.length) return;
   try {
     await inboundRecorder([...new Set(numbers)]);

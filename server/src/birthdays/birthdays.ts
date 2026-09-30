@@ -34,6 +34,8 @@ export interface BirthdayContact {
   lastWish: WishRecord | null;
   /** When this person last wrote to the business number. Only the time is kept, never the message. */
   lastInboundAt: string | null;
+  /** Off by default (one-way). On: their messages are stored and the chatbot may answer, as for anyone else. */
+  allowReplies: boolean;
 }
 
 /** WhatsApp accepts free text only within 24 hours of the person's last message; otherwise a template is needed. */

@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException } from '@nestjs/common';
 import { ObjectId } from 'mongodb';
 import { DatabaseService } from '../database/database.service';
 import { matches } from '../database/pg-collection';
-import { isMutedSender, setMutedSenders, withoutMutedMessages } from '../whatsapp/whatsapp.muted';
+import { contactSenders, isMutedSender, setMutedSenders, withoutMutedMessages } from '../whatsapp/whatsapp.muted';
 import {
   birthdayWishesEnabled,
   isBirthdayOn,
@@ -56,7 +56,7 @@ function graphFetch(calls: Array<Record<string, unknown>>, fail?: (body: Record<
 function contact(overrides: Partial<BirthdayContact> = {}): BirthdayContact {
   return {
     id: '1', name: 'Test', phone: '919000000001', birthday: '09-30', birthYear: null, place: '', designation: '',
-    notes: '', language: 'en', createdAt: '', lastWish: null, lastInboundAt: null, ...overrides,
+    notes: '', language: 'en', createdAt: '', lastWish: null, lastInboundAt: null, allowReplies: false, ...overrides,
   };
 }
 
@@ -172,6 +172,29 @@ describe('BirthdaysService', () => {
     const list = await service.list();
     await service.remove(list.find((row) => row.name === 'Later')!.id);
     expect(isMutedSender('919000000001')).toBe(false);
+  });
+
+  it('lets a chosen contact reply while the others stay one-way', async () => {
+    const { db, docs } = fakeDb();
+    const service = new BirthdaysService(db);
+    const saroj = await service.create({ name: 'Sarojininaidu', phone: '6281168530', birthday: '30-09' });
+    await service.create({ name: 'Udatha Sravani', phone: '8885230708', birthday: '30-09' });
+    expect(saroj.allowReplies).toBe(false);
+    expect(isMutedSender('916281168530')).toBe(true);
+
+    const updated = await service.setReplies(saroj.id, true);
+    expect(updated.allowReplies).toBe(true);
+    expect(docs.find((doc) => doc.name === 'Sarojininaidu')?.allowReplies).toBe(true);
+    expect(isMutedSender('916281168530')).toBe(false);
+    expect(isMutedSender('918885230708')).toBe(true);
+
+    const message = (from: string) => ({ entry: [{ changes: [{ value: { messages: [{ from, id: 'x', type: 'text', text: { body: 'hi' } }] } }] }] });
+    expect(contactSenders(message('916281168530'))).toEqual(['916281168530']);
+    expect(withoutMutedMessages(message('916281168530')).dropped).toBe(0);
+    expect(withoutMutedMessages(message('918885230708')).dropped).toBe(1);
+
+    await service.setReplies(saroj.id, false);
+    expect(isMutedSender('916281168530')).toBe(true);
   });
 
   it('records a failed wish and retries it on the next check', async () => {

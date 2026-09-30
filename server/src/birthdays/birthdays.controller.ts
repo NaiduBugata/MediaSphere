@@ -1,5 +1,5 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post } from '@nestjs/common';
-import { IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post } from '@nestjs/common';
+import { IsBoolean, IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
 import { AdminOnly } from '../common/decorators/admin.decorator';
 import { birthdayWishesEnabled, todayInIndia, wishHour, wishTemplate } from './birthdays';
 import { BirthdaysService } from './birthdays.service';
@@ -38,6 +38,11 @@ export class CreateBirthdayDto {
   language?: string;
 }
 
+export class RepliesDto {
+  @IsBoolean()
+  allowReplies: boolean;
+}
+
 @Controller('api/admin/birthdays')
 @AdminOnly()
 export class BirthdaysController {
@@ -57,6 +62,11 @@ export class BirthdaysController {
   @Post()
   async create(@Body() body: CreateBirthdayDto) {
     return { contact: await this.birthdays.create(body) };
+  }
+
+  @Patch(':id/replies')
+  async replies(@Param('id') id: string, @Body() body: RepliesDto) {
+    return { contact: await this.birthdays.setReplies(id, body.allowReplies) };
   }
 
   @Post(':id/send')

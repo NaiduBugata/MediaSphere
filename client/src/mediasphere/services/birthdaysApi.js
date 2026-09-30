@@ -22,6 +22,11 @@ export async function sendBirthdayWish(id) {
   return data?.contact;
 }
 
+export async function setBirthdayReplies(id, allowReplies) {
+  const { data } = await api.patch(`/admin/birthdays/${encodeURIComponent(id)}/replies`, { allowReplies }, { headers: authHeader() });
+  return data?.contact;
+}
+
 export async function deleteBirthday(id) {
   await api.delete(`/admin/birthdays/${encodeURIComponent(id)}`, { headers: authHeader() });
 }

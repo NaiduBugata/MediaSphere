@@ -8,7 +8,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
-import { setMutedInboundRecorder, setMutedSenders } from '../whatsapp/whatsapp.muted';
+import { setContactInboundRecorder, setMutedSenders } from '../whatsapp/whatsapp.muted';
 import {
   isDue,
   maskPhone,
@@ -56,8 +56,16 @@ export class BirthdaysService implements OnModuleInit {
 
   /** Loads the one-way numbers so their replies are ignored from the first webhook on. */
   onModuleInit(): void {
-    setMutedInboundRecorder((phones) => this.noteInbound(phones));
+    setContactInboundRecorder((phones) => this.noteInbound(phones));
     void this.refreshMuted();
+  }
+
+  async setReplies(id: string, allowReplies: boolean): Promise<BirthdayContact> {
+    const doc = await this.findDoc(id);
+    await this.db.collection(CONTACTS).updateOne({ _id: doc._id }, { $set: { allowReplies } });
+    await this.refreshMuted();
+    this.logger.log(`[BIRTHDAY] replies ${allowReplies ? 'allowed' : 'blocked'} for ${maskPhone(String(doc.phone || ''))}`);
+    return toContact({ ...doc, allowReplies });
   }
 
   async noteInbound(phones: string[], at = new Date().toISOString()): Promise<void> {
@@ -102,6 +110,7 @@ export class BirthdaysService implements OnModuleInit {
       createdAt: new Date().toISOString(),
       lastWish: null,
       lastInboundAt: null,
+      allowReplies: false,
     };
     const inserted = await this.db.collection(CONTACTS).insertOne(doc);
     await this.refreshMuted();
@@ -149,7 +158,10 @@ export class BirthdaysService implements OnModuleInit {
   async refreshMuted(): Promise<void> {
     try {
       const contacts = await this.contacts();
-      setMutedSenders(contacts.map((contact) => contact.phone));
+      setMutedSenders(
+        contacts.filter((contact) => !contact.allowReplies).map((contact) => contact.phone),
+        contacts.map((contact) => contact.phone),
+      );
     } catch (err) {
       this.logger.warn(`Could not load birthday contacts (${err instanceof Error ? err.message : 'database error'}); retrying in a minute.`);
       setTimeout(() => void this.refreshMuted(), RELOAD_RETRY_MS).unref?.();
@@ -212,5 +224,6 @@ function toContact(doc: Record<string, unknown>): BirthdayContact {
     createdAt: String(doc.createdAt || ''),
     lastWish: wish,
     lastInboundAt: doc.lastInboundAt ? String(doc.lastInboundAt) : null,
+    allowReplies: doc.allowReplies === true,
   };
 }

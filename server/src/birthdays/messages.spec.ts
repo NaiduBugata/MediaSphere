@@ -2,7 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { ObjectId } from 'mongodb';
 import { DatabaseService } from '../database/database.service';
 import { matches } from '../database/pg-collection';
-import { noteMutedInbound, setMutedInboundRecorder, setMutedSenders } from '../whatsapp/whatsapp.muted';
+import { noteContactInbound, setContactInboundRecorder, setMutedSenders } from '../whatsapp/whatsapp.muted';
 import { freeTextOpen } from './birthdays';
 import { BirthdaysService } from './birthdays.service';
 import { bestState, cleanParam, deliveryError, fillTemplate, personalize, sendableTemplates } from './messages';
@@ -103,7 +103,7 @@ describe('ContactMessagesService', () => {
   afterEach(() => {
     ENV.forEach((key) => { if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key]; });
     setMutedSenders([]);
-    setMutedInboundRecorder(null);
+    setContactInboundRecorder(null);
   });
 
   async function setup(receipts: Array<{ id: string; status: string; errors: unknown }> = []) {
@@ -169,7 +169,7 @@ describe('ContactMessagesService', () => {
   it('records when a one-way contact last wrote in, without the message', async () => {
     const { birthdays, docs } = await setup();
     birthdays.onModuleInit();
-    await noteMutedInbound(['918885230708']);
+    await noteContactInbound(['918885230708']);
     const row = docs('birthday_contacts').find((doc) => doc.name === 'Udatha Sravani')!;
     expect(typeof row.lastInboundAt).toBe('string');
     expect(Object.keys(row)).not.toContain('lastInboundText');

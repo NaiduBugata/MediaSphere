@@ -313,7 +313,7 @@ export default function AdminMessages({ onUnauthorized }) {
           />
           <p className="text-xs text-msmuted">
             WhatsApp delivers typed text only to people who messaged the business number in the last 24 hours ("Text OK").
-            Everyone else needs an approved template. Their replies stay ignored.
+            Everyone else needs an approved template. Replies are ignored unless allowed in the Birthdays tab.
           </p>
         </section>
 
