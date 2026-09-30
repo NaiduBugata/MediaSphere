@@ -13,9 +13,10 @@ export class CreateBirthdayDto {
   @MaxLength(20)
   phone: string;
 
+  @IsOptional()
   @IsString()
   @MaxLength(10)
-  birthday: string;
+  birthday?: string;
 
   @IsOptional()
   @IsString()

@@ -28,7 +28,8 @@ const RELOAD_RETRY_MS = 60_000;
 export interface BirthdayInput {
   name: string;
   phone: string;
-  birthday: string;
+  /** Optional: people added only for messages have no birthday and get no wish. */
+  birthday?: string;
   place?: string;
   designation?: string;
   notes?: string;
@@ -82,7 +83,9 @@ export class BirthdaysService implements OnModuleInit {
     const name = text(input.name, 80);
     if (!name) throw new BadRequestException('Name is required.');
     const phone = normalizeContactPhone(input.phone);
-    const { birthday, birthYear } = parseBirthday(input.birthday);
+    const { birthday, birthYear } = String(input.birthday || '').trim()
+      ? parseBirthday(input.birthday || '')
+      : { birthday: '', birthYear: null };
     const existing = await this.contacts();
     if (existing.some((contact) => contact.phone === phone)) {
       throw new ConflictException('This phone number is already in the birthday list.');
@@ -190,6 +193,7 @@ export class BirthdaysService implements OnModuleInit {
 /** Sort key: days until the next birthday, so today's and the soonest come first. */
 function upcoming(birthday: string, today: string): string {
   const current = today.slice(5);
+  if (!birthday) return '2';
   return `${birthday >= current ? '0' : '1'}${birthday}`;
 }
 

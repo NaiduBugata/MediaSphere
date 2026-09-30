@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { FileText, MessageSquareText, Send } from 'lucide-react';
+import { FileText, MessageSquareText, Send, UserPlus } from 'lucide-react';
 import {
+  addBirthday,
   fillTemplate,
   freeTextUntil,
   listBirthdays,
@@ -41,6 +42,85 @@ function ModeButton({ active, onClick, icon: Icon, title, hint }) {
         <span className="mt-0.5 block text-xs text-msmuted">{hint}</span>
       </span>
     </button>
+  );
+}
+
+/** Saves a person to the contact list (birthday optional) so they can be chosen and tracked. */
+function AddPerson({ onAdded, handleError }) {
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({ name: '', phone: '', birthday: '' });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)} className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline">
+        <UserPlus className="h-4 w-4" aria-hidden /> Add a person (name and WhatsApp number)
+      </button>
+    );
+  }
+
+  const setField = (key) => (event) => setForm((current) => ({ ...current, [key]: event.target.value }));
+  const save = async () => {
+    setError('');
+    if (!form.name.trim() || !form.phone.trim()) {
+      setError('Enter the name and the WhatsApp number.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const contact = await addBirthday({
+        name: form.name.trim(),
+        phone: form.phone.trim(),
+        ...(form.birthday.trim() ? { birthday: form.birthday.trim() } : {}),
+      });
+      onAdded(contact);
+      setForm({ name: '', phone: '', birthday: '' });
+      setOpen(false);
+    } catch (err) {
+      const text = handleError(err, 'Could not add the person');
+      if (text) setError(text);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2 rounded-lg border border-msline p-3">
+      <div className="grid gap-2 sm:grid-cols-3">
+        <input className="input-field w-full" placeholder="Name *" value={form.name} onChange={setField('name')} maxLength={80} />
+        <input
+          className="input-field w-full"
+          placeholder="WhatsApp number *"
+          inputMode="tel"
+          value={form.phone}
+          onChange={setField('phone')}
+          maxLength={20}
+        />
+        <input
+          className="input-field w-full"
+          placeholder="Birthday DD-MM (optional)"
+          value={form.birthday}
+          onChange={setField('birthday')}
+          maxLength={10}
+        />
+      </div>
+      <p className="text-xs text-msmuted">A 10-digit mobile gets +91. With a birthday, the person also gets the 7:00 AM wish.</p>
+      {error ? <p className="text-sm text-red-500">{error}</p> : null}
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={save}
+          disabled={saving}
+          className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-hover disabled:opacity-60"
+        >
+          {saving ? 'Adding…' : 'Add and select'}
+        </button>
+        <button type="button" onClick={() => setOpen(false)} className="rounded-lg border border-msline px-4 py-2 text-sm font-medium">
+          Cancel
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -189,7 +269,7 @@ export default function AdminMessages({ onUnauthorized }) {
             ) : null}
           </div>
           {contacts.length === 0 ? (
-            <p className="text-sm text-msmuted">No contacts yet. Add people in the Birthdays tab.</p>
+            <p className="text-sm text-msmuted">No contacts yet. Add a person below.</p>
           ) : (
             <ul className="max-h-[420px] divide-y divide-msline/60 overflow-y-auto rounded-lg border border-msline">
               {contacts.map((contact) => {
@@ -224,6 +304,13 @@ export default function AdminMessages({ onUnauthorized }) {
               })}
             </ul>
           )}
+          <AddPerson
+            onAdded={(contact) => {
+              setContacts((current) => [...current, contact].sort((a, b) => a.name.localeCompare(b.name)));
+              setSelected((current) => new Set(current).add(contact.id));
+            }}
+            handleError={handleError}
+          />
           <p className="text-xs text-msmuted">
             WhatsApp delivers typed text only to people who messaged the business number in the last 24 hours ("Text OK").
             Everyone else needs an approved template. Their replies stay ignored.

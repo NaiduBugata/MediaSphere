@@ -154,6 +154,9 @@ describe('BirthdaysService', () => {
     await service.create({ name: 'Udatha Sravani', phone: '8885230708', birthday: '1998-09-30' });
     await service.create({ name: 'Later', phone: '9000000001', birthday: '01-10' });
     await expect(service.create({ name: 'Copy', phone: '+91 62811 68530', birthday: '01-01' })).rejects.toThrow(ConflictException);
+    const messageOnly = await service.create({ name: 'Message only', phone: '9000000002' });
+    expect(messageOnly).toMatchObject({ birthday: '', birthYear: null });
+    expect(isMutedSender('919000000002')).toBe(true);
     expect(isMutedSender('916281168530')).toBe(true);
     expect(isMutedSender('918885230708')).toBe(true);
 
