@@ -56,7 +56,7 @@ function graphFetch(calls: Array<Record<string, unknown>>, fail?: (body: Record<
 function contact(overrides: Partial<BirthdayContact> = {}): BirthdayContact {
   return {
     id: '1', name: 'Test', phone: '919000000001', birthday: '09-30', birthYear: null, place: '', designation: '',
-    notes: '', language: 'en', createdAt: '', lastWish: null, ...overrides,
+    notes: '', language: 'en', createdAt: '', lastWish: null, lastInboundAt: null, ...overrides,
   };
 }
 
@@ -220,10 +220,11 @@ describe('one-way birthday numbers', () => {
     setMutedSenders(['916281168530']);
     const muted = withoutMutedMessages(payload('916281168530'));
     expect(muted.dropped).toBe(1);
+    expect(muted.from).toEqual(['916281168530']);
     expect((muted.payload as { entry: unknown[] }).entry).toHaveLength(0);
 
     const other = payload('919999999999');
-    expect(withoutMutedMessages(other)).toEqual({ payload: other, dropped: 0 });
+    expect(withoutMutedMessages(other)).toEqual({ payload: other, dropped: 0, from: [] });
   });
 
   it('keeps delivery statuses that arrive with a dropped message', () => {

@@ -8,7 +8,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
-import { setMutedSenders } from '../whatsapp/whatsapp.muted';
+import { setMutedInboundRecorder, setMutedSenders } from '../whatsapp/whatsapp.muted';
 import {
   isDue,
   maskPhone,
@@ -55,7 +55,21 @@ export class BirthdaysService implements OnModuleInit {
 
   /** Loads the one-way numbers so their replies are ignored from the first webhook on. */
   onModuleInit(): void {
+    setMutedInboundRecorder((phones) => this.noteInbound(phones));
     void this.refreshMuted();
+  }
+
+  async noteInbound(phones: string[], at = new Date().toISOString()): Promise<void> {
+    await this.ready();
+    const coll = this.db.collection(CONTACTS);
+    for (const doc of await coll.find({}).toArray()) {
+      if (phones.includes(String(doc.phone || ''))) await coll.updateOne({ _id: doc._id }, { $set: { lastInboundAt: at } });
+    }
+  }
+
+  async byIds(ids: string[]): Promise<BirthdayContact[]> {
+    const wanted = new Set(ids);
+    return (await this.contacts()).filter((contact) => wanted.has(contact.id));
   }
 
   async list(): Promise<BirthdayContact[]> {
@@ -84,6 +98,7 @@ export class BirthdaysService implements OnModuleInit {
       language: input.language === 'te' ? 'te' : 'en',
       createdAt: new Date().toISOString(),
       lastWish: null,
+      lastInboundAt: null,
     };
     const inserted = await this.db.collection(CONTACTS).insertOne(doc);
     await this.refreshMuted();
@@ -192,5 +207,6 @@ function toContact(doc: Record<string, unknown>): BirthdayContact {
     language: (doc.language === 'te' ? 'te' : 'en') as WishLanguage,
     createdAt: String(doc.createdAt || ''),
     lastWish: wish,
+    lastInboundAt: doc.lastInboundAt ? String(doc.lastInboundAt) : null,
   };
 }

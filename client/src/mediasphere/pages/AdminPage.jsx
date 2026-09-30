@@ -16,11 +16,13 @@ import {
 import { formatDateTime, formatRelativeTime } from '../utils/format';
 import AdminVisits from '../components/visits/AdminVisits';
 import AdminBirthdays from '../components/birthdays/AdminBirthdays';
+import AdminMessages from '../components/birthdays/AdminMessages';
 
 const VIEWS = [
   { id: 'fetch', label: 'Fetch monitoring' },
   { id: 'visits', label: 'Visits' },
   { id: 'birthdays', label: 'Birthdays' },
+  { id: 'messages', label: 'Send WhatsApp' },
 ];
 
 const HEADLINE_META = {
@@ -410,6 +412,15 @@ function AdminDashboard({ onLogout }) {
       ) : view === 'birthdays' ? (
         <main className="mx-auto max-w-7xl px-4 py-6">
           <AdminBirthdays
+            onUnauthorized={() => {
+              clearAdminToken();
+              onLogout();
+            }}
+          />
+        </main>
+      ) : view === 'messages' ? (
+        <main className="mx-auto max-w-7xl px-4 py-6">
+          <AdminMessages
             onUnauthorized={() => {
               clearAdminToken();
               onLogout();

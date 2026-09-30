@@ -32,6 +32,16 @@ export interface BirthdayContact {
   language: WishLanguage;
   createdAt: string;
   lastWish: WishRecord | null;
+  /** When this person last wrote to the business number. Only the time is kept, never the message. */
+  lastInboundAt: string | null;
+}
+
+/** WhatsApp accepts free text only within 24 hours of the person's last message; otherwise a template is needed. */
+export const FREE_TEXT_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+export function freeTextOpen(lastInboundAt: string | null, now = new Date()): boolean {
+  const at = lastInboundAt ? Date.parse(lastInboundAt) : NaN;
+  return Number.isFinite(at) && now.getTime() - at < FREE_TEXT_WINDOW_MS;
 }
 
 /** Automatic wishes run wherever WhatsApp can send, unless BIRTHDAY_WISHES_ENABLED=false. */

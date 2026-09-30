@@ -168,6 +168,16 @@ On the birthday the API sends the approved WhatsApp template, addressed by name:
 | `BIRTHDAY_HOUR` | Leave empty for 7 (07:00 India time). |
 | `BIRTHDAY_TEMPLATE_EN` / `BIRTHDAY_TEMPLATE_TE` | Leave empty for `bday_wishes_en` / `bday_wishes`. |
 
+### Send WhatsApp from the admin page
+
+The **Send WhatsApp** tab sends a message to people chosen from the birthday contact list.
+
+- **Approved template** reaches anyone. The list comes from Meta (`WHATSAPP_WABA_ID`) and shows approved templates whose variables are all in the body; system alert templates (`mediasphere_*`) and templates with media headers or link variables are left out. `{{name}}` left empty becomes each person's name.
+- **Type a message** is free text, where `{name}` becomes each person's name. WhatsApp delivers free text only within 24 hours of that person's last message to the business number. The page marks those people **Text OK**. Everyone else gets nothing, and the row shows why.
+- Replies stay one-way: the webhook keeps only the time of a contact's last message (for the 24-hour check), never the text, and the chatbot does not answer.
+- **Sent messages** lists the last 100 messages with Meta's receipts (sent, delivered, read, failed) and the reason for a failure. The page refreshes it while messages are still on their way. Messages are stored in the `contact_messages` collection.
+- Up to 100 people per send. Needs `WHATSAPP_ENABLED`, `WHATSAPP_ACCESS_TOKEN`, and `WHATSAPP_PHONE_NUMBER_ID`.
+
 ### Public URL
 
     1. Open the service **Settings**, then **Networking**.
