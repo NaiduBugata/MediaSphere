@@ -10,6 +10,7 @@ import {
   notifyPipelineWhatsApp,
 } from './whatsapp.notify';
 import { deliverWhatsApp, sendReplyButtons, sendTemplateMessage, setWhatsAppStatusRecorder } from './whatsapp.send';
+import { setMutedSenders } from './whatsapp.muted';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return {
@@ -100,6 +101,28 @@ describe('WhatsApp webhook', () => {
     expect(post.statusCode).toBe(200);
     expect(post.body).toBe('EVENT_RECEIVED');
     expect(saved).toHaveLength(1);
+  });
+
+  it('neither stores nor passes to the chatbot a message from a one-way birthday number', async () => {
+    process.env.WHATSAPP_WEBHOOK_ENABLED = 'true';
+    const saved: unknown[] = [];
+    const seen: unknown[] = [];
+    const controller = new WhatsAppController({
+      saveEvent: async (event: unknown) => { saved.push(event); },
+    } as unknown as WhatsAppWebhookRepository);
+    controller.useChatbot({ consider: (payload) => { seen.push(payload); } });
+    const sender = textPayload.entry[0].changes[0].value.messages[0].from;
+    setMutedSenders([sender]);
+    try {
+      const post = mockRes();
+      await controller.receive({ body: textPayload, header: () => undefined, ip: '127.0.0.1' } as never, post as never);
+      expect(post.statusCode).toBe(200);
+      expect(post.body).toBe('EVENT_RECEIVED');
+      expect(saved).toHaveLength(0);
+      expect(seen).toHaveLength(0);
+    } finally {
+      setMutedSenders([]);
+    }
   });
 });
 

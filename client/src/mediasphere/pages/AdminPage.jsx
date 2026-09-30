@@ -15,6 +15,13 @@ import {
 } from '../services/adminApi';
 import { formatDateTime, formatRelativeTime } from '../utils/format';
 import AdminVisits from '../components/visits/AdminVisits';
+import AdminBirthdays from '../components/birthdays/AdminBirthdays';
+
+const VIEWS = [
+  { id: 'fetch', label: 'Fetch monitoring' },
+  { id: 'visits', label: 'Visits' },
+  { id: 'birthdays', label: 'Birthdays' },
+];
 
 const HEADLINE_META = {
   healthy: { label: 'HEALTHY', className: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
@@ -347,24 +354,27 @@ function AdminDashboard({ onLogout }) {
         <div className="mx-auto max-w-7xl px-4 py-3 flex items-center justify-between gap-3">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-primary">Admin</p>
-            <h1 className="text-lg font-bold leading-tight">{view === 'visits' ? 'Visits' : 'Fetch monitoring'}</h1>
+            <h1 className="text-lg font-bold leading-tight">{VIEWS.find((item) => item.id === view)?.label}</h1>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             <Link to="/news" className="text-sm text-msmuted hover:text-primary px-2">
               Site
             </Link>
-            <button
-              type="button"
-              onClick={() => setView((current) => (current === 'visits' ? 'fetch' : 'visits'))}
-              aria-pressed={view === 'visits'}
-              className={`rounded-md border px-3 py-1.5 text-sm font-medium ${
-                view === 'visits'
-                  ? 'border-primary bg-primary text-white hover:bg-primary-hover'
-                  : 'border-msline bg-surface'
-              }`}
-            >
-              {view === 'visits' ? 'Fetch monitoring' : 'Visits'}
-            </button>
+            {VIEWS.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setView(item.id)}
+                aria-pressed={view === item.id}
+                className={`rounded-md border px-3 py-1.5 text-sm font-medium ${
+                  view === item.id
+                    ? 'border-primary bg-primary text-white hover:bg-primary-hover'
+                    : 'border-msline bg-surface'
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
             {view === 'fetch' ? (
               <button
                 type="button"
@@ -391,6 +401,15 @@ function AdminDashboard({ onLogout }) {
       {view === 'visits' ? (
         <main className="mx-auto max-w-7xl px-4 py-6">
           <AdminVisits
+            onUnauthorized={() => {
+              clearAdminToken();
+              onLogout();
+            }}
+          />
+        </main>
+      ) : view === 'birthdays' ? (
+        <main className="mx-auto max-w-7xl px-4 py-6">
+          <AdminBirthdays
             onUnauthorized={() => {
               clearAdminToken();
               onLogout();

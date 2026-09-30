@@ -159,10 +159,19 @@ export async function sendReplyButtons(
 export async function sendTemplateMessage(
   recipient: string,
   templateName: string,
-  options: { language?: string; bodyParameters?: string[]; fetchImpl?: typeof fetch; env?: NodeJS.ProcessEnv } = {},
+  options: {
+    language?: string;
+    bodyParameters?: string[];
+    /** For templates created with NAMED parameters, such as {{name}}. */
+    namedParameters?: Record<string, string>;
+    fetchImpl?: typeof fetch;
+    env?: NodeJS.ProcessEnv;
+  } = {},
 ): Promise<Record<string, unknown>> {
   if (!templateName.trim()) throw new Error('template_name must not be empty');
-  const parameters = (options.bodyParameters || []).map((value) => ({ type: 'text', text: String(value).slice(0, 1024) }));
+  const parameters = options.namedParameters
+    ? Object.entries(options.namedParameters).map(([name, value]) => ({ type: 'text', parameter_name: name, text: String(value).slice(0, 1024) }))
+    : (options.bodyParameters || []).map((value) => ({ type: 'text', text: String(value).slice(0, 1024) }));
   const components = parameters.length ? [{ type: 'body', parameters }] : [];
   return postGraph({
     messaging_product: 'whatsapp',

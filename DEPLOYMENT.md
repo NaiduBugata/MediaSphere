@@ -96,7 +96,7 @@
 | `WHATSAPP_PIPELINE_STATUS` | Leave empty (off). `true` sends a status message after every hourly cycle, only when `WHATSAPP_ALERTS_ENABLED` is `true`. |
 | `PIPELINE_ALERT_REPEAT_HOURS` | `12`. A failed cycle alerts once by email. The same problem is alerted again only after this many hours, or at once when the problem changes. The logs show `[NOTIFY_FAILURE_EMAIL]` and `[NOTIFY_NEWS_EMAIL]` with `sent`, `skipped`, or `failed`. |
 
-An empty `WHATSAPP_RECIPIENTS` list makes the chatbot stay silent. With `WHATSAPP_ALERTS_ENABLED` off, WhatsApp is used only for the menu and chat replies. Chat replies are ordinary session text, which Meta accepts after that person has messaged the business inside the last 24 hours.
+An empty `WHATSAPP_RECIPIENTS` list makes the chatbot stay silent. With `WHATSAPP_ALERTS_ENABLED` off, WhatsApp is used only for the menu, chat replies, and birthday wishes. Chat replies are ordinary session text, which Meta accepts after that person has messaged the business inside the last 24 hours.
 
     The chatbot facts file is `server/src/chatbot/data/knowledge.json`. Replace that file and redeploy when the answers should change. A missing file does not stop the API. The process logs a warning and answers without those facts.
 
@@ -150,6 +150,23 @@ Attachments are stored in Neon in the `mediasphere.visit_files` table, which the
 | Name | Value |
 | --- | --- |
 | `VISITS_MAX_UPLOAD_MB` | Leave empty for 10. The admin page also refuses files over 10 MB before uploading. |
+
+### Birthday wishes
+
+Sign in at `/@admin` and choose **Birthdays**. Each contact has a name, WhatsApp number (a 10-digit mobile gets `91`), birthday (`DD-MM-YYYY`, or `DD-MM` when the year is unknown), place, designation, notes, and wish language.
+
+On the birthday the API sends the approved WhatsApp template, addressed by name: `bday_wishes_en` (English) or `bday_wishes` (Telugu). Both take one named parameter, `{{name}}`, and end with the sign-off from Lavu Sri Krishna Devarayulu, Member of Parliament, Narasaraopet. Wording changes need a new template approved in Meta, then its name in `BIRTHDAY_TEMPLATE_EN` or `BIRTHDAY_TEMPLATE_TE`.
+
+- The check runs every 15 minutes from `BIRTHDAY_HOUR` to 21:00 India time. Each contact is wished once a day, so a redeploy during the day sends only what is still pending. A failed send is retried up to three times that day. 29 February birthdays are wished on 28 February in other years.
+- **Send now** on the admin page sends the wish at once, even outside the birthday.
+- The wishes are one-way. Incoming messages from any number in the birthday list are dropped before they are stored, and the chatbot does not answer them, even when the number is also in `WHATSAPP_RECIPIENTS`. Remove the contact to let that number use the chatbot again. Delivery receipts are still stored.
+- The contacts are the `birthday_contacts` collection in Neon, separate from `jv_records`, so they never appear in the chatbot's sections.
+
+| Name | Value |
+| --- | --- |
+| `BIRTHDAY_WISHES_ENABLED` | `true` to send automatically. Needs `WHATSAPP_ENABLED`, `WHATSAPP_ACCESS_TOKEN`, and `WHATSAPP_PHONE_NUMBER_ID`, but not `WHATSAPP_RECIPIENTS` or `WHATSAPP_ALERTS_ENABLED`. |
+| `BIRTHDAY_HOUR` | Leave empty for 9 (09:00 India time). |
+| `BIRTHDAY_TEMPLATE_EN` / `BIRTHDAY_TEMPLATE_TE` | Leave empty for `bday_wishes_en` / `bday_wishes`. |
 
 ### Public URL
 

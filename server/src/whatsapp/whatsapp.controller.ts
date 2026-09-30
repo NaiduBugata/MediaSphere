@@ -1,5 +1,6 @@
-import { Controller, Get, Post, Req, Res } from '@nestjs/common';
+import { Controller, Get, Logger, Post, Req, Res } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import { withoutMutedMessages } from './whatsapp.muted';
 import { WhatsAppWebhookRepository } from './whatsapp.repository';
 import { processWebhookPost, verifyWebhook, webhookEnabled } from './whatsapp.webhook';
 
@@ -9,6 +10,7 @@ export interface ChatbotReply {
 
 @Controller()
 export class WhatsAppController {
+  private readonly logger = new Logger(WhatsAppController.name);
   private chatbot: ChatbotReply | null = null;
 
   constructor(private readonly events: WhatsAppWebhookRepository) {}
@@ -37,12 +39,19 @@ export class WhatsAppController {
     }
     const forwarded = req.header('x-forwarded-for');
     const clientIp = forwarded ? forwarded.split(',')[0].trim() : req.ip || null;
-    const result = await processWebhookPost(req.body, {
+    const { payload, dropped } = withoutMutedMessages(req.body);
+    if (dropped) this.logger.log(`Ignored ${dropped} incoming message(s) from one-way birthday contacts.`);
+    const empty = dropped > 0 && !((payload as { entry?: unknown[] }).entry || []).length;
+    if (empty) {
+      res.status(200).type('text/plain').send('EVENT_RECEIVED');
+      return;
+    }
+    const result = await processWebhookPost(payload, {
       clientIp,
       wabaId: process.env.WHATSAPP_WABA_ID || process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || '',
       save: (event, raw) => this.events.saveEvent(event, clientIp, raw),
     });
     res.status(result.status).type('text/plain').send(result.body);
-    if (result.status === 200) this.chatbot?.consider(req.body);
+    if (result.status === 200) this.chatbot?.consider(payload);
   }
 }
