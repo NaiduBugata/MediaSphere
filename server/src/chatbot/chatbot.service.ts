@@ -2,6 +2,7 @@ import { Injectable, Logger, Optional } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import { ArticleRepository } from '../database/repositories/article.repository';
 import { hasAssemblySegment } from '../pipeline/native/constituency';
+import { formatVisitTime } from '../visits/visits-import';
 import { parseWebhookPayload, type WhatsAppEvent } from '../whatsapp/whatsapp.parser';
 import { normalizePhone, sendReplyButtons, type ReplyButton } from '../whatsapp/whatsapp.send';
 import { newestFirst, toBrief, type NewsBrief } from './news-context';
@@ -220,7 +221,7 @@ export class ChatbotService {
       const rows = await this.db.collection(RECORDS).find({ section }).sort({ createdAt: -1 }).limit(TOP).toArray();
       return rows.map((row) => ({
         title: text(row.title),
-        detail: [text(row.place), text(row.detail)].filter(Boolean).join(' – '),
+        detail: [formatVisitTime(text(row.visitTime)), text(row.place), text(row.detail)].filter(Boolean).join(' – '),
         status: text(row.status),
         date: text(row.visitDate) || text(row.createdAt),
       }));

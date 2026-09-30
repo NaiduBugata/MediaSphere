@@ -7,6 +7,7 @@ import {
   apiErrorMessage,
   deleteVisit,
   formatFileSize,
+  formatVisitTime,
   importVisits,
   listVisits,
   templateUrl,
@@ -16,7 +17,7 @@ import {
 import { formatDate, formatDateTime } from '../../utils/format';
 import VisitKindBadge from './VisitKindBadge';
 
-const EMPTY_FORM = { title: '', place: '', visitDate: '', detail: '' };
+const EMPTY_FORM = { title: '', place: '', visitDate: '', visitTime: '', detail: '' };
 const REJECTED_SHOWN = 15;
 
 function extensionOf(name) {
@@ -108,7 +109,8 @@ function ImportPanel({ onImported, handleError }) {
           already on the site are skipped, so you can add new rows to the same file and upload it again.
         </p>
         <p>
-          Columns: <span className="font-medium text-app">S.No · Date (DD-MM-YYYY) · Place · Purpose / Title · Details</span>
+          Columns:{' '}
+          <span className="font-medium text-app">S.No · Date (DD-MM-YYYY) · Time (10:30 AM) · Place · Purpose / Title · Details</span>
         </p>
       </div>
       <div className="flex flex-wrap gap-2">
@@ -207,7 +209,14 @@ function SingleVisitPanel({ onSaved, handleError }) {
     setMessage({ kind: '', text: '' });
     try {
       const visit = await uploadVisit(
-        { title: form.title.trim(), place: form.place.trim(), visitDate: form.visitDate, detail: form.detail.trim(), file },
+        {
+          title: form.title.trim(),
+          place: form.place.trim(),
+          visitDate: form.visitDate,
+          visitTime: form.visitTime,
+          detail: form.detail.trim(),
+          file,
+        },
         setProgress,
       );
       setForm(EMPTY_FORM);
@@ -243,6 +252,10 @@ function SingleVisitPanel({ onSaved, handleError }) {
         <input type="date" className="input-field mt-1 w-full" value={form.visitDate} onChange={setField('visitDate')} />
       </label>
       <label className="block text-sm">
+        <span className="text-msmuted">Visit time</span>
+        <input type="time" className="input-field mt-1 w-full" value={form.visitTime} onChange={setField('visitTime')} />
+      </label>
+      <label className="block text-sm md:col-span-2">
         <span className="text-msmuted">Place</span>
         <input className="input-field mt-1 w-full" value={form.place} onChange={setField('place')} maxLength={120} placeholder="e.g. Vinukonda" />
       </label>
@@ -399,7 +412,7 @@ export default function AdminVisits({ onUnauthorized }) {
                 <tr className="text-left text-xs uppercase text-msmuted border-b border-msline">
                   <th className="py-2 pr-3">Source</th>
                   <th className="py-2 pr-3">Purpose / Title</th>
-                  <th className="py-2 pr-3">Visit date</th>
+                  <th className="py-2 pr-3">Date &amp; time</th>
                   <th className="py-2 pr-3">Place</th>
                   <th className="py-2 pr-3">Details</th>
                   <th className="py-2 pr-3">Added</th>
@@ -413,7 +426,12 @@ export default function AdminVisits({ onUnauthorized }) {
                       <SourceCell visit={visit} />
                     </td>
                     <td className="py-2.5 pr-3 font-medium text-app max-w-[240px]">{visit.title}</td>
-                    <td className="py-2.5 pr-3 whitespace-nowrap">{visit.visitDate ? formatDate(visit.visitDate) : '—'}</td>
+                    <td className="py-2.5 pr-3 whitespace-nowrap">
+                      {visit.visitDate ? formatDate(visit.visitDate) : '—'}
+                      {visit.visitTime ? (
+                        <span className="block text-xs text-msmuted">{formatVisitTime(visit.visitTime)}</span>
+                      ) : null}
+                    </td>
                     <td className="py-2.5 pr-3">{visit.place || '—'}</td>
                     <td className="py-2.5 pr-3 text-msmuted max-w-[260px] truncate" title={visit.detail}>
                       {visit.detail || (visit.file ? `${visit.file.name} · ${formatFileSize(visit.file.size)}` : '—')}

@@ -5,13 +5,21 @@ import { TEMPLATE_EXAMPLE, TEMPLATE_HEADERS } from './visits-import';
 export const TEMPLATE_INSTRUCTIONS = [
   'One row per visit. Keep the header row exactly as it is.',
   'Date: day-month-year, for example 28-09-2026.',
+  'Time: for example 10:30 AM, 2 PM, 14:30, or a range such as 10 AM - 12:30 PM. Leave it empty if not known.',
   'Purpose / Title is required. If it is empty, the Place is used ("Visit to Vinukonda").',
   'Delete the example row before uploading. It is skipped anyway.',
   'Upload this file in Admin > Visits > "Upload all visits (one file)". You may also save it as PDF and upload the PDF.',
   'Rows already on the site are skipped, so you can keep adding rows to the same file and upload it again.',
 ];
 
-const EXAMPLE_CELLS = ['1', TEMPLATE_EXAMPLE.date, TEMPLATE_EXAMPLE.place, TEMPLATE_EXAMPLE.title, TEMPLATE_EXAMPLE.detail];
+const EXAMPLE_CELLS = [
+  '1',
+  TEMPLATE_EXAMPLE.date,
+  TEMPLATE_EXAMPLE.time,
+  TEMPLATE_EXAMPLE.place,
+  TEMPLATE_EXAMPLE.title,
+  TEMPLATE_EXAMPLE.detail,
+];
 
 export async function excelTemplate(): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
@@ -20,9 +28,10 @@ export async function excelTemplate(): Promise<Buffer> {
   sheet.columns = [
     { header: TEMPLATE_HEADERS[0], key: 'sno', width: 7 },
     { header: TEMPLATE_HEADERS[1], key: 'date', width: 18, style: { numFmt: 'dd-mm-yyyy' } },
-    { header: TEMPLATE_HEADERS[2], key: 'place', width: 22 },
-    { header: TEMPLATE_HEADERS[3], key: 'title', width: 42 },
-    { header: TEMPLATE_HEADERS[4], key: 'detail', width: 60 },
+    { header: TEMPLATE_HEADERS[2], key: 'time', width: 16, style: { numFmt: 'h:mm AM/PM' } },
+    { header: TEMPLATE_HEADERS[3], key: 'place', width: 22 },
+    { header: TEMPLATE_HEADERS[4], key: 'title', width: 42 },
+    { header: TEMPLATE_HEADERS[5], key: 'detail', width: 60 },
   ];
   const header = sheet.getRow(1);
   header.font = { bold: true, color: { argb: 'FF1F2937' } };
@@ -33,6 +42,7 @@ export async function excelTemplate(): Promise<Buffer> {
   const example = sheet.addRow({
     sno: 1,
     date: new Date(Date.UTC(year, month - 1, day)),
+    time: new Date(Date.UTC(1899, 11, 30, 10, 30)),
     place: TEMPLATE_EXAMPLE.place,
     title: TEMPLATE_EXAMPLE.title,
     detail: TEMPLATE_EXAMPLE.detail,
@@ -61,7 +71,7 @@ function paragraph(text: string, props = ''): string {
   return `<w:p><w:pPr><w:spacing w:after="80"/></w:pPr>${run(text, props)}</w:p>`;
 }
 
-const WIDTHS = [800, 2000, 2600, 4300, 5100];
+const WIDTHS = [700, 1800, 1500, 2300, 3900, 4800];
 
 function row(cells: string[], kind: 'header' | 'example' | 'empty'): string {
   const rowProps = kind === 'header' ? '<w:trPr><w:tblHeader/><w:trHeight w:val="420"/></w:trPr>' : '<w:trPr><w:trHeight w:val="420"/></w:trPr>';
@@ -86,7 +96,7 @@ export async function wordTemplate(): Promise<Buffer> {
     '</w:tblGrid>',
     row(TEMPLATE_HEADERS, 'header'),
     row(EXAMPLE_CELLS, 'example'),
-    ...Array.from({ length: 15 }, (_, index) => row([String(index + 2), '', '', '', ''], 'empty')),
+    ...Array.from({ length: 15 }, (_, index) => row([String(index + 2), '', '', '', '', ''], 'empty')),
     '</w:tbl>',
   ].join('');
 

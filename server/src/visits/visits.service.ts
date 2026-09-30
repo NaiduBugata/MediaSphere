@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { DatabaseService } from '../database/database.service';
-import { readVisitRows, type ImportedVisitRow, type RejectedRow } from './visits-import';
+import { parseVisitTime, readVisitRows, type ImportedVisitRow, type RejectedRow } from './visits-import';
 
 /** Shared with the WhatsApp chatbot, which lists the same records under "Visits". */
 const RECORDS = 'jv_records';
@@ -31,6 +31,7 @@ export interface VisitInput {
   title: string;
   place?: string;
   visitDate?: string;
+  visitTime?: string;
   detail?: string;
 }
 
@@ -39,6 +40,8 @@ export interface Visit {
   title: string;
   place: string;
   visitDate: string;
+  /** "HH:MM" or "HH:MM-HH:MM" in 24-hour time; '' when not given. */
+  visitTime: string;
   detail: string;
   createdAt: string;
   file: { id: string; name: string; kind: VisitFileKind; size: number } | null;
@@ -96,6 +99,12 @@ function isoDay(value: string | undefined): string {
   return day;
 }
 
+function clock(value: string | undefined): string {
+  const time = parseVisitTime(typeof value === 'string' ? value : '');
+  if (time === null) throw new BadRequestException('Visit time must be a time like 10:30 AM or 14:30.');
+  return time;
+}
+
 @Injectable()
 export class VisitsService {
   private tableReady = false;
@@ -115,6 +124,7 @@ export class VisitsService {
     const title = text(input.title, 200);
     if (!title) throw new BadRequestException('Title is required.');
     const visitDate = isoDay(input.visitDate);
+    const visitTime = clock(input.visitTime);
     const detected = attached ? detectVisitFile(attached.originalname || '', attached.buffer) : null;
     await this.ready();
 
@@ -133,6 +143,7 @@ export class VisitsService {
       title,
       place: text(input.place, 120),
       visitDate,
+      visitTime,
       detail: text(input.detail, 2000),
       status: detected ? KIND_LABEL[detected.kind] : 'Manual',
       source: 'manual',
@@ -175,6 +186,7 @@ export class VisitsService {
         title: row.title,
         place: row.place,
         visitDate: row.visitDate,
+        visitTime: row.visitTime,
         detail: row.detail,
         status: 'From file',
         source: 'import',
@@ -239,7 +251,7 @@ function visitKey(row: Record<string, unknown> | ImportedVisitRow): string {
 }
 
 function sortKey(visit: Visit): string {
-  return `${visit.visitDate || visit.createdAt.slice(0, 10)}|${visit.createdAt}`;
+  return `${visit.visitDate || visit.createdAt.slice(0, 10)}|${visit.visitTime}|${visit.createdAt}`;
 }
 
 function toVisit(doc: Record<string, unknown>): Visit {
@@ -250,6 +262,7 @@ function toVisit(doc: Record<string, unknown>): Visit {
     title: String(doc.title || ''),
     place: String(doc.place || ''),
     visitDate: String(doc.visitDate || ''),
+    visitTime: String(doc.visitTime || ''),
     detail: String(doc.detail || ''),
     createdAt: String(doc.createdAt || ''),
     file: file.id

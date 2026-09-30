@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { CalendarDays, Download, Eye, MapPin } from 'lucide-react';
-import { formatFileSize, listVisits, visitFileUrl } from '../../services/visitsApi';
+import { CalendarDays, Clock, Download, Eye, MapPin } from 'lucide-react';
+import { formatFileSize, formatVisitTime, listVisits, visitFileUrl } from '../../services/visitsApi';
 import { formatDate } from '../../utils/format';
 import VisitKindBadge from './VisitKindBadge';
 
@@ -20,6 +20,12 @@ function VisitCard({ visit }) {
           <span className="inline-flex items-center gap-1">
             <CalendarDays className="h-3.5 w-3.5" aria-hidden />
             {formatDate(visit.visitDate || visit.createdAt)}
+          </span>
+        ) : null}
+        {visit.visitTime ? (
+          <span className="inline-flex items-center gap-1">
+            <Clock className="h-3.5 w-3.5" aria-hidden />
+            {formatVisitTime(visit.visitTime)}
           </span>
         ) : null}
         {visit.place ? (

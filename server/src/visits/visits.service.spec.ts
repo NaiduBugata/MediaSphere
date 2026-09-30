@@ -114,11 +114,35 @@ describe('VisitsService', () => {
 
   it('saves a typed-in visit without a file', async () => {
     const { db, docs, files } = fakeDb();
-    const visit = await new VisitsService(db).create({ title: 'Ward meeting', place: 'Narasaraopet', visitDate: '2026-09-25' }, undefined);
-    expect(visit).toMatchObject({ title: 'Ward meeting', place: 'Narasaraopet', visitDate: '2026-09-25', file: null, source: 'manual' });
-    expect(docs[0]).toMatchObject({ status: 'Manual', source: 'manual' });
+    const visit = await new VisitsService(db).create(
+      { title: 'Ward meeting', place: 'Narasaraopet', visitDate: '2026-09-25', visitTime: '14:30' },
+      undefined,
+    );
+    expect(visit).toMatchObject({
+      title: 'Ward meeting',
+      place: 'Narasaraopet',
+      visitDate: '2026-09-25',
+      visitTime: '14:30',
+      file: null,
+      source: 'manual',
+    });
+    expect(docs[0]).toMatchObject({ status: 'Manual', source: 'manual', visitTime: '14:30' });
     expect(docs[0]).not.toHaveProperty('file');
     expect(files.size).toBe(0);
+  });
+
+  it('orders visits on the same day by time, latest first', async () => {
+    const { db } = fakeDb();
+    const service = new VisitsService(db);
+    await service.create({ title: 'Morning', visitDate: '2026-09-25', visitTime: '9:00 AM' }, undefined);
+    await service.create({ title: 'Evening', visitDate: '2026-09-25', visitTime: '6 PM' }, undefined);
+    await service.create({ title: 'No time', visitDate: '2026-09-25' }, undefined);
+    const list = await service.list();
+    expect(list.map((visit) => [visit.title, visit.visitTime])).toEqual([
+      ['Evening', '18:00'],
+      ['Morning', '09:00'],
+      ['No time', ''],
+    ]);
   });
 
   it('imports every row of a visits file, skips rows already on the site, and reports unreadable rows', async () => {
@@ -128,11 +152,11 @@ describe('VisitsService', () => {
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Visits');
     sheet.addRows([
-      ['S.No', 'Date', 'Place', 'Purpose / Title', 'Details'],
-      [1, '28-09-2026', 'vinukonda', 'Hospital  visit', 'already typed in by hand'],
-      [2, '30-09-2026', 'Macherla', 'Road review', 'Bypass works'],
-      [3, '30-09-2026', 'Macherla', 'Road review', 'same row twice in the file'],
-      [4, 'soon', 'Gurazala', 'Farmers meet', ''],
+      ['S.No', 'Date', 'Time', 'Place', 'Purpose / Title', 'Details'],
+      [1, '28-09-2026', '', 'vinukonda', 'Hospital  visit', 'already typed in by hand'],
+      [2, '30-09-2026', '11:15 AM', 'Macherla', 'Road review', 'Bypass works'],
+      [3, '30-09-2026', '', 'Macherla', 'Road review', 'same row twice in the file'],
+      [4, 'soon', '', 'Gurazala', 'Farmers meet', ''],
     ]);
     const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
     const result = await service.importFile({ originalname: 'September visits.xlsx', size: buffer.length, buffer });
@@ -148,6 +172,7 @@ describe('VisitsService', () => {
       title: 'Road review',
       place: 'Macherla',
       visitDate: '2026-09-30',
+      visitTime: '11:15',
       detail: 'Bypass works',
       status: 'From file',
       source: 'import',
@@ -178,6 +203,7 @@ describe('VisitsService', () => {
     const pdf = { originalname: 'a.pdf', size: PDF.length, buffer: PDF };
     await expect(service.create({ title: '  ' }, pdf)).rejects.toThrow('Title is required');
     await expect(service.create({ title: 'x', visitDate: '28/09/2026' }, pdf)).rejects.toThrow('Visit date');
+    await expect(service.create({ title: 'x', visitTime: 'evening' }, pdf)).rejects.toThrow('Visit time');
     await expect(service.create({ title: 'x' }, { ...pdf, size: 50 * 1024 * 1024 })).rejects.toThrow('larger than');
     expect(files.size).toBe(0);
   });

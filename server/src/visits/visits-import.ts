@@ -4,13 +4,14 @@ import ExcelJS from 'exceljs';
 import JSZip from 'jszip';
 import type { VisitFileKind } from './visits.service';
 
-export type VisitField = 'date' | 'place' | 'title' | 'detail';
+export type VisitField = 'date' | 'time' | 'place' | 'title' | 'detail';
 
 export interface ImportedVisitRow {
   where: string;
   title: string;
   place: string;
   visitDate: string;
+  visitTime: string;
   detail: string;
 }
 
@@ -22,12 +23,13 @@ export interface RejectedRow {
 /** The template's example row; left in by mistake it must not become a visit. */
 export const TEMPLATE_EXAMPLE = {
   date: '28-09-2026',
+  time: '10:30 AM',
   place: 'Vinukonda',
   title: 'Visit to Government Hospital (example row, delete it)',
   detail: 'Reviewed the new ward and met the doctors and staff.',
 };
 
-export const TEMPLATE_HEADERS = ['S.No', 'Date (DD-MM-YYYY)', 'Place', 'Purpose / Title', 'Details'];
+export const TEMPLATE_HEADERS = ['S.No', 'Date (DD-MM-YYYY)', 'Time (10:30 AM)', 'Place', 'Purpose / Title', 'Details'];
 
 export const MAX_IMPORT_ROWS = 5000;
 
@@ -41,6 +43,7 @@ const SERIAL_HEADER = /^(s\.?\s*no\.?|sl\.?\s*no\.?|no\.?|#|serial( no\.?)?|sr\.
 /** Checked in this order, so "Visit date" is a date and "Place of visit" is a place. */
 const FIELD_WORDS: Array<[VisitField, string[]]> = [
   ['date', ['date', 'తేదీ', 'తేది']],
+  ['time', ['time', 'timing', 'సమయం']],
   ['detail', ['detail', 'description', 'remark', 'note', 'summary', 'outcome', 'వివరాలు', 'వివరణ', 'వ్యాఖ్య', 'గమనిక']],
   ['place', ['place', 'village', 'mandal', 'location', 'venue', 'area', 'town', 'ప్రదేశం', 'గ్రామం', 'మండలం', 'స్థలం', 'ప్రాంతం', 'ఊరు']],
   ['title', ['title', 'purpose', 'programme', 'program', 'event', 'subject', 'visit', 'activity', 'agenda', 'కార్యక్రమం', 'ఉద్దేశ్యం', 'ఉద్దేశం', 'విషయం', 'పర్యటన']],
@@ -60,8 +63,16 @@ function fieldOf(header: string): VisitField | 'serial' | null {
   return null;
 }
 
+/** A serial number, date, or time in a cell means the row holds data, whatever words the other cells use. */
+function looksLikeData(cell: string): boolean {
+  const text = clean(cell);
+  if (!text) return false;
+  return /^\d+$/.test(text) || Boolean(parseVisitDate(text)) || Boolean(parseVisitTime(text));
+}
+
 /** Column index per field, or null when this row is not a header. */
 export function headerColumns(cells: string[]): Partial<Record<VisitField, number>> | null {
+  if (cells.some(looksLikeData)) return null;
   const columns: Partial<Record<VisitField, number>> = {};
   cells.forEach((cell, index) => {
     if (cell.length > 60) return;
@@ -109,6 +120,84 @@ export function parseVisitDate(raw: string): string | null {
   return null;
 }
 
+const pad = (value: number) => String(value).padStart(2, '0');
+
+/** Telugu words for the part of the day stand in for AM/PM. */
+const DAY_PARTS: Array<[RegExp, 'am' | 'pm']> = [
+  [/ఉదయం|తెల్లవారు/, 'am'],
+  [/మధ్యాహ్నం|సాయంత్రం|రాత్రి/, 'pm'],
+];
+
+function halfOf(text: string): 'am' | 'pm' | '' {
+  const m = text.match(/([ap])\.?\s*m\.?$/);
+  return m ? (m[1] === 'a' ? 'am' : 'pm') : '';
+}
+
+function clockTime(text: string, fallbackHalf: 'am' | 'pm' | ''): string | null {
+  const m = text.match(/^(\d{1,2})(?:[:.](\d{2}))?(?::\d{2})?\s*(?:([ap])\.?\s*m\.?)?$/);
+  if (!m) return null;
+  let hour = Number(m[1]);
+  const minute = m[2] === undefined ? 0 : Number(m[2]);
+  const half = m[3] ? (m[3] === 'a' ? 'am' : 'pm') : fallbackHalf;
+  if (m[2] === undefined && !half) return null;
+  if (minute > 59) return null;
+  if (half) {
+    if (hour < 1 || hour > 12) return null;
+    hour = (hour % 12) + (half === 'pm' ? 12 : 0);
+  } else if (hour > 23) {
+    return null;
+  }
+  return `${pad(hour)}:${pad(minute)}`;
+}
+
+/**
+ * Returns "HH:MM" (24-hour), "HH:MM-HH:MM" for a range, '' for an empty cell, and null for text that is not a time.
+ * Accepts 10:30 AM, 10.30am, 2 PM, 14:30, ఉదయం 10:30, an Excel day fraction, and ranges like "10 AM - 12:30 PM".
+ */
+export function parseVisitTime(raw: string): string | null {
+  let text = clean(raw).toLowerCase().replace(/\s*(గంటలకు|గంటలు|గంటల|గం\.?|hrs|hours)\s*/g, ' ').replace(/\s*వరకు\s*/g, '').trim();
+  if (!text) return '';
+  if (/^0?\.\d+$/.test(text)) {
+    const minutes = Math.round(Number(text) * 1440) % 1440;
+    return `${pad(Math.floor(minutes / 60))}:${pad(minutes % 60)}`;
+  }
+  let dayPart: 'am' | 'pm' | '' = '';
+  for (const [word, half] of DAY_PARTS) {
+    if (word.test(text)) {
+      dayPart = half;
+      text = text.replace(word, ' ').trim();
+    }
+  }
+  const parts = text.split(/\s*(?:-|–|—|\bto\b|till|నుండి|నుంచి)\s*/).filter(Boolean);
+  if (parts.length === 0 || parts.length > 2) return null;
+  const endHalf = parts.length === 2 ? halfOf(parts[1]) || dayPart : dayPart;
+  const start = clockTime(parts[0], halfOf(parts[0]) || endHalf);
+  if (!start) return null;
+  if (parts.length === 1) return start;
+  const end = clockTime(parts[1], endHalf);
+  return end ? `${start}-${end}` : null;
+}
+
+/** "10:30" → "10:30 AM"; "10:00-12:30" → "10:00 AM – 12:30 PM". */
+export function formatVisitTime(value: string): string {
+  return (value || '')
+    .split('-')
+    .map((part) => {
+      const m = part.match(/^(\d{2}):(\d{2})$/);
+      if (!m) return '';
+      const hour = Number(m[1]);
+      return `${hour % 12 || 12}:${m[2]} ${hour < 12 ? 'AM' : 'PM'}`;
+    })
+    .filter(Boolean)
+    .join(' – ');
+}
+
+/** "28-09-2026 10:30 AM" or an Excel date-time in the Date column: the time part is split off. */
+function splitDateTime(raw: string): { date: string; time: string } | null {
+  const m = raw.match(/^(.*?\d)(?:[ ,]+|T)(\d{1,2}[:.]\d{2}(?::\d{2})?(?:\s*[ap]\.?\s*m\.?)?|\d{1,2}\s*[ap]\.?\s*m\.?)$/i);
+  return m ? { date: m[1], time: m[2] } : null;
+}
+
 function isExampleRow(row: ImportedVisitRow): boolean {
   return row.title === TEMPLATE_EXAMPLE.title && row.place === TEMPLATE_EXAMPLE.place;
 }
@@ -119,7 +208,9 @@ export function rowsFromGrids(grids: Grid[]): { rows: ImportedVisitRow[]; reject
   const rejected: RejectedRow[] = [];
   let columns: Partial<Record<VisitField, number>> | null = null;
   let width = 0;
+  let headerKey = '';
   let headerFound = false;
+  const rowKey = (cells: string[]) => cells.map((value) => clean(value).toLowerCase()).join('|');
 
   for (const grid of grids) {
     let start = 0;
@@ -127,6 +218,7 @@ export function rowsFromGrids(grids: Grid[]): { rows: ImportedVisitRow[]; reject
     if (headerAt >= 0) {
       columns = headerColumns(grid.rows[headerAt]);
       width = grid.rows[headerAt].length;
+      headerKey = rowKey(grid.rows[headerAt]);
       start = headerAt + 1;
       headerFound = true;
     } else if (!columns || Math.abs((grid.rows[0]?.length ?? 0) - width) > 1) {
@@ -139,16 +231,27 @@ export function rowsFromGrids(grids: Grid[]): { rows: ImportedVisitRow[]; reject
     for (let index = start; index < grid.rows.length; index++) {
       const cells = grid.rows[index];
       if (!cells.some((value) => clean(value))) continue;
-      if (headerColumns(cells)) continue;
+      if (rowKey(cells) === headerKey) continue;
       const where = grid.label(index);
-      const rawDate = cell(cells, 'date');
+      let rawDate = cell(cells, 'date');
+      let rawTime = cell(cells, 'time');
       const place = cell(cells, 'place').slice(0, 120);
       const detail = cell(cells, 'detail').slice(0, 2000);
       let title = cell(cells, 'title').replace(/\n/g, ' ').slice(0, 200);
-      if (!title && !place && !rawDate && !detail) continue;
+      if (!title && !place && !rawDate && !rawTime && !detail) continue;
+      const combined = splitDateTime(rawDate);
+      if (combined) {
+        rawDate = combined.date;
+        if (!rawTime) rawTime = combined.time;
+      }
       const visitDate = parseVisitDate(rawDate);
       if (visitDate === null) {
         rejected.push({ where, reason: `Date "${rawDate.slice(0, 40)}" is not a date like 28-09-2026.` });
+        continue;
+      }
+      const visitTime = parseVisitTime(rawTime);
+      if (visitTime === null) {
+        rejected.push({ where, reason: `Time "${rawTime.slice(0, 40)}" is not a time like 10:30 AM.` });
         continue;
       }
       if (!title && place) title = `Visit to ${place.replace(/\n/g, ' ')}`.slice(0, 200);
@@ -156,7 +259,7 @@ export function rowsFromGrids(grids: Grid[]): { rows: ImportedVisitRow[]; reject
         rejected.push({ where, reason: 'Purpose / Title and Place are both empty.' });
         continue;
       }
-      const row = { where, title, place: place.replace(/\n/g, ', '), visitDate, detail };
+      const row = { where, title, place: place.replace(/\n/g, ', '), visitDate, visitTime, detail };
       if (!isExampleRow(row)) rows.push(row);
       if (rows.length > MAX_IMPORT_ROWS) {
         throw new BadRequestException(`The file has more than ${MAX_IMPORT_ROWS} visits. Split it into smaller files.`);
@@ -168,7 +271,13 @@ export function rowsFromGrids(grids: Grid[]): { rows: ImportedVisitRow[]; reject
 
 function excelCellText(value: ExcelJS.CellValue): string {
   if (value == null) return '';
-  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  if (value instanceof Date) {
+    // Excel keeps a time-only cell as a date on 1899-12-30; a date cell may also carry a time of day.
+    const minutes = Math.round((((value.getTime() % 86400000) + 86400000) % 86400000) / 60000) % 1440;
+    const clock = `${pad(Math.floor(minutes / 60))}:${pad(minutes % 60)}`;
+    if (value.getUTCFullYear() < 1901) return clock;
+    return minutes ? `${value.toISOString().slice(0, 10)} ${clock}` : value.toISOString().slice(0, 10);
+  }
   if (typeof value === 'object') {
     if ('richText' in value) return value.richText.map((part) => part.text).join('');
     if ('result' in value) return excelCellText(value.result as ExcelJS.CellValue);

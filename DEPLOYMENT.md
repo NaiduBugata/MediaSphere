@@ -128,9 +128,10 @@ Send only those two sources through a residential or ISP proxy. Node 24 reads th
 
 Sign in at `/@admin` and choose **Visits**. The page offers two ways to add visits.
 
-**Upload all visits (one file).** One Excel (`.xlsx`), Word (`.docx`), or PDF file with a table of all visits, one row per visit. The page has **Download Excel template** and **Download Word template** buttons (`GET /api/visits/template/xlsx` and `/docx`) with the exact columns: `S.No`, `Date (DD-MM-YYYY)`, `Place`, `Purpose / Title`, `Details`.
-- Headers are matched by meaning, so `Date`/`తేదీ`, `Place`/`Village`/`ప్రదేశం`, `Purpose`/`Subject`/`Title`/`విషయం`, and `Details`/`Description`/`Remarks`/`వివరాలు` all work.
+**Upload all visits (one file).** One Excel (`.xlsx`), Word (`.docx`), or PDF file with a table of all visits, one row per visit. The page has **Download Excel template** and **Download Word template** buttons (`GET /api/visits/template/xlsx` and `/docx`) with the exact columns: `S.No`, `Date (DD-MM-YYYY)`, `Time (10:30 AM)`, `Place`, `Purpose / Title`, `Details`.
+- Headers are matched by meaning, so `Date`/`తేదీ`, `Time`/`సమయం`, `Place`/`Village`/`ప్రదేశం`, `Purpose`/`Subject`/`Title`/`విషయం`, and `Details`/`Description`/`Remarks`/`వివరాలు` all work.
 - Dates are read day first, as in 28-09-2026, 28/09/2026, or 28 Sep 2026.
+- Time is optional. It accepts 10:30 AM, 2 PM, 14:30, ఉదయం 10:30, Excel time cells, and ranges such as 10 AM - 12:30 PM. A date and time in the Date cell (28-09-2026 10:30 AM) also works.
 - A row with no title uses "Visit to <place>".
 - Uploads add to the existing visits. A row with the same date, place, and title as a visit already on the site, or as another row in the file, is skipped, so the same file can be uploaded again after adding rows.
 - Rows that cannot be read, such as a bad date, are listed with their row number and are not saved.
@@ -138,7 +139,7 @@ Sign in at `/@admin` and choose **Visits**. The page offers two ways to add visi
 - PDF reading works on table PDFs exported from Word or Excel. Scanned PDFs have no text and are refused. Excel and Word are the most reliable.
 - Imported visits have no attached file.
 
-**Add a single visit.** A title, optional date, place, and details, and an optional PDF, Word (`.doc`, `.docx`), or Excel (`.xls`, `.xlsx`) attachment. The API checks the file contents as well as the extension, so a renamed image is refused.
+**Add a single visit.** A title, optional date, time, place, and details, and an optional PDF, Word (`.doc`, `.docx`), or Excel (`.xls`, `.xlsx`) attachment. The API checks the file contents as well as the extension, so a renamed image is refused.
 
 Attachments are stored in Neon in the `mediasphere.visit_files` table, which the API creates on first use. Each visit is a `jv_records` row with section `visits`. Visits appear on the news page below the news and in the WhatsApp assistant's **Visits** button. When a visit has an attachment, a PDF opens in the browser and Word or Excel files download. Deleting a visit in the admin page removes the row and its file.
 

@@ -18,11 +18,12 @@ export async function listVisits() {
   return data?.visits || [];
 }
 
-export async function uploadVisit({ title, place, visitDate, detail, file }, onProgress) {
+export async function uploadVisit({ title, place, visitDate, visitTime, detail, file }, onProgress) {
   const form = new FormData();
   form.append('title', title);
   if (place) form.append('place', place);
   if (visitDate) form.append('visitDate', visitDate);
+  if (visitTime) form.append('visitTime', visitTime);
   if (detail) form.append('detail', detail);
   if (file) form.append('file', file);
   const { data } = await api.post('/admin/visits', form, multipartConfig(onProgress));
@@ -59,6 +60,20 @@ export async function deleteVisit(id) {
 export function visitFileUrl(fileId, download = false) {
   const url = `${newsApiBase()}/visits/files/${encodeURIComponent(fileId)}`;
   return download ? `${url}?download=1` : url;
+}
+
+/** Stored as "HH:MM" or "HH:MM-HH:MM" (24-hour); shown as "10:30 AM" or "10:00 AM – 12:30 PM". */
+export function formatVisitTime(value) {
+  return String(value || '')
+    .split('-')
+    .map((part) => {
+      const m = part.match(/^(\d{2}):(\d{2})$/);
+      if (!m) return '';
+      const hour = Number(m[1]);
+      return `${hour % 12 || 12}:${m[2]} ${hour < 12 ? 'AM' : 'PM'}`;
+    })
+    .filter(Boolean)
+    .join(' – ');
 }
 
 export function formatFileSize(bytes) {

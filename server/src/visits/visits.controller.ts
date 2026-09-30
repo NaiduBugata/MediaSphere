@@ -42,6 +42,11 @@ export class CreateVisitDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(40)
+  visitTime?: string;
+
+  @IsOptional()
+  @IsString()
   @MaxLength(2000)
   detail?: string;
 }
