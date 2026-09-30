@@ -15,6 +15,7 @@ import {
   type ReportStats,
 } from './report-stats';
 import { notifyDailyWhatsApp } from '../whatsapp/whatsapp.notify';
+import { parseRecipients, sendReportEmail, type EmailSendResult } from './report-email';
 
 export interface ReportRunResult {
   status: string;
@@ -58,7 +59,7 @@ export class ReportsService {
     return this.reports.getById(reportId);
   }
 
-  /** Build and record a report, then send the summary on WhatsApp. Reports are never emailed. */
+  /** Build and record a report, email it with the PDF, and post the summary on WhatsApp when alerts are on there. */
   async generateAndSend(target: string | null, options: GenerateOptions = {}): Promise<ReportRunResult> {
     const day = target || previousReportDay(options.now || new Date());
     if (!options.force && (await this.reports.alreadySent(day))) {
@@ -67,26 +68,49 @@ export class ReportsService {
     }
     try {
       const built = await this.build(day, options);
-      const recipients: string[] = [];
+      const fetchImpl = options.fetchImpl || fetch;
+      const recipients = options.recipients?.length
+        ? options.recipients
+        : parseRecipients(process.env.REPORT_RECIPIENTS || '').valid;
       await this.reports.recordGeneration(day, built.stats, recipients, built.pdfPath);
+      const email = await this.emailReport(built, options.recipients, fetchImpl);
       const whatsapp = await notifyDailyWhatsApp(
         { total: built.stats.total, positive: built.stats.positive, negative: built.stats.negative, problems: built.stats.problems },
         day,
-        options.fetchImpl || fetch,
+        fetchImpl,
       );
-      const notifications = { results: [{ channel: 'whatsapp', ...whatsapp }] };
-      if (whatsapp.success && !whatsapp.skipped) {
-        await this.reports.recordSent(day, whatsapp.attempts);
-        return this.outcome('sent', day, built, recipients, whatsapp.attempts, null, notifications);
+      const notifications = { results: [{ ...email }, { channel: 'whatsapp', ...whatsapp }] };
+      const delivered = [email, whatsapp].filter((result) => result.success && !result.skipped);
+      if (delivered.length) {
+        const attempts = delivered[0].attempts;
+        await this.reports.recordSent(day, attempts);
+        return this.outcome('sent', day, built, recipients, attempts, null, notifications);
       }
-      const error = whatsapp.skipped ? `whatsapp_skipped: ${whatsapp.skip_reason || 'unknown'}` : whatsapp.error || 'unknown';
-      await this.reports.recordFailed(day, whatsapp.attempts, error);
-      return this.outcome('failed', day, built, recipients, whatsapp.attempts, error, notifications);
+      const problem = (channel: string, result: { skipped: boolean; skip_reason?: string; error: string | null }) =>
+        result.skipped ? `${channel}_skipped: ${result.skip_reason || 'unknown'}` : `${channel}_failed: ${result.error || 'unknown'}`;
+      const error = `${problem('email', email)}; ${problem('whatsapp', whatsapp)}`;
+      const attempts = Math.max(email.attempts, whatsapp.attempts);
+      await this.reports.recordFailed(day, attempts, error);
+      return this.outcome('failed', day, built, recipients, attempts, error, notifications);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.logger.error(`Report build failed for ${day}: ${message}`);
       await this.reports.recordFailed(day, 0, `build_failed: ${message}`);
       return { status: 'error', reason: 'build_failed', error: message, report_date: day };
+    }
+  }
+
+  private async emailReport(
+    built: { html: string; pdfPath: string; subject: string },
+    recipients: string[] | undefined,
+    fetchImpl: typeof fetch,
+  ): Promise<EmailSendResult> {
+    try {
+      return await sendReportEmail(built.subject, built.html, built.pdfPath, recipients, fetchImpl);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Report email failed: ${message}`);
+      return { channel: 'email', success: false, skipped: false, error: message, attempts: 0 };
     }
   }
 

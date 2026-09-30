@@ -143,8 +143,13 @@ describe('CombinedPipelineService', () => {
     expect(again.stats.inserted).toBeGreaterThanOrEqual(1);
   });
 
-  it('emails only when a cycle fails, once per problem, and never emails news', async () => {
+  it('emails new articles every cycle and failures once per problem, with no WhatsApp alert', async () => {
     process.env.GROQ_API_KEY = 'test-key';
+    process.env.WHATSAPP_ENABLED = 'true';
+    process.env.WHATSAPP_ACCESS_TOKEN = 'test-token';
+    process.env.WHATSAPP_PHONE_NUMBER_ID = '987654321';
+    process.env.WHATSAPP_RECIPIENTS = '919876543210';
+    delete process.env.WHATSAPP_ALERTS_ENABLED;
     process.env.EMAIL_ENABLED = 'true';
     process.env.EMAIL_PROVIDER = 'resend';
     process.env.RESEND_API_KEY = 'test';
@@ -164,7 +169,8 @@ describe('CombinedPipelineService', () => {
       }),
     };
     const service = new CombinedPipelineService(db as unknown as DatabaseService);
-    const emails: Array<{ subject: string }> = [];
+    const emails: Array<{ subject: string; html: string }> = [];
+    let whatsappCalls = 0;
     const fetchImpl = (async (url: string, init?: RequestInit) => {
       const target = String(url);
       if (target.includes('getlokalapp.com')) {
@@ -175,33 +181,50 @@ describe('CombinedPipelineService', () => {
         });
       }
       if (target.includes('sakshi.com')) return jsonResponse({}, 403);
+      if (target.includes('graph.facebook.com')) {
+        whatsappCalls += 1;
+        return jsonResponse({ messages: [{ id: 'wamid.x' }] });
+      }
       if (target.includes('api.resend.com')) {
         emails.push(JSON.parse(String(init?.body)));
         return jsonResponse({ id: 'mail' });
       }
       return jsonResponse({
-        choices: [{ message: { content: '{"sentiment":"Problem","category":"roads","problem":"potholes","summary":"s","location":{"district":"Palnadu"},"people":[],"entities":[],"keywords":[]}' } }],
+        choices: [{ message: { content: '{"sentiment":"Problem","category":"roads","problem":"potholes","severity":"high","summary":"s","location":{"district":"Palnadu"},"people":[],"entities":[],"keywords":[]}' } }],
       });
     }) as typeof fetch;
+    const failures = () => emails.filter((mail) => mail.subject.startsWith('MediaSphere pipeline FAILED'));
+    const news = () => emails.filter((mail) => /^MediaSphere: 1 new article, 1 critical \|/.test(mail.subject));
 
     const failed = await service.runCombinedOnce({ fetchImpl });
     expect(failed.exitCode).not.toBe(0);
     expect(failed.stats.inserted).toBe(1);
-    expect(emails).toHaveLength(1);
-    expect(emails[0].subject).toMatch(/^MediaSphere pipeline FAILED/);
+    expect(failures()).toHaveLength(1);
+    expect(news()).toHaveLength(1);
+    expect(news()[0].html).toContain('CRITICAL ISSUE: Narasaraopet road 101');
+    expect(news()[0].html).toContain('<strong>Location:</strong> Palnadu');
 
     await service.runCombinedOnce({ fetchImpl });
-    expect(emails).toHaveLength(1);
+    expect(failures()).toHaveLength(1);
+    expect(news()).toHaveLength(2);
 
     process.env.SAKSHI_ENABLED = 'false';
     const ok = await service.runCombinedOnce({ fetchImpl });
     expect(ok.exitCode).toBe(0);
     expect(ok.stats.inserted).toBe(1);
-    expect(emails).toHaveLength(1);
+    expect(failures()).toHaveLength(1);
+    expect(news()).toHaveLength(3);
 
     process.env.SAKSHI_ENABLED = 'true';
     await service.runCombinedOnce({ fetchImpl });
-    expect(emails).toHaveLength(2);
+    expect(failures()).toHaveLength(2);
+    expect(news()).toHaveLength(4);
+    expect(emails).toHaveLength(6);
+    expect(whatsappCalls).toBe(0);
+
+    process.env.NEWS_EMAIL_ENABLED = 'false';
+    await service.runCombinedOnce({ fetchImpl });
+    expect(news()).toHaveLength(4);
   });
 
   it('second upsert of the same post_id is a duplicate', async () => {

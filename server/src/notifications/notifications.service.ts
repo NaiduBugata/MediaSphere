@@ -4,6 +4,7 @@ import { ArticleRepository } from '../database/repositories/article.repository';
 import { NotificationStatusRepository } from '../database/repositories/notification-status.repository';
 import { DailyReportRepository } from '../database/repositories/daily-report.repository';
 import { truthy } from '../common/utils/truthy';
+import { whatsappAlertsEnabled } from '../whatsapp/whatsapp.send';
 
 @Injectable()
 export class NotificationsService {
@@ -59,11 +60,11 @@ export class NotificationsService {
   async buildStatusSnapshot() {
     const emailCfg = this.emailConfigured();
     const waCfg = this.whatsappConfigured();
-    // News is never emailed, so no article waits for email.
+    // New articles are emailed once per pipeline cycle, so none waits for email.
     const emailPending = 0;
     let waPending = 0;
     try {
-      waPending = await this.articles.countWhatsappPending();
+      if (whatsappAlertsEnabled()) waPending = await this.articles.countWhatsappPending();
     } catch {
       waPending = 0;
     }

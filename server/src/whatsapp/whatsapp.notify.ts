@@ -8,7 +8,7 @@ import {
   summaryText,
   summaryVariables,
 } from './whatsapp.messages';
-import { deliverWhatsApp, whatsappReady, type WaSendResult } from './whatsapp.send';
+import { deliverWhatsApp, whatsappAlertsEnabled, whatsappReady, type WaSendResult } from './whatsapp.send';
 
 export interface WhatsAppNotice extends WaSendResult {
   notification_type: string;
@@ -173,6 +173,9 @@ export async function notifyCustomWhatsApp(text: string, fetchImpl: typeof fetch
 export async function notifyPendingWhatsApp(deps: PendingDeps): Promise<WhatsAppNotice & { sent: number; failed: number }> {
   if (!whatsappReady()) {
     return { ...notice('article_alert', { success: true, skipped: true, skip_reason: 'whatsapp_disabled_or_misconfigured', error: null, messageId: null, attempts: 0 }), sent: 0, failed: 0 };
+  }
+  if (!whatsappAlertsEnabled()) {
+    return { ...notice('article_alert', { success: true, skipped: true, skip_reason: 'whatsapp_alerts_off_email_only', error: null, messageId: null, attempts: 0 }), sent: 0, failed: 0 };
   }
   const docs = await deps.findPending();
   if (!docs.length) {

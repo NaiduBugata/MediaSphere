@@ -37,6 +37,14 @@ export function whatsappReady(env: NodeJS.ProcessEnv = process.env): boolean {
     && Boolean((env.WHATSAPP_RECIPIENTS || '').trim());
 }
 
+/**
+ * Automatic alerts (news, failures, summaries, health, startup). Off unless WHATSAPP_ALERTS_ENABLED=true:
+ * those go by email. The WhatsApp menu bot replies through sendReplyButtons/sendTextMessage and is not affected.
+ */
+export function whatsappAlertsEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return whatsappReady(env) && ['1', 'true', 'yes', 'on'].includes((env.WHATSAPP_ALERTS_ENABLED || '').trim().toLowerCase());
+}
+
 function graphUrl(env: NodeJS.ProcessEnv): string {
   const version = (env.META_API_VERSION || env.WHATSAPP_GRAPH_API_VERSION || 'v25.0').trim() || 'v25.0';
   const phoneId = (env.WHATSAPP_PHONE_NUMBER_ID || '').trim();
@@ -261,6 +269,11 @@ export async function deliverWhatsApp(
   if (!whatsappReady(env)) {
     const skipped: WaSendResult = { success: true, skipped: true, skip_reason: 'whatsapp_disabled_or_misconfigured', error: null, messageId: null, attempts: 0 };
     await rememberStatus(skipped, input.notificationType, false);
+    return skipped;
+  }
+  if (!whatsappAlertsEnabled(env)) {
+    const skipped: WaSendResult = { success: true, skipped: true, skip_reason: 'whatsapp_alerts_off_email_only', error: null, messageId: null, attempts: 0 };
+    await rememberStatus(skipped, input.notificationType, true);
     return skipped;
   }
   const targets = recipients(env);

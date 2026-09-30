@@ -119,8 +119,36 @@ describe('WhatsApp sending', () => {
     expect(result.skip_reason).toBe('whatsapp_disabled_or_misconfigured');
   });
 
+  it('sends no automatic alert on WhatsApp unless WHATSAPP_ALERTS_ENABLED is set, while menu replies still go out', async () => {
+    process.env.WHATSAPP_ENABLED = 'true';
+    process.env.WHATSAPP_ACCESS_TOKEN = 'test-token';
+    process.env.WHATSAPP_PHONE_NUMBER_ID = '987654321';
+    process.env.WHATSAPP_RECIPIENTS = '919876543210';
+    delete process.env.WHATSAPP_ALERTS_ENABLED;
+    const calls: Array<Record<string, unknown>> = [];
+    const fetchImpl = (async (_url: string, init?: RequestInit) => {
+      calls.push(JSON.parse(String(init?.body)));
+      return jsonResponse({ messages: [{ id: 'wamid.menu' }] });
+    }) as typeof fetch;
+
+    const alert = await deliverWhatsApp({ text: 'PIPELINE FAILURE' }, fetchImpl);
+    expect(alert).toMatchObject({ skipped: true, skip_reason: 'whatsapp_alerts_off_email_only' });
+    expect(await notifyFailureWhatsApp('combined_pipeline', 'down', 'N/A', fetchImpl)).toMatchObject({ skipped: true });
+    const pending = await notifyPendingWhatsApp({
+      fetchImpl,
+      findPending: async () => { throw new Error('should not look up pending articles'); },
+      markSent: async () => { throw new Error('should not mark'); },
+    });
+    expect(pending).toMatchObject({ skipped: true, skip_reason: 'whatsapp_alerts_off_email_only', sent: 0 });
+    expect(calls).toHaveLength(0);
+
+    await sendReplyButtons('919876543210', 'Tap a section', [{ id: 'news', title: 'News' }], fetchImpl);
+    expect(calls.map((call) => call.type)).toEqual(['interactive']);
+  });
+
   it('posts a template and falls back to text when Meta rejects the template', async () => {
     process.env.WHATSAPP_ENABLED = 'true';
+    process.env.WHATSAPP_ALERTS_ENABLED = 'true';
     process.env.WHATSAPP_ACCESS_TOKEN = 'test-token';
     process.env.WHATSAPP_PHONE_NUMBER_ID = '987654321';
     process.env.WHATSAPP_RECIPIENTS = '919876543210';
@@ -178,6 +206,7 @@ describe('WhatsApp sending', () => {
 
 function readyEnv(): void {
   process.env.WHATSAPP_ENABLED = 'true';
+  process.env.WHATSAPP_ALERTS_ENABLED = 'true';
   process.env.WHATSAPP_ACCESS_TOKEN = 'test-token';
   process.env.WHATSAPP_PHONE_NUMBER_ID = '987654321';
   process.env.WHATSAPP_RECIPIENTS = '919876543210';

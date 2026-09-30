@@ -78,30 +78,41 @@ describe('daily reports', () => {
     expect(read).toBe(false);
   });
 
-  it('never emails the daily report, even with email configured', async () => {
+  it('emails the daily report with its PDF and posts nothing on WhatsApp while WhatsApp alerts are off', async () => {
     process.env.EMAIL_ENABLED = 'true';
     process.env.EMAIL_PROVIDER = 'resend';
     process.env.RESEND_API_KEY = 'test';
     process.env.SMTP_FROM_EMAIL = 'from@example.com';
     process.env.REPORT_RECIPIENTS = 'desk@example.com';
+    process.env.WHATSAPP_ENABLED = 'true';
+    process.env.WHATSAPP_ACCESS_TOKEN = 'test-token';
+    process.env.WHATSAPP_PHONE_NUMBER_ID = '987654321';
+    process.env.WHATSAPP_RECIPIENTS = '919876543210';
+    delete process.env.WHATSAPP_ALERTS_ENABLED;
+    const sent: number[] = [];
     const repo = {
       alreadySent: async () => false,
       recordGeneration: async () => null,
-      recordFailed: async () => null,
-      recordSent: async () => null,
+      recordFailed: async () => { throw new Error('should not fail'); },
+      recordSent: async (_day: string, attempts: number) => { sent.push(attempts); return null; },
     };
     const service = new ReportsService(repo as unknown as DailyReportRepository, { findAll: async () => [] } as unknown as ArticleRepository);
-    const calls: string[] = [];
-    const fetchImpl = (async (url: string) => {
-      calls.push(String(url));
-      throw new Error('network');
+    const calls: Array<{ url: string; body: Record<string, unknown> }> = [];
+    const fetchImpl = (async (url: string, init?: RequestInit) => {
+      calls.push({ url: String(url), body: JSON.parse(String(init?.body || '{}')) });
+      return { ok: true, status: 200, json: async () => ({ id: 'mail' }), text: async () => '{}' } as Response;
     }) as typeof fetch;
     const result = await service.generateAndSend('2026-09-25', { articles: [], fetchImpl });
-    expect(calls.some((url) => url.includes('resend.com'))).toBe(false);
-    expect(result.notifications?.results.map((row) => row.channel)).toEqual(['whatsapp']);
+    expect(result.status).toBe('sent');
+    expect(result.recipients).toEqual(['desk@example.com']);
+    expect(calls.map((call) => call.url)).toEqual(['https://api.resend.com/emails']);
+    expect(calls[0].body.subject).toBe('MediaSphere Daily Constituency Report - 25 September 2026');
+    expect((calls[0].body.attachments as Array<{ filename: string }>)[0].filename).toBe('Daily_Report_2026_09_25.pdf');
+    expect(result.notifications?.results.map((row) => row.channel)).toEqual(['email', 'whatsapp']);
+    expect(sent).toEqual([1]);
   });
 
-  it('builds a report without Mongo when WhatsApp is disabled', async () => {
+  it('builds a report without Mongo when email and WhatsApp are disabled', async () => {
     const stored: Array<Record<string, unknown>> = [];
     const repo = {
       alreadySent: async () => false,
@@ -130,7 +141,7 @@ describe('daily reports', () => {
     }) as typeof fetch;
     const result = await service.generateAndSend('2026-09-25', { articles: [article], fetchImpl });
     expect(result.status).toBe('failed');
-    expect(result.error).toBe('whatsapp_skipped: whatsapp_disabled_or_misconfigured');
+    expect(result.error).toBe('email_skipped: email_disabled; whatsapp_skipped: whatsapp_disabled_or_misconfigured');
     expect(result.articles_included).toBe(1);
     expect(result.subject).toBe('MediaSphere Daily Constituency Report - 25 September 2026');
     expect(String(result.pdf_path)).toContain('Daily_Report_2026_09_25.pdf');

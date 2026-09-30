@@ -32,7 +32,6 @@ export function failureEmailContent(reason: string, errors: readonly string[], a
   };
 }
 
-/** The only email this service sends. News itself is never emailed. */
 export async function sendPipelineFailureEmail(input: PipelineFailureEmail): Promise<EmailSendResult> {
   const { subject, html } = failureEmailContent(input.reason, input.errors, input.at || new Date());
   return sendReportEmail(subject, html, null, undefined, input.fetchImpl || fetch);
