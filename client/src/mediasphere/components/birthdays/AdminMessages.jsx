@@ -128,6 +128,20 @@ function templateKey(template) {
   return `${template.name}|${template.language}`;
 }
 
+/** Once the new sign-off is approved, the previous birthday templates stay hidden. */
+const REPLACED_TEMPLATES = {
+  bday_wishes_en: 'bday_wishes_en_mee',
+  bday_wishes: 'bday_wishes_mee',
+};
+
+function birthdayTemplates(list) {
+  const names = new Set(list.map((template) => template.name));
+  return list.filter((template) => {
+    const newer = REPLACED_TEMPLATES[template.name];
+    return !newer || !names.has(newer);
+  });
+}
+
 export default function AdminMessages({ onUnauthorized }) {
   const [contacts, setContacts] = useState([]);
   const [selected, setSelected] = useState(() => new Set());
@@ -173,9 +187,9 @@ export default function AdminMessages({ onUnauthorized }) {
         if (text) setLoadError(text);
       }
       try {
-        const list = await listMessageTemplates();
+        const list = birthdayTemplates(await listMessageTemplates());
         setTemplates(list);
-        const preferred = list.find((t) => t.name === 'bday_wishes_en') || list[0];
+        const preferred = list.find((t) => t.name === 'bday_wishes_en_mee') || list.find((t) => t.name === 'bday_wishes_mee') || list[0];
         if (preferred) setChosenKey(templateKey(preferred));
       } catch (err) {
         const text = handleError(err, 'Could not load templates');
