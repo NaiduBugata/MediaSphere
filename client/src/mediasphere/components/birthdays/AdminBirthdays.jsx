@@ -161,7 +161,7 @@ export default function AdminBirthdays({ onUnauthorized }) {
         <ul className="list-disc space-y-1 pl-5 text-sm text-msmuted">
           <li>
             On each contact&apos;s birthday a WhatsApp wish goes out from {info.hour}:00 India time, addressed by name and signed
-            by Lavu Sri Krishna Devarayulu, Member of Parliament, Narasaraopet.
+            Mee Lavu Sri Krishna Devarayulu (Telugu: మీ లావు శ్రీకృష్ణ దేవరాయలు).
           </li>
           <li>
             Automatic sending is{' '}

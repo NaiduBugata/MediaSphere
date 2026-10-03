@@ -1,7 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { truthy } from '../common/utils/truthy';
 import { calendarDay, zoneParts } from '../reports/report-stats';
-import { normalizePhone, sendTemplateMessage } from '../whatsapp/whatsapp.send';
+import { normalizePhone, sendTemplateMessage, WhatsAppSendError } from '../whatsapp/whatsapp.send';
 
 export const BIRTHDAY_TIMEZONE = 'Asia/Kolkata';
 /** A failed wish is retried on later checks the same day, up to this many tries. */
@@ -134,10 +134,14 @@ export function isDue(contact: BirthdayContact, isoDay: string): boolean {
   return wish.status !== 'sent' && wish.tries < MAX_TRIES_PER_DAY;
 }
 
-/** Approved Meta templates; both take one named parameter, {{name}}, and end with the MP's sign-off. */
+/** Both take one named parameter, {{name}}, and end with "Mee Lavu Sri Krishna Devarayulu". */
+const WISH_TEMPLATE: Record<WishLanguage, string> = { en: 'bday_wishes_en_mee', te: 'bday_wishes_mee' };
+/** Previous approved wording, used only while the new template is still in Meta review. */
+const WISH_TEMPLATE_FALLBACK: Record<WishLanguage, string> = { en: 'bday_wishes_en', te: 'bday_wishes' };
+
 export function wishTemplate(language: WishLanguage, env: NodeJS.ProcessEnv = process.env): { name: string; language: string } {
-  if (language === 'te') return { name: (env.BIRTHDAY_TEMPLATE_TE || 'bday_wishes').trim(), language: 'te' };
-  return { name: (env.BIRTHDAY_TEMPLATE_EN || 'bday_wishes_en').trim(), language: 'en' };
+  const override = language === 'te' ? env.BIRTHDAY_TEMPLATE_TE : env.BIRTHDAY_TEMPLATE_EN;
+  return { name: (override || WISH_TEMPLATE[language]).trim(), language };
 }
 
 export async function sendBirthdayWish(
@@ -146,8 +150,31 @@ export async function sendBirthdayWish(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<{ messageId: string | null }> {
   const template = wishTemplate(contact.language, env);
-  const data = await sendTemplateMessage(contact.phone, template.name, {
-    language: template.language,
+  try {
+    return await deliverWish(contact, template.name, template.language, fetchImpl, env);
+  } catch (err) {
+    const fallback = WISH_TEMPLATE_FALLBACK[contact.language];
+    if (template.name === fallback || !templateStillInReview(err)) throw err;
+    return deliverWish(contact, fallback, template.language, fetchImpl, env);
+  }
+}
+
+function templateStillInReview(err: unknown): boolean {
+  if (!(err instanceof WhatsAppSendError)) return false;
+  if (err.metaErrorCode != null && [132000, 132001, 132015, 132016].includes(err.metaErrorCode)) return true;
+  const text = err.message.toLowerCase();
+  return text.includes('not approved') || text.includes('pending') || text.includes('does not exist');
+}
+
+async function deliverWish(
+  contact: Pick<BirthdayContact, 'name' | 'phone'>,
+  templateName: string,
+  language: string,
+  fetchImpl: typeof fetch,
+  env: NodeJS.ProcessEnv,
+): Promise<{ messageId: string | null }> {
+  const data = await sendTemplateMessage(contact.phone, templateName, {
+    language,
     namedParameters: { name: contact.name },
     fetchImpl,
     env,

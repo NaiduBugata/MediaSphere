@@ -109,12 +109,29 @@ describe('birthday rules', () => {
       to: '918885230708',
       type: 'template',
       template: {
-        name: 'bday_wishes_en',
+        name: 'bday_wishes_en_mee',
         language: { code: 'en' },
         components: [{ type: 'body', parameters: [{ type: 'text', parameter_name: 'name', text: 'Udatha Sravani' }] }],
       },
     });
-    expect(calls[1]).toMatchObject({ template: { name: 'bday_wishes', language: { code: 'te' } } });
+    expect(calls[1]).toMatchObject({ template: { name: 'bday_wishes_mee', language: { code: 'te' } } });
+  });
+
+  it('sends the previous approved template while the new sign-off is still in review', async () => {
+    process.env.WHATSAPP_ACCESS_TOKEN = 'token';
+    process.env.WHATSAPP_PHONE_NUMBER_ID = '123';
+    const calls: Array<Record<string, unknown>> = [];
+    const fetchImpl = (async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body || '{}')) as { template?: { name?: string } };
+      calls.push(body as Record<string, unknown>);
+      if (body.template?.name === 'bday_wishes_en_mee') {
+        return { ok: false, status: 400, json: async () => ({ error: { message: 'Template not approved', code: 132001 } }) } as Response;
+      }
+      return { ok: true, status: 200, json: async () => ({ messages: [{ id: 'wamid.old' }] }) } as Response;
+    }) as typeof fetch;
+    const result = await sendBirthdayWish({ name: 'Ravi', phone: '919000000001', language: 'en' }, fetchImpl);
+    expect(result.messageId).toBe('wamid.old');
+    expect(calls.map((call) => (call.template as { name: string }).name)).toEqual(['bday_wishes_en_mee', 'bday_wishes_en']);
   });
 
   it('runs wherever WhatsApp can send, unless BIRTHDAY_WISHES_ENABLED=false', () => {
