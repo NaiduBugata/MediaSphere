@@ -21,7 +21,7 @@ import {
   X,
 } from "lucide-react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
-import { api } from "@/lib/api.ts";
+import { api, ApiError } from "@/lib/api.ts";
 import NewsDesk from "@/news/NewsDesk.tsx";
 
 type Section = "overview" | "grievances" | "projects" | "news" | "people" | "campaigns" | "analytics";
@@ -81,6 +81,7 @@ function isStored(section: Section): section is StoredSection {
 
 function App() {
   const [session, setSession] = useState<Session | null>(readSession);
+  const [loginNotice, setLoginNotice] = useState("");
   const { pathname } = useLocation();
   const section = sectionFromPath(pathname);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -91,6 +92,14 @@ function App() {
   const [notice, setNotice] = useState<string | null>(null);
   const [panel, setPanel] = useState<"notifications" | "settings" | null>(null);
   const [panelBody, setPanelBody] = useState("");
+
+  const expireOn401 = (err: unknown): boolean => {
+    if (!(err instanceof ApiError) || err.status !== 401) return false;
+    localStorage.removeItem(SESSION_KEY);
+    setLoginNotice("Your session expired. Please sign in again.");
+    setSession(null);
+    return true;
+  };
 
   useEffect(() => {
     if (!session) return;
@@ -107,7 +116,8 @@ function App() {
           setNotice(null);
         }
       } catch (err) {
-        if (!cancelled) setNotice(err instanceof Error ? err.message : "Could not reach the database");
+        if (cancelled || expireOn401(err)) return;
+        setNotice(err instanceof Error ? err.message : "Could not reach the database");
       }
     };
     void load();
@@ -117,24 +127,22 @@ function App() {
   }, [session, records.length]);
 
   useEffect(() => {
-    if (!session || !isStored(section)) {
-      setRecords([]);
-      return;
-    }
+    if (!session || !isStored(section)) return;
     let cancelled = false;
     api<RecordItem[]>(`/api/workspace/records?section=${section}`, { token: session.token })
       .then((rows) => {
         if (!cancelled) setRecords(rows);
       })
       .catch((err: unknown) => {
-        if (!cancelled) setNotice(err instanceof Error ? err.message : "Could not load records");
+        if (cancelled || expireOn401(err)) return;
+        setNotice(err instanceof Error ? err.message : "Could not load records");
       });
     return () => {
       cancelled = true;
     };
   }, [session, section]);
 
-  if (!session) return <Login onLogin={setSession} />;
+  if (!session) return <Login notice={loginNotice} onLogin={(next) => { setLoginNotice(""); setNotice(null); setSession(next); }} />;
 
   const signOut = () => {
     localStorage.removeItem(SESSION_KEY);
@@ -143,12 +151,16 @@ function App() {
 
   const addRecord = async (title: string, detail: string) => {
     if (!isStored(section)) return;
-    const row = await api<RecordItem>("/api/workspace/records", {
-      method: "POST",
-      token: session.token,
-      body: { section, title, detail, status: "Open" },
-    });
-    setRecords((current) => [row, ...current]);
+    try {
+      const row = await api<RecordItem>("/api/workspace/records", {
+        method: "POST",
+        token: session.token,
+        body: { section, title, detail, status: "Open" },
+      });
+      setRecords((current) => [row, ...current]);
+    } catch (err) {
+      if (!expireOn401(err)) throw err;
+    }
   };
 
   const openPanel = async (next: "notifications" | "settings") => {
@@ -166,7 +178,8 @@ function App() {
     }
   };
 
-  const visible = records.filter((item) => {
+  const loaded = session && isStored(section) ? records : [];
+  const visible = loaded.filter((item) => {
     const needle = query.trim().toLowerCase();
     if (!needle) return true;
     return `${item.title} ${item.detail} ${item.status}`.toLowerCase().includes(needle);
@@ -203,7 +216,7 @@ function App() {
   );
 }
 
-function Login({ onLogin }: { onLogin: (session: Session) => void }) {
+function Login({ notice, onLogin }: { notice?: string; onLogin: (session: Session) => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
@@ -230,6 +243,7 @@ function Login({ onLogin }: { onLogin: (session: Session) => void }) {
         <div className="mb-8 flex items-center gap-3"><div className="flex size-12 items-center justify-center rounded-xl bg-primary font-display text-lg font-bold text-primary-foreground">JV</div><div><h1 className="font-display text-xl font-semibold">JanaVignanam</h1><p className="text-sm text-muted-foreground">Constituency intelligence</p></div></div>
         <h2 className="font-display text-2xl font-semibold">{signup ? "Create your account" : "Welcome back"}</h2>
         <p className="mt-1 text-sm text-muted-foreground">{signup ? "This account is stored in the database." : "Sign in with the account stored in the database."}</p>
+        {notice && <p className="mt-4 rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-700">{notice}</p>}
         <form onSubmit={(event) => void submit(event)} className="mt-6 space-y-4">
           {signup && <input value={name} onChange={(event) => setName(event.target.value)} required className="h-11 w-full rounded-lg border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring" placeholder="Full name" />}
           <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required className="h-11 w-full rounded-lg border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring" placeholder="Email address" />

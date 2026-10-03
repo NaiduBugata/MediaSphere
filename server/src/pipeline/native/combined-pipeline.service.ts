@@ -50,6 +50,15 @@ export interface NativeCycleHooks {
   now?: () => Date;
 }
 
+/** Items already judged (duplicate posts, rejected videos and pages), skipped for SEEN_DAYS so YouTube is not asked again every hour. */
+const SEEN_COLLECTION = 'pipeline_seen';
+const SEEN_DAYS = 7;
+
+interface KnownItems {
+  postIds: Set<string>;
+  urls: Set<string>;
+}
+
 /**
  * Nest combined cycle: Lokal → YouTube → Sakshi → Groq stages → upsert → notify.
  * New articles and failures are emailed; WhatsApp alerts only with WHATSAPP_ALERTS_ENABLED=true.
@@ -69,17 +78,24 @@ export class CombinedPipelineService {
     const maxAnalyze = Number(process.env.PIPELINE_MAX_ANALYZE || '8');
     const errors: string[] = [];
     const results: SourceCollectionResult[] = [];
+    const known = await this.loadKnown();
+    const checked: string[] = [];
 
     results.push(await this.safeCollect('lokal', () => this.collectLokal(fetchImpl)));
     results.push(
-      await this.safeCollect('youtube', () => this.collectYoutube(fetchImpl)),
+      await this.safeCollect('youtube', () => this.collectYoutube(fetchImpl, known, checked)),
     );
     results.push(
-      await this.safeCollect('sakshi', () => this.collectSakshi(fetchImpl)),
+      await this.safeCollect('sakshi', () => this.collectSakshi(fetchImpl, known, checked)),
     );
 
+    let alreadySaved = 0;
     const mapped: CollectedArticle[] = [];
     for (const article of results.flatMap((r) => r.articles)) {
+      if (known.postIds.has(article.post_id)) {
+        alreadySaved += 1;
+        continue;
+      }
       const segment = resolveSegment(article);
       if (!segment) {
         this.logger.warn(`[SEGMENT_GATE] dropped source=${article.source} post_id=${article.post_id}: not one of the 7 assembly segments`);
@@ -101,7 +117,10 @@ export class CombinedPipelineService {
         if (outcome === 'inserted') {
           inserted += 1;
           added.push({ ...analyzed, title: article.title, source: article.source, source_url: article.source_url || null });
-        } else duplicates += 1;
+        } else {
+          duplicates += 1;
+          checked.push(`post:${article.post_id}`);
+        }
         aiOk += 1;
       } catch (err) {
         aiFailed += 1;
@@ -113,12 +132,17 @@ export class CombinedPipelineService {
       }
     }
 
+    await this.remember(checked);
+    if (alreadySaved) this.logger.log(`[KNOWN] skipped ${alreadySaved} already-saved articles before analysis`);
+
     const merged = mergeSourceResults(results);
-    const exitCode = merged.exitCode === 0 && aiFailed === 0 ? 0 : merged.exitCode || (aiFailed ? 1 : 0);
+    // One blocked source does not fail the cycle while another source delivered; its errors are still recorded and alerted.
+    const delivered = results.some((r) => r.status === 'success');
+    const exitCode = aiFailed ? 1 : delivered ? 0 : merged.exitCode;
     const stats: CycleStats = {
       ...emptyStats(),
       articles_fetched: merged.articles_fetched,
-      duplicates: merged.duplicates + duplicates,
+      duplicates: merged.duplicates + duplicates + alreadySaved,
       inserted,
       lokal_processed: merged.lokal_processed,
       youtube_processed: merged.youtube_processed,
@@ -141,6 +165,55 @@ export class CombinedPipelineService {
       outputTail: `ai_ok=${aiOk} ai_failed=${aiFailed}`,
       command: 'nestjs:combined-pipeline',
     };
+  }
+
+  /** Saved articles plus recently judged items. Never throws: on error every item is treated as new. */
+  private async loadKnown(): Promise<KnownItems> {
+    const known: KnownItems = { postIds: new Set(), urls: new Set() };
+    try {
+      await this.db.ensureConnected();
+      const saved = await this.db.query<{ post_id: string | null; source_url: string | null }>(
+        `SELECT doc->>'post_id' AS post_id, doc->>'source_url' AS source_url
+           FROM mediasphere.documents WHERE collection = $1`,
+        [this.db.articlesCollectionName],
+      );
+      const seen = await this.db.query<{ doc_id: string }>(
+        `SELECT doc_id FROM mediasphere.documents
+          WHERE collection = $1 AND exported_at > now() - make_interval(days => $2::int)`,
+        [SEEN_COLLECTION, SEEN_DAYS],
+      );
+      for (const row of saved) {
+        if (row.post_id) known.postIds.add(row.post_id);
+        if (row.source_url) known.urls.add(row.source_url);
+      }
+      for (const { doc_id: key } of seen) {
+        if (key.startsWith('post:')) known.postIds.add(key.slice(5));
+        else if (key.startsWith('url:')) known.urls.add(key.slice(4));
+      }
+    } catch (err) {
+      this.logger.warn(`[KNOWN] saved items unavailable, treating all as new: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    return known;
+  }
+
+  private async remember(keys: string[]): Promise<void> {
+    const unique = [...new Set(keys)];
+    if (!unique.length) return;
+    try {
+      await this.db.query(
+        `INSERT INTO mediasphere.documents (collection, doc_id, doc)
+         SELECT $1, k, jsonb_build_object('seen_at', $3::text) FROM unnest($2::text[]) AS k
+         ON CONFLICT (collection, doc_id) DO UPDATE SET doc = EXCLUDED.doc, exported_at = now()`,
+        [SEEN_COLLECTION, unique, new Date().toISOString()],
+      );
+      await this.db.query(
+        `DELETE FROM mediasphere.documents
+          WHERE collection = $1 AND exported_at < now() - make_interval(days => $2::int)`,
+        [SEEN_COLLECTION, SEEN_DAYS * 4],
+      );
+    } catch (err) {
+      this.logger.warn(`[KNOWN] could not remember checked items: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   private async safeCollect(
@@ -186,13 +259,21 @@ export class CombinedPipelineService {
     };
   }
 
-  private async collectYoutube(fetchImpl: typeof fetch): Promise<SourceCollectionResult> {
+  private async collectYoutube(
+    fetchImpl: typeof fetch,
+    known: KnownItems,
+    checked: string[],
+  ): Promise<SourceCollectionResult> {
     const startedAt = new Date().toISOString();
     const started = Date.now();
     if (process.env.YOUTUBE_ENABLED === 'false') {
       return { ...this.emptyResult('youtube', startedAt, []), status: 'skipped', exitCode: 0 };
     }
-    const collected = await collectYoutubeNews({ fetchImpl });
+    const existingVideoIds = new Set(
+      [...known.postIds].filter((id) => id.startsWith('yt_')).map((id) => id.slice(3)),
+    );
+    const collected = await collectYoutubeNews({ fetchImpl, existingVideoIds });
+    checked.push(...(collected.checkedVideoIds || []).map((id) => `post:yt_${id}`));
     if (collected.error) {
       return this.emptyResult('youtube', startedAt, [collected.error]);
     }
@@ -231,13 +312,18 @@ export class CombinedPipelineService {
     };
   }
 
-  private async collectSakshi(fetchImpl: typeof fetch): Promise<SourceCollectionResult> {
+  private async collectSakshi(
+    fetchImpl: typeof fetch,
+    known: KnownItems,
+    checked: string[],
+  ): Promise<SourceCollectionResult> {
     const startedAt = new Date().toISOString();
     const started = Date.now();
     if (process.env.SAKSHI_ENABLED === 'false') {
       return { ...this.emptyResult('sakshi', startedAt, []), status: 'skipped', exitCode: 0 };
     }
-    const collected = await collectSakshiNews({ fetchImpl });
+    const collected = await collectSakshiNews({ fetchImpl, existingUrls: known.urls });
+    checked.push(...(collected.checkedUrls || []).map((url) => `url:${url}`));
     if (collected.error) {
       return this.emptyResult('sakshi', startedAt, [collected.error]);
     }
@@ -366,8 +452,8 @@ export class CombinedPipelineService {
     this.logger.log(
       `[NOTIFY_PIPELINE] exit=${exitCode} inserted=${stats.inserted} errors=${stats.errors.length}`,
     );
-    if (exitCode === 0) this.failureAlerts.clear();
-    else await this.alertFailure(stats.errors, fetchImpl);
+    if (stats.errors.length) await this.alertFailure(stats.errors, fetchImpl);
+    else this.failureAlerts.clear();
     await this.emailNewArticles(added, fetchImpl);
     try {
       if (!whatsappAlertsEnabled()) return;

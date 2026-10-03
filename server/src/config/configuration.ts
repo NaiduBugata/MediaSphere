@@ -1,3 +1,5 @@
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { truthy } from '../common/utils/truthy';
 
 function floatEnv(name: string, fallback: number): number {
@@ -115,7 +117,7 @@ export default () => ({
     hour: intEnv('REPORT_HOUR', 7),
     minute: intEnv('REPORT_MINUTE', 0),
     constituency: process.env.REPORT_CONSTITUENCY || 'Narasaraopet',
-    outputDir: process.env.REPORT_OUTPUT_DIR || 'reports_output',
+    outputDir: process.env.REPORT_OUTPUT_DIR || join(tmpdir(), 'mediasphere_reports'),
   },
   email: {
     enabled: process.env.EMAIL_ENABLED,

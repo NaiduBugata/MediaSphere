@@ -164,7 +164,7 @@ export class PipelineRunnerService {
           duration_seconds: duration,
           articles_inserted: stats.inserted,
           next_run: nextRun,
-          last_errors: [],
+          last_errors: errors.slice(0, 20),
           current_run_id: null,
           pending_run_id: null,
         });
@@ -214,11 +214,16 @@ export class PipelineRunnerService {
         executor_stats_parsed: result.parsed,
       });
 
+      const sourceErrors = (name: string) =>
+        errors.filter((e) => e.startsWith(`${name}_`) || e.startsWith(`${name}:`)).slice(0, 10);
       await this.state.updateState({
         last_sakshi_run: finishedIso,
         last_sakshi_articles: stats.sakshi_processed,
         last_lokal_articles: stats.lokal_processed,
         last_youtube_articles: stats.youtube_processed,
+        lokal_last_errors: sourceErrors('lokal'),
+        youtube_last_errors: sourceErrors('youtube'),
+        sakshi_last_errors: sourceErrors('sakshi'),
       });
 
       return {

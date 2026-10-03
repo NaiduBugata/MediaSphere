@@ -22,6 +22,8 @@ export interface YoutubeCollection {
   noCaptions: number;
   /** Videos whose captions YouTube refused to this server, keyed by reason. */
   blocked: Record<string, number>;
+  /** Videos YouTube answered normally (kept or rejected); blocked videos are left out so they are retried. */
+  checkedVideoIds: string[];
   errors: string[];
   error?: string;
 }
@@ -51,6 +53,7 @@ export async function collectYoutubeNews(options: CollectYoutubeOptions = {}): P
   const seen = new Set<string>();
   const videos: YoutubeVideo[] = [];
   const blocked: Record<string, number> = {};
+  const checkedVideoIds: string[] = [];
   let noCaptions = 0;
 
   const finish = (
@@ -64,6 +67,7 @@ export async function collectYoutubeNews(options: CollectYoutubeOptions = {}): P
     constituencyRejected,
     noCaptions,
     blocked,
+    checkedVideoIds,
     errors,
     error,
     envelope: {
@@ -105,10 +109,13 @@ export async function collectYoutubeNews(options: CollectYoutubeOptions = {}): P
     const result = await fetchTeluguTranscriptResult(video.video_id, fetchImpl);
     const transcript = result.text;
     if (!transcript) {
-      if (result.reason === 'no_captions') noCaptions += 1;
-      else blocked[result.reason] = (blocked[result.reason] || 0) + 1;
+      if (result.reason === 'no_captions') {
+        noCaptions += 1;
+        checkedVideoIds.push(video.video_id);
+      } else blocked[result.reason] = (blocked[result.reason] || 0) + 1;
       continue;
     }
+    checkedVideoIds.push(video.video_id);
     if (transcript.length < minChars) {
       noCaptions += 1;
       continue;
@@ -135,6 +142,7 @@ export async function collectYoutubeNews(options: CollectYoutubeOptions = {}): P
   if (videos.length >= 4 && noCaptions === videos.length) {
     blocked.no_captions_on_every_video = noCaptions;
     noCaptions = 0;
+    checkedVideoIds.length = 0;
   }
   const blockedCount = Object.values(blocked).reduce((sum, count) => sum + count, 0);
   if (blockedCount) {

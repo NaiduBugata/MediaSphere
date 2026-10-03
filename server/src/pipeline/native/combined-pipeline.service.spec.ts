@@ -197,7 +197,8 @@ describe('CombinedPipelineService', () => {
     const news = () => emails.filter((mail) => /^MediaSphere: 1 new article, 1 critical \|/.test(mail.subject));
 
     const failed = await service.runCombinedOnce({ fetchImpl });
-    expect(failed.exitCode).not.toBe(0);
+    expect(failed.exitCode).toBe(0);
+    expect(failed.stats.errors).toContain('sakshi_http_403');
     expect(failed.stats.inserted).toBe(1);
     expect(failures()).toHaveLength(1);
     expect(news()).toHaveLength(1);
@@ -225,6 +226,98 @@ describe('CombinedPipelineService', () => {
     process.env.NEWS_EMAIL_ENABLED = 'false';
     await service.runCombinedOnce({ fetchImpl });
     expect(news()).toHaveLength(4);
+  });
+
+  it('skips saved and already-checked items so new articles get the analysis slots', async () => {
+    process.env.GROQ_API_KEY = 'test-key';
+    process.env.YOUTUBE_ENABLED = 'false';
+    process.env.SAKSHI_ENABLED = 'false';
+    process.env.EMAIL_ENABLED = 'false';
+    process.env.PIPELINE_MAX_ANALYZE = '1';
+    const remembered: string[][] = [];
+    const upserted: string[] = [];
+    const db = {
+      ensureConnected: async () => true,
+      articlesCollectionName: 'articles',
+      query: async (sql: string, params: unknown[]) => {
+        if (sql.includes('INSERT')) remembered.push(params[1] as string[]);
+        if (sql.includes("doc->>'post_id'")) return [{ post_id: '1', source_url: null }];
+        if (sql.includes('SELECT doc_id')) return [{ doc_id: 'post:2' }];
+        return [];
+      },
+      collection: () => ({
+        find: () => ({ limit: () => ({ toArray: async () => [] }) }),
+        updateOne: async (filter: { post_id: string }) => {
+          upserted.push(filter.post_id);
+          return { upsertedCount: 1, matchedCount: 0 };
+        },
+      }),
+    };
+    const service = new CombinedPipelineService(db as unknown as DatabaseService);
+    const fetchImpl = (async (url: string) => {
+      if (String(url).includes('getlokalapp.com')) {
+        if (!String(url).includes('page=1')) return jsonResponse({ results: [] });
+        const now = new Date().toISOString();
+        return jsonResponse({
+          results: [1, 2, 3].map((id) => ({ id, title: `Narasaraopet road ${id}`, content: `Narasaraopet town road number ${id} needs repair after rain`, created_on: now })),
+        });
+      }
+      return jsonResponse({
+        choices: [{ message: { content: '{"sentiment":"Statement","category":"c","problem":"p","summary":"s","location":{"district":"d"},"people":[],"entities":[],"keywords":[]}' } }],
+      });
+    }) as typeof fetch;
+
+    const result = await service.runCombinedOnce({ fetchImpl });
+    expect(upserted).toEqual(['3']);
+    expect(result.stats.inserted).toBe(1);
+    expect(result.stats.duplicates).toBeGreaterThanOrEqual(2);
+    expect(remembered).toEqual([]);
+  });
+
+  it('skips saved and already-checked items so new articles get the analysis slots', async () => {
+    process.env.GROQ_API_KEY = 'test-key';
+    process.env.YOUTUBE_ENABLED = 'false';
+    process.env.SAKSHI_ENABLED = 'false';
+    process.env.EMAIL_ENABLED = 'false';
+    process.env.PIPELINE_MAX_ANALYZE = '1';
+    const remembered: string[][] = [];
+    const upserted: string[] = [];
+    const db = {
+      ensureConnected: async () => true,
+      articlesCollectionName: 'articles',
+      query: async (sql: string, params: unknown[]) => {
+        if (sql.includes('INSERT')) remembered.push(params[1] as string[]);
+        if (sql.includes("doc->>'post_id'")) return [{ post_id: '1', source_url: null }];
+        if (sql.includes('SELECT doc_id')) return [{ doc_id: 'post:2' }];
+        return [];
+      },
+      collection: () => ({
+        find: () => ({ limit: () => ({ toArray: async () => [] }) }),
+        updateOne: async (filter: { post_id: string }) => {
+          upserted.push(filter.post_id);
+          return { upsertedCount: 1, matchedCount: 0 };
+        },
+      }),
+    };
+    const service = new CombinedPipelineService(db as unknown as DatabaseService);
+    const fetchImpl = (async (url: string) => {
+      if (String(url).includes('getlokalapp.com')) {
+        if (!String(url).includes('page=1')) return jsonResponse({ results: [] });
+        const now = new Date().toISOString();
+        return jsonResponse({
+          results: [1, 2, 3].map((id) => ({ id, title: `Narasaraopet road ${id}`, content: `Narasaraopet town road number ${id} needs repair after rain`, created_on: now })),
+        });
+      }
+      return jsonResponse({
+        choices: [{ message: { content: '{"sentiment":"Statement","category":"c","problem":"p","summary":"s","location":{"district":"d"},"people":[],"entities":[],"keywords":[]}' } }],
+      });
+    }) as typeof fetch;
+
+    const result = await service.runCombinedOnce({ fetchImpl });
+    expect(upserted).toEqual(['3']);
+    expect(result.stats.inserted).toBe(1);
+    expect(result.stats.duplicates).toBeGreaterThanOrEqual(2);
+    expect(remembered).toEqual([]);
   });
 
   it('second upsert of the same post_id is a duplicate', async () => {

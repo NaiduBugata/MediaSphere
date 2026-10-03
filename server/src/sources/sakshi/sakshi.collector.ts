@@ -24,6 +24,8 @@ export interface SakshiCollection {
   envelope: SakshiCollectorEnvelope;
   linksFound: number;
   skippedExisting: number;
+  /** Article pages fetched and judged (kept or rejected) this run. */
+  checkedUrls: string[];
   error?: string;
 }
 
@@ -114,6 +116,7 @@ export async function collectSakshiNews(options: CollectSakshiOptions = {}): Pro
   ): SakshiCollection => ({
     linksFound,
     skippedExisting,
+    checkedUrls,
     error,
     envelope: {
       generated_at: now.toISOString(),
@@ -126,6 +129,7 @@ export async function collectSakshiNews(options: CollectSakshiOptions = {}): Pro
     },
   });
 
+  const checkedUrls: string[] = [];
   const perTag: string[][] = [];
   let firstError: string | null = null;
   for (const [index, url] of sakshiTagUrls().entries()) {
@@ -155,6 +159,7 @@ export async function collectSakshiNews(options: CollectSakshiOptions = {}): Pro
     } catch {
       continue;
     }
+    checkedUrls.push(url);
     const raw = extractSakshiArticle(pageHtml, url);
     if (!raw) continue;
     stats.fetched += 1;

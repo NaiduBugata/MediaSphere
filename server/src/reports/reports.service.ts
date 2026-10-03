@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { resolve } from 'node:path';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { Document } from 'mongodb';
 import { ArticleRepository } from '../database/repositories/article.repository';
 import { DailyReportRepository } from '../database/repositories/daily-report.repository';
@@ -129,12 +130,8 @@ export class ReportsService {
     const stats = computeStats(articles);
     const summary = await generateExecutiveSummary(day, articles, stats, options.fetchImpl || fetch);
     const html = buildEmailHtml(day, now, articles, stats, summary);
-    const pdfPath = resolve(
-      process.cwd(),
-      process.env.REPORT_OUTPUT_DIR || 'reports_output',
-      `Daily_Report_${day.replace(/-/g, '_')}.pdf`,
-    );
-    writeTextPdf(pdfPath, [
+    const fileName = `Daily_Report_${day.replace(/-/g, '_')}.pdf`;
+    const lines = [
       'MediaSphere Daily Constituency Report',
       formatLongDate(day),
       '',
@@ -145,7 +142,18 @@ export class ReportsService {
       `Problems: ${stats.problems}`,
       `Positive: ${stats.positive}`,
       `Negative: ${stats.negative}`,
-    ]);
+    ];
+    let pdfPath = resolve(process.cwd(), process.env.REPORT_OUTPUT_DIR || join(tmpdir(), 'mediasphere_reports'), fileName);
+    try {
+      writeTextPdf(pdfPath, lines);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== 'EACCES' && code !== 'EPERM' && code !== 'EROFS') throw err;
+      // Hosts such as Railway run as a user who cannot write under /app.
+      this.logger.warn(`report folder not writable (${code}); using the temp folder`);
+      pdfPath = join(tmpdir(), 'mediasphere_reports', fileName);
+      writeTextPdf(pdfPath, lines);
+    }
     return { stats, html, pdfPath, subject: `MediaSphere Daily Constituency Report - ${formatLongDate(day)}` };
   }
 
