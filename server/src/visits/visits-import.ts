@@ -1,10 +1,11 @@
 import { BadRequestException } from '@nestjs/common';
 import { load } from 'cheerio';
+import { normalizeContactPhone } from '../birthdays/birthdays';
 import ExcelJS from 'exceljs';
 import JSZip from 'jszip';
 import type { VisitFileKind } from './visits.service';
 
-export type VisitField = 'date' | 'time' | 'place' | 'title' | 'detail';
+export type VisitField = 'date' | 'time' | 'place' | 'title' | 'detail' | 'phone';
 
 export interface ImportedVisitRow {
   where: string;
@@ -13,6 +14,7 @@ export interface ImportedVisitRow {
   visitDate: string;
   visitTime: string;
   detail: string;
+  leadPhone: string;
 }
 
 export interface RejectedRow {
@@ -29,7 +31,7 @@ export const TEMPLATE_EXAMPLE = {
   detail: 'Reviewed the new ward and met the doctors and staff.',
 };
 
-export const TEMPLATE_HEADERS = ['S.No', 'Date (DD-MM-YYYY)', 'Time (10:30 AM)', 'Place', 'Purpose / Title', 'Details'];
+export const TEMPLATE_HEADERS = ['S.No', 'Date (DD-MM-YYYY)', 'Time (10:30 AM)', 'Place', 'Purpose / Title', 'Details', 'Lead phone (optional)'];
 
 export const MAX_IMPORT_ROWS = 5000;
 
@@ -47,6 +49,7 @@ const FIELD_WORDS: Array<[VisitField, string[]]> = [
   ['detail', ['detail', 'description', 'remark', 'note', 'summary', 'outcome', 'వివరాలు', 'వివరణ', 'వ్యాఖ్య', 'గమనిక']],
   ['place', ['place', 'village', 'mandal', 'location', 'venue', 'area', 'town', 'ప్రదేశం', 'గ్రామం', 'మండలం', 'స్థలం', 'ప్రాంతం', 'ఊరు']],
   ['title', ['title', 'purpose', 'programme', 'program', 'event', 'subject', 'visit', 'activity', 'agenda', 'కార్యక్రమం', 'ఉద్దేశ్యం', 'ఉద్దేశం', 'విషయం', 'పర్యటన']],
+  ['phone', ['phone', 'mobile', 'whatsapp', 'ఫోన్', 'మొబైల్']],
 ];
 
 function clean(value: string): string {
@@ -79,6 +82,7 @@ export function headerColumns(cells: string[]): Partial<Record<VisitField, numbe
     const field = fieldOf(cell);
     if (field && field !== 'serial' && columns[field] === undefined) columns[field] = index;
   });
+  if (columns.date === undefined && columns.place === undefined && columns.title === undefined) return null;
   const found = Object.keys(columns).length;
   const named = columns.title !== undefined || columns.place !== undefined;
   return named && found >= 2 ? columns : null;
@@ -198,6 +202,17 @@ function splitDateTime(raw: string): { date: string; time: string } | null {
   return m ? { date: m[1], time: m[2] } : null;
 }
 
+/** '' when the cell is empty, null when it is not a mobile number. */
+function parseLeadPhone(value: string): string | null {
+  const text = value.replace(/[\s()+-]/g, '');
+  if (!text) return '';
+  try {
+    return normalizeContactPhone(text);
+  } catch {
+    return null;
+  }
+}
+
 function isExampleRow(row: ImportedVisitRow): boolean {
   return row.title === TEMPLATE_EXAMPLE.title && row.place === TEMPLATE_EXAMPLE.place;
 }
@@ -238,7 +253,12 @@ export function rowsFromGrids(grids: Grid[]): { rows: ImportedVisitRow[]; reject
       const place = cell(cells, 'place').slice(0, 120);
       const detail = cell(cells, 'detail').slice(0, 2000);
       let title = cell(cells, 'title').replace(/\n/g, ' ').slice(0, 200);
-      if (!title && !place && !rawDate && !rawTime && !detail) continue;
+      const leadPhone = parseLeadPhone(cell(cells, 'phone'));
+      if (leadPhone === null) {
+        rejected.push({ where, reason: 'Lead phone is not a mobile number.' });
+        continue;
+      }
+      if (!title && !place && !rawDate && !rawTime && !detail && !leadPhone) continue;
       const combined = splitDateTime(rawDate);
       if (combined) {
         rawDate = combined.date;
@@ -259,7 +279,7 @@ export function rowsFromGrids(grids: Grid[]): { rows: ImportedVisitRow[]; reject
         rejected.push({ where, reason: 'Purpose / Title and Place are both empty.' });
         continue;
       }
-      const row = { where, title, place: place.replace(/\n/g, ', '), visitDate, visitTime, detail };
+      const row = { where, title, place: place.replace(/\n/g, ', '), visitDate, visitTime, detail, leadPhone };
       if (!isExampleRow(row)) rows.push(row);
       if (rows.length > MAX_IMPORT_ROWS) {
         throw new BadRequestException(`The file has more than ${MAX_IMPORT_ROWS} visits. Split it into smaller files.`);

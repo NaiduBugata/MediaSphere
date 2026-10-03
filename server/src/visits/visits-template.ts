@@ -10,6 +10,7 @@ export const TEMPLATE_INSTRUCTIONS = [
   'Delete the example row before uploading. It is skipped anyway.',
   'Upload this file in Admin > Visits > "Upload all visits (one file)". You may also save it as PDF and upload the PDF.',
   'Rows already on the site are skipped, so you can keep adding rows to the same file and upload it again.',
+  'Lead phone is optional. It is used only to send a WhatsApp follow-up and is not shown on the site or in the visits chat.',
 ];
 
 const EXAMPLE_CELLS = [
@@ -19,6 +20,7 @@ const EXAMPLE_CELLS = [
   TEMPLATE_EXAMPLE.place,
   TEMPLATE_EXAMPLE.title,
   TEMPLATE_EXAMPLE.detail,
+  '9876543210',
 ];
 
 export async function excelTemplate(): Promise<Buffer> {
@@ -31,7 +33,8 @@ export async function excelTemplate(): Promise<Buffer> {
     { header: TEMPLATE_HEADERS[2], key: 'time', width: 16, style: { numFmt: 'h:mm AM/PM' } },
     { header: TEMPLATE_HEADERS[3], key: 'place', width: 22 },
     { header: TEMPLATE_HEADERS[4], key: 'title', width: 42 },
-    { header: TEMPLATE_HEADERS[5], key: 'detail', width: 60 },
+    { header: TEMPLATE_HEADERS[5], key: 'detail', width: 48 },
+    { header: TEMPLATE_HEADERS[6], key: 'phone', width: 22 },
   ];
   const header = sheet.getRow(1);
   header.font = { bold: true, color: { argb: 'FF1F2937' } };
@@ -46,6 +49,7 @@ export async function excelTemplate(): Promise<Buffer> {
     place: TEMPLATE_EXAMPLE.place,
     title: TEMPLATE_EXAMPLE.title,
     detail: TEMPLATE_EXAMPLE.detail,
+    phone: '9876543210',
   });
   example.font = { italic: true, color: { argb: 'FF6B7280' } };
   sheet.getColumn('detail').alignment = { wrapText: true, vertical: 'top' };
@@ -71,7 +75,7 @@ function paragraph(text: string, props = ''): string {
   return `<w:p><w:pPr><w:spacing w:after="80"/></w:pPr>${run(text, props)}</w:p>`;
 }
 
-const WIDTHS = [700, 1800, 1500, 2300, 3900, 4800];
+const WIDTHS = [700, 1600, 1400, 2000, 3200, 3600, 1800];
 
 function row(cells: string[], kind: 'header' | 'example' | 'empty'): string {
   const rowProps = kind === 'header' ? '<w:trPr><w:tblHeader/><w:trHeight w:val="420"/></w:trPr>' : '<w:trPr><w:trHeight w:val="420"/></w:trPr>';
@@ -96,7 +100,7 @@ export async function wordTemplate(): Promise<Buffer> {
     '</w:tblGrid>',
     row(TEMPLATE_HEADERS, 'header'),
     row(EXAMPLE_CELLS, 'example'),
-    ...Array.from({ length: 15 }, (_, index) => row([String(index + 2), '', '', '', '', ''], 'empty')),
+    ...Array.from({ length: 15 }, (_, index) => row([String(index + 2), '', '', '', '', '', ''], 'empty')),
     '</w:tbl>',
   ].join('');
 

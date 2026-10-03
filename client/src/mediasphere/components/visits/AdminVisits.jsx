@@ -9,7 +9,7 @@ import {
   formatFileSize,
   formatVisitTime,
   importVisits,
-  listVisits,
+  listAdminVisits,
   templateUrl,
   uploadVisit,
   visitFileUrl,
@@ -17,7 +17,7 @@ import {
 import { formatDate, formatDateTime } from '../../utils/format';
 import VisitKindBadge from './VisitKindBadge';
 
-const EMPTY_FORM = { title: '', place: '', visitDate: '', visitTime: '', detail: '' };
+const EMPTY_FORM = { title: '', place: '', visitDate: '', visitTime: '', detail: '', leadPhone: '' };
 const REJECTED_SHOWN = 15;
 
 function extensionOf(name) {
@@ -215,6 +215,7 @@ function SingleVisitPanel({ onSaved, handleError }) {
           visitDate: form.visitDate,
           visitTime: form.visitTime,
           detail: form.detail.trim(),
+          leadPhone: form.leadPhone.trim(),
           file,
         },
         setProgress,
@@ -258,6 +259,17 @@ function SingleVisitPanel({ onSaved, handleError }) {
       <label className="block text-sm md:col-span-2">
         <span className="text-msmuted">Place</span>
         <input className="input-field mt-1 w-full" value={form.place} onChange={setField('place')} maxLength={120} placeholder="e.g. Vinukonda" />
+      </label>
+      <label className="block text-sm md:col-span-2">
+        <span className="text-msmuted">Lead WhatsApp number (optional, not shown on the site or in the visits chat)</span>
+        <input
+          className="input-field mt-1 w-full"
+          value={form.leadPhone}
+          onChange={setField('leadPhone')}
+          maxLength={20}
+          inputMode="tel"
+          placeholder="e.g. 9876543210"
+        />
       </label>
       <label className="block text-sm md:col-span-2">
         <span className="text-msmuted">Details</span>
@@ -331,7 +343,7 @@ export default function AdminVisits({ onUnauthorized }) {
     setLoading(true);
     try {
       setLoadError('');
-      setVisits(await listVisits());
+      setVisits(await listAdminVisits());
     } catch (err) {
       setLoadError(apiErrorMessage(err, 'Could not load visits'));
     } finally {
@@ -414,6 +426,7 @@ export default function AdminVisits({ onUnauthorized }) {
                   <th className="py-2 pr-3">Purpose / Title</th>
                   <th className="py-2 pr-3">Date &amp; time</th>
                   <th className="py-2 pr-3">Place</th>
+                  <th className="py-2 pr-3">Lead</th>
                   <th className="py-2 pr-3">Details</th>
                   <th className="py-2 pr-3">Added</th>
                   <th className="py-2">Action</th>
@@ -433,6 +446,12 @@ export default function AdminVisits({ onUnauthorized }) {
                       ) : null}
                     </td>
                     <td className="py-2.5 pr-3">{visit.place || '—'}</td>
+                    <td className="py-2.5 pr-3">
+                      {(visit.leadPhones?.length ? visit.leadPhones : visit.leadPhone ? [visit.leadPhone] : []).map((phone) => (
+                        <span key={phone} className="block whitespace-nowrap">+{phone}</span>
+                      ))}
+                      {!(visit.leadPhones?.length || visit.leadPhone) ? '—' : null}
+                    </td>
                     <td className="py-2.5 pr-3 text-msmuted max-w-[260px] truncate" title={visit.detail}>
                       {visit.detail || (visit.file ? `${visit.file.name} · ${formatFileSize(visit.file.size)}` : '—')}
                     </td>

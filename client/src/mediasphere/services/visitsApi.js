@@ -18,13 +18,19 @@ export async function listVisits() {
   return data?.visits || [];
 }
 
-export async function uploadVisit({ title, place, visitDate, visitTime, detail, file }, onProgress) {
+export async function listAdminVisits() {
+  const { data } = await api.get('/admin/visits', { headers: authHeader(), params: { _t: Date.now() } });
+  return data?.visits || [];
+}
+
+export async function uploadVisit({ title, place, visitDate, visitTime, detail, leadPhone, file }, onProgress) {
   const form = new FormData();
   form.append('title', title);
   if (place) form.append('place', place);
   if (visitDate) form.append('visitDate', visitDate);
   if (visitTime) form.append('visitTime', visitTime);
   if (detail) form.append('detail', detail);
+  if (leadPhone) form.append('leadPhone', leadPhone);
   if (file) form.append('file', file);
   const { data } = await api.post('/admin/visits', form, multipartConfig(onProgress));
   return data?.visit;

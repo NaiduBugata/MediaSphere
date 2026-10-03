@@ -112,6 +112,19 @@ describe('VisitsService', () => {
     expect(visit).toMatchObject({ title: 'Village meeting', place: 'Chilakaluripet', file: null });
   });
 
+  it('keeps the lead number off the public list and on the admin list', async () => {
+    const { db } = fakeDb();
+    const service = new VisitsService(db);
+    await service.create({ title: 'Hospital visit', visitDate: '2026-10-03', leadPhone: '98765 43210' }, undefined);
+    const [pub] = await service.list();
+    expect(pub).not.toHaveProperty('leadPhone');
+    expect(pub).not.toHaveProperty('leadPhones');
+    expect(JSON.stringify(pub)).not.toContain('9876543210');
+    const [admin] = await service.listAdmin();
+    expect(admin.leadPhone).toBe('919876543210');
+    expect(admin.leadPhones).toEqual(['919876543210']);
+  });
+
   it('saves a typed-in visit without a file', async () => {
     const { db, docs, files } = fakeDb();
     const visit = await new VisitsService(db).create(

@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { DatabaseService } from '../database/database.service';
+import { normalizeContactPhone } from '../birthdays/birthdays';
 import { parseVisitTime, readVisitRows, type ImportedVisitRow, type RejectedRow } from './visits-import';
 
 /** Shared with the WhatsApp chatbot, which lists the same records under "Visits". */
@@ -33,6 +34,8 @@ export interface VisitInput {
   visitDate?: string;
   visitTime?: string;
   detail?: string;
+  /** WhatsApp number of the visit lead. Stored for follow-up; omitted from the public list. */
+  leadPhone?: string;
 }
 
 export interface Visit {
@@ -46,6 +49,12 @@ export interface Visit {
   createdAt: string;
   file: { id: string; name: string; kind: VisitFileKind; size: number } | null;
   source: 'manual' | 'import';
+}
+
+/** Admin list only. The public visit list does not include these. */
+export interface AdminVisit extends Visit {
+  leadPhone: string;
+  leadPhones: string[];
 }
 
 export interface ImportResult {
@@ -112,9 +121,17 @@ export class VisitsService {
   constructor(private readonly db: DatabaseService) {}
 
   async list(): Promise<Visit[]> {
+    return (await this.rows()).map((row) => toVisit(row));
+  }
+
+  async listAdmin(): Promise<AdminVisit[]> {
+    return (await this.rows()).map((row) => toVisit(row, true));
+  }
+
+  private async rows(): Promise<Array<Record<string, unknown>>> {
     await this.ready();
     const rows = await this.db.collection(RECORDS).find({ section: SECTION }).toArray();
-    return rows.map(toVisit).sort((a, b) => sortKey(b).localeCompare(sortKey(a)));
+    return rows.sort((a, b) => sortKey(toVisit(b)).localeCompare(sortKey(toVisit(a))));
   }
 
   /** A single visit typed in by hand; the attachment is optional. */
@@ -145,6 +162,7 @@ export class VisitsService {
       visitDate,
       visitTime,
       detail: text(input.detail, 2000),
+      leadPhone: leadPhone(input.leadPhone),
       status: detected ? KIND_LABEL[detected.kind] : 'Manual',
       source: 'manual',
       createdAt: new Date().toISOString(),
@@ -153,7 +171,7 @@ export class VisitsService {
     if (stored) doc.file = stored;
     try {
       const inserted = await this.db.collection(RECORDS).insertOne(doc);
-      return toVisit({ ...doc, _id: inserted.insertedId });
+      return toVisit({ ...doc, _id: inserted.insertedId }, true);
     } catch (err) {
       if (stored) await this.db.query('DELETE FROM mediasphere.visit_files WHERE id = $1', [stored.id]).catch(() => undefined);
       throw err;
@@ -188,6 +206,7 @@ export class VisitsService {
         visitDate: row.visitDate,
         visitTime: row.visitTime,
         detail: row.detail,
+        leadPhone: row.leadPhone,
         status: 'From file',
         source: 'import',
         importFile: fileName,
@@ -254,10 +273,17 @@ function sortKey(visit: Visit): string {
   return `${visit.visitDate || visit.createdAt.slice(0, 10)}|${visit.visitTime}|${visit.createdAt}`;
 }
 
-function toVisit(doc: Record<string, unknown>): Visit {
+function leadPhone(value: string | undefined): string {
+  const raw = (value || '').trim();
+  return raw ? normalizeContactPhone(raw) : '';
+}
+
+function toVisit(doc: Record<string, unknown>): Visit;
+function toVisit(doc: Record<string, unknown>, includePhone: true): AdminVisit;
+function toVisit(doc: Record<string, unknown>, includePhone = false): Visit | AdminVisit {
   const file = (doc.file || {}) as Record<string, unknown>;
   const kind = (['pdf', 'word', 'excel'].includes(String(file.kind)) ? file.kind : 'pdf') as VisitFileKind;
-  return {
+  const visit: Visit = {
     id: String(doc._id),
     title: String(doc.title || ''),
     place: String(doc.place || ''),
@@ -270,4 +296,8 @@ function toVisit(doc: Record<string, unknown>): Visit {
       : null,
     source: doc.source === 'import' ? 'import' : 'manual',
   };
+  if (!includePhone) return visit;
+  const leadPhones = Array.isArray(doc.leadPhones) ? doc.leadPhones.map((phone) => String(phone || '')).filter(Boolean) : [];
+  const leadPhone = String(doc.leadPhone || '');
+  return { ...visit, leadPhone, leadPhones: leadPhones.length ? leadPhones : (leadPhone ? [leadPhone] : []) };
 }

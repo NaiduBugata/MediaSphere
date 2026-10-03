@@ -161,7 +161,7 @@ describe('parseVisitTime', () => {
 
 describe('headerColumns', () => {
   it('matches English and Telugu headers and ignores the serial column', () => {
-    expect(headerColumns(TEMPLATE_HEADERS)).toEqual({ date: 1, time: 2, place: 3, title: 4, detail: 5 });
+    expect(headerColumns(TEMPLATE_HEADERS)).toEqual({ date: 1, time: 2, place: 3, title: 4, detail: 5, phone: 6 });
     expect(headerColumns(['S.No', 'Date (DD-MM-YYYY)', 'Place', 'Purpose / Title', 'Details'])).toEqual({
       date: 1,
       place: 2,
@@ -216,7 +216,7 @@ describe('readVisitRows', () => {
     ]);
     const { rows, rejected } = await readVisitRows('excel', 'xlsx', buffer);
     expect(rows).toEqual([
-      { where: 'Row 3', title: 'Hospital visit', place: 'Vinukonda', visitDate: '2026-09-28', visitTime: '', detail: 'Met the staff' },
+      { where: 'Row 3', title: 'Hospital visit', place: 'Vinukonda', visitDate: '2026-09-28', visitTime: '', detail: 'Met the staff', leadPhone: '' },
       {
         where: 'Row 4',
         title: 'Visit to Macherla',
@@ -224,8 +224,9 @@ describe('readVisitRows', () => {
         visitDate: '2026-10-02',
         visitTime: '',
         detail: 'Gandhi Jayanti programme',
+        leadPhone: '',
       },
-      { where: 'Row 7', title: 'Temple festival', place: 'Chilakaluripet', visitDate: '', visitTime: '', detail: '' },
+      { where: 'Row 7', title: 'Temple festival', place: 'Chilakaluripet', visitDate: '', visitTime: '', detail: '', leadPhone: '' },
     ]);
     expect(rejected).toEqual([{ where: 'Row 5', reason: 'Date "someday" is not a date like 28-09-2026.' }]);
   });
@@ -280,8 +281,9 @@ describe('readVisitRows', () => {
         visitDate: '2026-09-20',
         visitTime: '11:00',
         detail: 'Mid-day meal check',
+        leadPhone: '',
       },
-      { where: 'Row 3', title: 'Ward meeting', place: 'Ipur', visitDate: '2026-09-21', visitTime: '16:30', detail: '' },
+      { where: 'Row 3', title: 'Ward meeting', place: 'Ipur', visitDate: '2026-09-21', visitTime: '16:30', detail: '', leadPhone: '' },
     ]);
   });
 
@@ -302,6 +304,7 @@ describe('readVisitRows', () => {
         visitDate: '2026-09-28',
         visitTime: '11:00',
         detail: 'కొత్త వార్డు\nసిబ్బందితో సమావేశం',
+        leadPhone: '',
       },
     ]);
   });
@@ -315,6 +318,7 @@ describe('readVisitRows', () => {
         visitDate: '2026-09-12',
         visitTime: '10:30',
         detail: 'Checked the bypass works',
+        leadPhone: '',
       },
       {
         where: 'Page 1, row 2',
@@ -323,6 +327,7 @@ describe('readVisitRows', () => {
         visitDate: '2026-09-15',
         visitTime: '',
         detail: 'Heard crop loss complaints',
+        leadPhone: '',
       },
     ];
     expect(readPdfInNode(pdfFile(PDF_ROWS, true))).toEqual({ rows: expected, rejected: [] });
@@ -359,8 +364,9 @@ describe('readVisitRows', () => {
         visitDate: '2026-09-12',
         visitTime: '',
         detail: 'Checked the bypass\nand the drains',
+        leadPhone: '',
       },
-      { where: 'Page 2, row 1', title: 'Farmers meeting', place: 'Gurazala', visitDate: '2026-09-15', visitTime: '', detail: '' },
+      { where: 'Page 2, row 1', title: 'Farmers meeting', place: 'Gurazala', visitDate: '2026-09-15', visitTime: '', detail: '', leadPhone: '' },
     ]);
   });
 

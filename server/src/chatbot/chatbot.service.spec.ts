@@ -1,4 +1,5 @@
-import { ChatbotService, HOME_BUTTON, MAIN_BUTTONS, MORE_BUTTON, MORE_BUTTONS, formatSection, isGreetingOnly, openingLine, timeGreeting, toWhatsAppFormat } from './chatbot.service';
+import { FOLLOW_UP_SENT } from '../visits/visit-followup';
+import { ChatbotService, HOME_BUTTON, MAIN_BUTTONS, MAIN_MENU_TEXT, MORE_BUTTON, MORE_BUTTONS, MORE_MENU_TEXT, VISIT_BUTTONS, formatSection, isGreetingOnly, openingLine, timeGreeting, toWhatsAppFormat } from './chatbot.service';
 
 function payload(body: string, id = 'wamid.1', from = '919876543210') {
   return {
@@ -153,6 +154,7 @@ describe('ChatbotService', () => {
     });
     expect(titles).toEqual(MAIN_BUTTONS.map((button) => button.title));
     const body = (sent[0].interactive as { body: { text: string } }).body.text;
+    expect(body).toBe(MAIN_MENU_TEXT);
     expect(body).not.toContain("I'm your Media Assistant");
   });
 
@@ -166,7 +168,7 @@ describe('ChatbotService', () => {
     });
     expect(sent).toHaveLength(1);
     const interactive = sent[0].interactive as { body: { text: string }; action: { buttons: Array<{ reply: { id: string; title: string } }> } };
-    expect(interactive.body.text.replace(/\u200b/g, '').trim()).toBe('');
+    expect(interactive.body.text).toBe(MORE_MENU_TEXT);
     expect(interactive.action.buttons.map((button) => button.reply.title)).toEqual(MORE_BUTTONS.map((button) => button.title));
     expect(interactive.action.buttons.map((button) => button.reply.id)).toEqual(['grievances', 'analytics', HOME_BUTTON.id]);
   });
@@ -220,7 +222,7 @@ describe('ChatbotService', () => {
     await bot.handle(payload('any news?', 'wamid.g3'), deps);
     expect(sent[0]).toContain('*News*');
     expect(sent[0]).not.toContain("I'm your Media Assistant");
-    expect(sent[1].replace(/\u200b/g, '').trim()).toBe('');
+    expect(sent[1]).toBe(MAIN_MENU_TEXT);
     expect(sent[2]).toContain("Good morning, Sri. Lavu Sri Krishna Devarayalu Sir! I'm your Media Assistant.");
   });
 
@@ -253,6 +255,70 @@ describe('ChatbotService', () => {
     const calls: string[] = [];
     await bot.handle(payload('Hi', 'wamid.fail'), { env: env(), fetchImpl: fetchImpl(calls) });
     expect(calls.some((call) => call.startsWith('interactive:'))).toBe(true);
+  });
+
+  it('shows visits with Follow up and More, and never the lead number', async () => {
+    const sent: Array<Record<string, unknown>> = [];
+    const db = {
+      ensureConnected: async () => true,
+      collection: () => ({
+        find: () => ({
+          sort: () => ({
+            limit: () => ({
+              toArray: async () => [{
+                title: 'Hospital round',
+                place: 'Vinukonda',
+                visitDate: '2026-10-03',
+                visitTime: '10:30',
+                detail: 'Met the doctors',
+                leadPhone: '919876543210',
+                createdAt: '2026-10-03T01:00:00.000Z',
+              }],
+            }),
+          }),
+        }),
+      }),
+    };
+    const bot = new ChatbotService(undefined, db as never);
+    await bot.handle(buttonPayload('visits', 'Visits', 'wamid.visits'), {
+      env: env(),
+      fetchImpl: capture(sent),
+      now: () => new Date('2026-10-03T04:00:00.000Z'),
+    });
+    const interactive = sent[0].interactive as { body: { text: string }; action: { buttons: Array<{ reply: { id: string; title: string } }> } };
+    expect(interactive.body.text).toContain('*Hospital round*');
+    expect(interactive.body.text).not.toContain('9876543210');
+    expect(interactive.action.buttons.map((button) => button.reply.id)).toEqual(VISIT_BUTTONS.map((button) => button.id));
+  });
+
+  it('returns to News, Visits, and More only after a follow-up is accepted', async () => {
+    const sent: Array<Record<string, unknown>> = [];
+    const accepted = { sendAll: async () => ({ due: 2, sent: 1, failed: 1 }) };
+    const bot = new ChatbotService(undefined, undefined, accepted as never);
+    await bot.handle(buttonPayload('follow_up', 'Follow up', 'wamid.follow'), {
+      env: env(),
+      fetchImpl: capture(sent),
+      now: () => new Date('2026-10-03T04:00:00.000Z'),
+    });
+    const interactive = sent[0].interactive as { body: { text: string }; action: { buttons: Array<{ reply: { title: string } }> } };
+    expect(interactive.body.text).toBe(FOLLOW_UP_SENT);
+    expect(interactive.action.buttons.map((button) => button.reply.title)).toEqual(MAIN_BUTTONS.map((button) => button.title));
+  });
+
+  it('stays on the visit list when no follow-up is accepted', async () => {
+    const sent: Array<Record<string, unknown>> = [];
+    const refused = { sendAll: async () => ({ due: 1, sent: 0, failed: 1 }) };
+    const bot = new ChatbotService(undefined, undefined, refused as never);
+    await bot.handle(buttonPayload('follow_up', 'Follow up', 'wamid.follow-fail'), {
+      env: env(),
+      fetchImpl: capture(sent),
+      records: { visits: [{ title: 'Ward meeting', detail: 'Ipur', status: 'Manual', date: '2026-10-03' }] },
+      now: () => new Date('2026-10-03T04:00:00.000Z'),
+    });
+    const interactive = sent[0].interactive as { body: { text: string }; action: { buttons: Array<{ reply: { id: string } }> } };
+    expect(interactive.body.text).toContain('Ward meeting');
+    expect(interactive.body.text).not.toContain(FOLLOW_UP_SENT);
+    expect(interactive.action.buttons.map((button) => button.reply.id)).toEqual(['follow_up', 'more']);
   });
 
   it('caps a section at five lines', () => {

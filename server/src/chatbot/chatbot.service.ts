@@ -2,6 +2,8 @@ import { Injectable, Logger, Optional } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import { ArticleRepository } from '../database/repositories/article.repository';
 import { hasAssemblySegment } from '../pipeline/native/constituency';
+import { FOLLOW_UP_SENT } from '../visits/visit-followup';
+import { VisitFollowupService } from '../visits/visit-followup.service';
 import { formatVisitTime } from '../visits/visits-import';
 import { parseWebhookPayload, type WhatsAppEvent } from '../whatsapp/whatsapp.parser';
 import { normalizePhone, sendReplyButtons, type ReplyButton } from '../whatsapp/whatsapp.send';
@@ -13,9 +15,11 @@ const NEWS_CACHE_MS = 60_000;
 const CONVERSATION_GAP_MS = 4 * 60 * 60 * 1000;
 const DEFAULT_ADDRESSEE = 'Sri. Lavu Sri Krishna Devarayalu Sir';
 const MENU_PROMPT = 'Tap a section. The reply stays in this chat.';
+export const MAIN_MENU_TEXT = '*Main menu*\n\nHere are the options.';
+export const MORE_MENU_TEXT = '*More options*\n\nHere are the options available.';
 
 export const MORE_BUTTON: ReplyButton = { id: 'more', title: 'More' };
-export const HOME_BUTTON: ReplyButton = { id: 'home', title: 'More' };
+export const HOME_BUTTON: ReplyButton = { id: 'home', title: '☰ Main menu' };
 export const MAIN_BUTTONS: ReplyButton[] = [
   { id: 'news', title: 'News' },
   { id: 'visits', title: 'Visits' },
@@ -26,18 +30,23 @@ export const MORE_BUTTONS: ReplyButton[] = [
   { id: 'analytics', title: 'Analytics' },
   HOME_BUTTON,
 ];
+export const VISIT_BUTTONS: ReplyButton[] = [
+  { id: 'follow_up', title: 'Follow up' },
+  MORE_BUTTON,
+];
 
 const CHOICE_BUTTONS: ReplyButton[] = [
   ...MAIN_BUTTONS,
   ...MORE_BUTTONS,
   { id: 'menu', title: 'More' },
+  { id: 'follow_up', title: 'Follow up' },
   { id: 'projects', title: 'Projects & reports' },
   { id: 'campaigns', title: 'Campaigns' },
   { id: 'constituency', title: 'Constituency' },
 ];
 
 export type MenuId = 'grievances' | 'projects' | 'news' | 'constituency' | 'campaigns' | 'analytics' | 'visits';
-export type MenuChoice = MenuId | 'more' | 'home' | 'menu';
+export type MenuChoice = MenuId | 'more' | 'home' | 'menu' | 'follow_up';
 
 const RECORD_SECTION: Partial<Record<MenuId, 'grievances' | 'projects' | 'people' | 'campaigns' | 'visits'>> = {
   grievances: 'grievances',
@@ -73,6 +82,10 @@ const TEXT_ALIASES: Record<string, MenuChoice> = {
   'latest updates': 'news',
   visit: 'visits',
   visits: 'visits',
+  'main menu': 'home',
+  menu: 'home',
+  'follow up': 'follow_up',
+  followup: 'follow_up',
   constituency: 'constituency',
   people: 'constituency',
   more: 'more',
@@ -109,6 +122,7 @@ export class ChatbotService {
   constructor(
     @Optional() private readonly articles?: ArticleRepository,
     @Optional() private readonly db?: DatabaseService,
+    @Optional() private readonly followUp?: VisitFollowupService,
   ) {}
 
   /** Starts a reply after the webhook has already been acknowledged. Never throws. */
@@ -155,15 +169,18 @@ export class ChatbotService {
     const fetchImpl = deps.fetchImpl || fetch;
     try {
       const choice = menuChoice(event);
-      if (choice === 'more') {
+      if (choice === 'follow_up') {
+        await this.replyFollowUp(sender, fetchImpl, env, deps);
+      } else if (choice === 'more') {
         await this.sendMore(sender, fetchImpl, env);
       } else if (choice === 'home' || choice === 'menu') {
-        await this.sendMenu(sender, '\u200b', fetchImpl, env);
+        await this.sendMenu(sender, MAIN_MENU_TEXT, fetchImpl, env);
       } else if (choice) {
         const body = await this.renderSection(choice, deps);
-        await sendReplyButtons(sender, body, [MORE_BUTTON], fetchImpl, env);
+        const buttons = choice === 'visits' ? VISIT_BUTTONS : [MORE_BUTTON];
+        await sendReplyButtons(sender, body, buttons, fetchImpl, env);
       } else {
-        const lead = opening ? `${openingLine(now, env)}\n\n${MENU_PROMPT}` : '\u200b';
+        const lead = opening ? `${openingLine(now, env)}\n\n${MENU_PROMPT}` : MAIN_MENU_TEXT;
         await this.sendMenu(sender, lead, fetchImpl, env);
       }
       this.answered.add(messageId);
@@ -176,6 +193,26 @@ export class ChatbotService {
     } finally {
       this.inflight.delete(messageId);
     }
+  }
+
+  private async replyFollowUp(
+    sender: string,
+    fetchImpl: typeof fetch,
+    env: NodeJS.ProcessEnv,
+    deps: ChatbotDeps,
+  ): Promise<void> {
+    let sent = 0;
+    try {
+      if (this.followUp && this.followUp.sendAll) sent = (await this.followUp.sendAll(fetchImpl)).sent;
+    } catch (err) {
+      this.logger.warn(`Visit follow-up failed: ${err instanceof Error ? err.message : 'send failed'}`);
+    }
+    if (sent > 0) {
+      await this.sendMenu(sender, FOLLOW_UP_SENT, fetchImpl, env);
+      return;
+    }
+    const body = await this.renderSection('visits', deps);
+    await sendReplyButtons(sender, body, VISIT_BUTTONS, fetchImpl, env);
   }
 
   private async sendMenu(
@@ -192,7 +229,7 @@ export class ChatbotService {
     fetchImpl: typeof fetch,
     env: NodeJS.ProcessEnv,
   ): Promise<void> {
-    await sendReplyButtons(sender, '\u200b', MORE_BUTTONS, fetchImpl, env);
+    await sendReplyButtons(sender, MORE_MENU_TEXT, MORE_BUTTONS, fetchImpl, env);
   }
 
   private async renderSection(choice: MenuId, deps: ChatbotDeps): Promise<string> {

@@ -49,6 +49,11 @@ export class CreateVisitDto {
   @IsString()
   @MaxLength(2000)
   detail?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  leadPhone?: string;
 }
 
 @Controller('api')
@@ -58,6 +63,12 @@ export class VisitsController {
   @Get('visits')
   async list() {
     return { visits: await this.visits.list() };
+  }
+
+  @Get('admin/visits')
+  @AdminOnly()
+  async adminList() {
+    return { visits: await this.visits.listAdmin() };
   }
 
   /** PDFs open in the browser; Word and Excel download. `?download=1` always downloads. */
