@@ -9,8 +9,9 @@ import {
   notifyPendingWhatsApp,
   notifyPipelineWhatsApp,
 } from './whatsapp.notify';
-import { deliverWhatsApp, sendReplyButtons, sendTemplateMessage, setWhatsAppStatusRecorder } from './whatsapp.send';
+import { clearStaffDirectory, setStaffDirectory } from './whatsapp.audience';
 import { setMutedSenders } from './whatsapp.muted';
+import { deliverWhatsApp, sendReplyButtons, sendTemplateMessage, setWhatsAppStatusRecorder } from './whatsapp.send';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return {
@@ -340,5 +341,27 @@ describe('WhatsApp notices', () => {
     service.onModuleDestroy();
     global.fetch = originalFetch;
     expect(calls).toBe(0);
+  });
+
+  it('sends pipeline success and failure only to the super admin, and other alerts to admins too', async () => {
+    readyEnv();
+    process.env.WHATSAPP_RECIPIENTS = '919000000001,919000000002,919000000003';
+    setStaffDirectory([
+      { phone: '919000000001', role: 'superadmin' },
+      { phone: '919000000002', role: 'admin' },
+      { phone: '919000000003', role: 'user' },
+    ]);
+    const sent: string[] = [];
+    const fetchImpl = (async (_url: string, init?: RequestInit) => {
+      sent.push(String((JSON.parse(String(init?.body)) as { to?: string }).to));
+      return jsonResponse({ messages: [{ id: 'wamid.role' }] });
+    }) as typeof fetch;
+    await notifyPipelineWhatsApp({ inserted: 1, articles_fetched: 1, duration_seconds: 1, status: 'ok' }, fetchImpl);
+    await notifyFailureWhatsApp('combined_pipeline', 'down', 'N/A', fetchImpl);
+    const pipeline = [...sent];
+    await notifyCustomWhatsApp('A message', fetchImpl);
+    clearStaffDirectory();
+    expect(pipeline).toEqual(['919000000001', '919000000001']);
+    expect(sent.slice(pipeline.length).sort()).toEqual(['919000000001', '919000000002']);
   });
 });

@@ -52,6 +52,7 @@ async function send(
   text: string,
   variables: string[] | undefined,
   fetchImpl: typeof fetch = fetch,
+  audience: 'pipeline' | 'staff' = 'staff',
 ): Promise<WhatsAppNotice> {
   const vars = forced()
     ? (variables && variables.length === 5 ? variables : summaryVariables(text))
@@ -61,6 +62,7 @@ async function send(
     variables: vars,
     templateName: templateFor(kind),
     notificationType: type,
+    audience,
   }, fetchImpl));
 }
 
@@ -115,7 +117,7 @@ export async function notifyPipelineWhatsApp(
     String(stats.duration_seconds ?? '—'),
     String(stats.status || 'ok'),
   ];
-  return send('pipeline_complete', 'pipeline', text, forced() ? summaryVariables(text) : variables, fetchImpl);
+  return send('pipeline_complete', 'pipeline', text, forced() ? summaryVariables(text) : variables, fetchImpl, 'pipeline');
 }
 
 export async function notifyFailureWhatsApp(
@@ -125,7 +127,7 @@ export async function notifyFailureWhatsApp(
   fetchImpl: typeof fetch = fetch,
 ): Promise<WhatsAppNotice> {
   const text = failureText(module, reason, retryStatus);
-  return send('failure', 'failure', text, [module, reason.slice(0, 200), new Date().toISOString()], fetchImpl);
+  return send('failure', 'failure', text, [module, reason.slice(0, 200), new Date().toISOString()], fetchImpl, 'pipeline');
 }
 
 export async function notifyHealthWhatsApp(

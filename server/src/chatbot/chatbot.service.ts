@@ -6,6 +6,7 @@ import { FOLLOW_UP_SENT } from '../visits/visit-followup';
 import { VisitFollowupService } from '../visits/visit-followup.service';
 import { formatVisitTime } from '../visits/visits-import';
 import { parseWebhookPayload, type WhatsAppEvent } from '../whatsapp/whatsapp.parser';
+import { replyRecipients, staffDirectoryLoaded } from '../whatsapp/whatsapp.audience';
 import { normalizePhone, sendReplyButtons, type ReplyButton } from '../whatsapp/whatsapp.send';
 import { newestFirst, toBrief, type NewsBrief } from './news-context';
 
@@ -137,7 +138,9 @@ export class ChatbotService {
     if (!chatbotEnabled(env)) return;
     const allowed = allowlist(env);
     if (!allowed.length) {
-      this.logger.warn('Chatbot replies are off because WHATSAPP_RECIPIENTS is empty.');
+      this.logger.warn(staffDirectoryLoaded()
+        ? 'Chatbot replies are off because no admin numbers are set.'
+        : 'Chatbot replies are off because WHATSAPP_RECIPIENTS is empty.');
       return;
     }
     let events: WhatsAppEvent[] = [];
@@ -384,6 +387,7 @@ function text(value: unknown): string {
 }
 
 function allowlist(env: NodeJS.ProcessEnv): string[] {
+  if (staffDirectoryLoaded()) return replyRecipients();
   const numbers: string[] = [];
   for (const item of (env.WHATSAPP_RECIPIENTS || '').split(',')) {
     const trimmed = item.trim();

@@ -36,6 +36,8 @@ export interface BirthdayContact {
   lastInboundAt: string | null;
   /** Off by default (one-way). On: their messages are stored and the chatbot may answer, as for anyone else. */
   allowReplies: boolean;
+  /** superadmin receives pipeline success and failure. admin is answered and receives other alerts. user is one-way. */
+  role: 'superadmin' | 'admin' | 'user';
 }
 
 /** WhatsApp accepts free text only within 24 hours of the person's last message; otherwise a template is needed. */

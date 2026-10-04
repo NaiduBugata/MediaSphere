@@ -8,6 +8,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
+import { setStaffDirectory, staffRole } from '../whatsapp/whatsapp.audience';
 import { setContactInboundRecorder, setMutedSenders } from '../whatsapp/whatsapp.muted';
 import {
   isDue,
@@ -111,6 +112,7 @@ export class BirthdaysService implements OnModuleInit {
       lastWish: null,
       lastInboundAt: null,
       allowReplies: false,
+      role: 'user',
     };
     const inserted = await this.db.collection(CONTACTS).insertOne(doc);
     await this.refreshMuted();
@@ -158,8 +160,14 @@ export class BirthdaysService implements OnModuleInit {
   async refreshMuted(): Promise<void> {
     try {
       const contacts = await this.contacts();
+      setStaffDirectory(contacts.map((contact) => ({ phone: contact.phone, role: contact.role })));
+      const answered = new Set(
+        contacts.filter((contact) => contact.role !== 'user').map((contact) => contact.phone.replace(/\D/g, '')),
+      );
       setMutedSenders(
-        contacts.filter((contact) => !contact.allowReplies).map((contact) => contact.phone),
+        contacts
+          .filter((contact) => !answered.has(contact.phone.replace(/\D/g, '')) && !contact.allowReplies)
+          .map((contact) => contact.phone),
         contacts.map((contact) => contact.phone),
       );
     } catch (err) {
@@ -225,5 +233,6 @@ function toContact(doc: Record<string, unknown>): BirthdayContact {
     lastWish: wish,
     lastInboundAt: doc.lastInboundAt ? String(doc.lastInboundAt) : null,
     allowReplies: doc.allowReplies === true,
+    role: staffRole(doc.role),
   };
 }

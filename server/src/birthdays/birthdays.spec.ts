@@ -56,7 +56,7 @@ function graphFetch(calls: Array<Record<string, unknown>>, fail?: (body: Record<
 function contact(overrides: Partial<BirthdayContact> = {}): BirthdayContact {
   return {
     id: '1', name: 'Test', phone: '919000000001', birthday: '09-30', birthYear: null, place: '', designation: '',
-    notes: '', language: 'en', createdAt: '', lastWish: null, lastInboundAt: null, allowReplies: false, ...overrides,
+    notes: '', language: 'en', createdAt: '', lastWish: null, lastInboundAt: null, allowReplies: false, role: 'user', ...overrides,
   };
 }
 

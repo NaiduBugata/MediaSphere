@@ -1,3 +1,5 @@
+import { pipelineRecipients, replyRecipients, staffDirectoryLoaded } from './whatsapp.audience';
+
 const RECIPIENT = /^\d{8,15}$/;
 const TEMPLATE_ERROR_CODES = new Set([132000, 132001, 132005, 132007, 132012, 132015, 132016]);
 const RETRYABLE = new Set([429, 500, 502, 503, 504]);
@@ -52,8 +54,18 @@ function graphUrl(env: NodeJS.ProcessEnv): string {
   return `https://graph.facebook.com/${version}/${phoneId}/messages`;
 }
 
-function recipients(env: NodeJS.ProcessEnv): string[] {
+function configuredRecipients(env: NodeJS.ProcessEnv): string[] {
   return (env.WHATSAPP_RECIPIENTS || '').split(',').map((item) => item.trim()).filter(Boolean);
+}
+
+/**
+ * Pipeline success and failure go only to the super admin.
+ * Other alerts go to the super admin and the admins.
+ * Before the contact list has loaded, the configured recipient list is used so a restart still delivers.
+ */
+function recipients(env: NodeJS.ProcessEnv, audience?: 'pipeline' | 'staff'): string[] {
+  if (!audience || !staffDirectoryLoaded()) return configuredRecipients(env);
+  return audience === 'pipeline' ? pipelineRecipients() : replyRecipients();
 }
 
 function errorReason(status: number, data: Record<string, unknown>): string {
@@ -271,7 +283,14 @@ async function sendOne(
 
 /** Send one notification to every configured recipient. Does nothing on the network when WhatsApp is off. */
 export async function deliverWhatsApp(
-  input: { text: string; variables?: string[]; templateName?: string; notificationType?: string },
+  input: {
+    text: string;
+    variables?: string[];
+    templateName?: string;
+    notificationType?: string;
+    /** pipeline: super admin only. staff: super admin and admins. */
+    audience?: 'pipeline' | 'staff';
+  },
   fetchImpl: typeof fetch = fetch,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<WaSendResult> {
@@ -285,7 +304,7 @@ export async function deliverWhatsApp(
     await rememberStatus(skipped, input.notificationType, true);
     return skipped;
   }
-  const targets = recipients(env);
+  const targets = recipients(env, input.audience);
   if (!targets.length) {
     const skipped: WaSendResult = { success: true, skipped: true, skip_reason: 'no_recipients', error: null, messageId: null, attempts: 0 };
     await rememberStatus(skipped, input.notificationType, true);

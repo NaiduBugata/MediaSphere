@@ -1,4 +1,5 @@
 import { FOLLOW_UP_SENT } from '../visits/visit-followup';
+import { clearStaffDirectory, setStaffDirectory } from '../whatsapp/whatsapp.audience';
 import { ChatbotService, HOME_BUTTON, MAIN_BUTTONS, MAIN_MENU_TEXT, MORE_BUTTON, MORE_BUTTONS, MORE_MENU_TEXT, VISIT_BUTTONS, formatSection, isGreetingOnly, openingLine, timeGreeting, toWhatsAppFormat } from './chatbot.service';
 
 function payload(body: string, id = 'wamid.1', from = '919876543210') {
@@ -74,6 +75,8 @@ const news = [
 ];
 
 describe('ChatbotService', () => {
+  afterEach(() => clearStaffDirectory());
+
   it('shows the six reply buttons and ignores a second delivery of the same message', async () => {
     const calls: string[] = [];
     const bot = new ChatbotService();
@@ -88,6 +91,18 @@ describe('ChatbotService', () => {
     await bot.handle(payload('Hello'), { env: env({ WHATSAPP_RECIPIENTS: '' }), fetchImpl: fetchImpl(calls) });
     await bot.handle(payload('Hello', 'wamid.2', '911111111111'), { env: env(), fetchImpl: fetchImpl(calls) });
     expect(calls).toEqual([]);
+  });
+
+  it('answers an admin and stays silent for everyone else once roles are loaded', async () => {
+    setStaffDirectory([
+      { phone: '919000000001', role: 'superadmin' },
+      { phone: '919000000002', role: 'admin' },
+    ]);
+    const calls: string[] = [];
+    const bot = new ChatbotService();
+    await bot.handle(payload('Hello', 'wamid.user', '919876543210'), { env: env(), fetchImpl: fetchImpl(calls) });
+    await bot.handle(payload('Hello', 'wamid.admin', '919000000002'), { env: env(), fetchImpl: fetchImpl(calls) });
+    expect(calls).toEqual(['interactive:919000000002']);
   });
 
   it('does not reply to delivery statuses', async () => {
