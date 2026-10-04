@@ -61,12 +61,14 @@ export function sakshiMaxRetries(): number {
 export const SAKSHI_COLLECTOR_NAME = 'Sakshi News Collector';
 export const SAKSHI_USER_AGENT =
   process.env.SAKSHI_USER_AGENT ||
-  'MediaSphereBot/1.0 (+https://github.com/NaiduBugata/MediaSphere; news aggregation)';
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
 export const SAKSHI_HEADERS: Record<string, string> = {
   'User-Agent': SAKSHI_USER_AGENT,
-  Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-  'Accept-Language': 'te,en;q=0.8',
+  Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+  'Accept-Language': 'te-IN,te;q=0.9,en-US;q=0.8,en;q=0.7',
+  Referer: 'https://www.sakshi.com/',
+  'Upgrade-Insecure-Requests': '1',
 };
 
 export function sakshiLinkSelector(): string {
@@ -92,7 +94,7 @@ export function sakshiNoiseSelector(): string {
 }
 
 export const SAKSHI_TRANSIENT_STATUSES = new Set([500, 502, 503, 504]);
-export const SAKSHI_PERMANENT_STATUSES = new Set([400, 403, 404]);
+export const SAKSHI_PERMANENT_STATUSES = new Set([400, 404]);
 
 export const SAKSHI_SKIP_URL_SUBSTRINGS = [
   '/videos/',

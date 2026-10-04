@@ -44,6 +44,13 @@ export async function fetchSakshiHtml(
         headers: SAKSHI_HEADERS,
         signal: AbortSignal.timeout(timeoutMs),
       });
+      if (response.status === 403) {
+        if (attempt >= 2) throw new PermanentHttpError(403, url);
+        lastError = new TransientHttpError(403, url);
+        const delay = options?.retryDelayMs ?? 250;
+        if (delay > 0) await sleep(delay);
+        continue;
+      }
       if (SAKSHI_PERMANENT_STATUSES.has(response.status)) {
         throw new PermanentHttpError(response.status, url);
       }

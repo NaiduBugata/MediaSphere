@@ -104,9 +104,13 @@ export async function collectYoutubeNews(options: CollectYoutubeOptions = {}): P
   const articles: YoutubeArticle[] = [];
   let nonNews = 0;
   let constituencyRejected = 0;
+  let captionRefusals = 0;
   for (const video of videos) {
     if (articles.length >= maxNew) break;
+    if (captionRefusals >= 3) break;
     const result = await fetchTeluguTranscriptResult(video.video_id, fetchImpl);
+    if (result.reason.startsWith('caption_http_429') || result.reason.startsWith('player_http_429')) captionRefusals += 1;
+    else captionRefusals = 0;
     const transcript = result.text;
     if (!transcript) {
       if (result.reason === 'no_captions') {

@@ -52,7 +52,11 @@ export async function searchYoutubeKeyword(
     youtubeApiKey(),
     youtubeMaxResultsPerKeyword(),
   );
-  const response = await fetchImpl(url);
+  let response = await fetchImpl(url);
+  if (response.status === 429 || response.status === 503) {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    response = await fetchImpl(url);
+  }
   if (!response.ok) return { videos: [], error: `youtube_http_${response.status}` };
   const body = (await response.json()) as { items?: Array<Record<string, unknown>> };
   return { videos: parseSearchItems(body) };

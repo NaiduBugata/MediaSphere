@@ -10,7 +10,7 @@ import {
   sakshiTagUrls,
 } from './sakshi.constants';
 import { extractSakshiArticle } from './sakshi.extractor';
-import { PermanentHttpError, fetchSakshiHtml } from './sakshi.http';
+import { PermanentHttpError, TransientHttpError, fetchSakshiHtml } from './sakshi.http';
 import type { SakshiCollectorEnvelope, SakshiFilterStats } from './sakshi.models';
 import { normalizeSakshiArticle } from './sakshi.normalizer';
 import {
@@ -138,7 +138,7 @@ export async function collectSakshiNews(options: CollectSakshiOptions = {}): Pro
       const html = await fetchSakshiHtml(url, fetchImpl, { retryDelayMs: options.retryDelayMs });
       perTag.push(rankSakshiLinks(html));
     } catch (err) {
-      const status = err instanceof PermanentHttpError ? err.statusCode : 0;
+      const status = err instanceof PermanentHttpError || err instanceof TransientHttpError ? err.statusCode : 0;
       firstError ??= status ? `sakshi_http_${status}` : 'sakshi_fetch_failed';
     }
   }
