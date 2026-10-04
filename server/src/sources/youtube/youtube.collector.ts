@@ -12,6 +12,7 @@ import { normalizeYoutubeVideo } from './youtube.normalizer';
 import { cleanTranscript, toRfc3339 } from './youtube.parser';
 import { searchYoutubeKeyword } from './youtube.search';
 import { fetchTeluguTranscriptResult } from './youtube.transcript';
+import { isReligionStory } from '../../pipeline/native/religion';
 
 export interface YoutubeCollection {
   envelope: YoutubeCollectorEnvelope;
@@ -108,6 +109,11 @@ export async function collectYoutubeNews(options: CollectYoutubeOptions = {}): P
   for (const video of videos) {
     if (articles.length >= maxNew) break;
     if (captionRefusals >= 3) break;
+    if (isReligionStory(video.title)) {
+      nonNews += 1;
+      checkedVideoIds.push(video.video_id);
+      continue;
+    }
     const result = await fetchTeluguTranscriptResult(video.video_id, fetchImpl);
     if (result.reason.startsWith('caption_http_429') || result.reason.startsWith('player_http_429')) captionRefusals += 1;
     else captionRefusals = 0;

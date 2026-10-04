@@ -13,6 +13,7 @@ import { extractSakshiArticle } from './sakshi.extractor';
 import { PermanentHttpError, TransientHttpError, fetchSakshiHtml } from './sakshi.http';
 import type { SakshiCollectorEnvelope, SakshiFilterStats } from './sakshi.models';
 import { normalizeSakshiArticle } from './sakshi.normalizer';
+import { isReligionStory } from '../../pipeline/native/religion';
 import {
   isArticleUrl,
   isSectionHubUrl,
@@ -80,6 +81,7 @@ export function rankSakshiLinks(html: string, baseUrl = sakshiBaseUrl()): string
     if (seen.has(absolute) || !isArticleUrl(absolute) || isSectionHubUrl(absolute)) return;
     seen.add(absolute);
     const anchorText = page(element).text().replace(/\s+/g, ' ').trim();
+    if (isReligionStory(anchorText)) return;
     const priority = linkPriority(absolute, anchorText, keywords);
     if (priority < 100) return;
     ranked.push([priority, -index, absolute]);
@@ -162,6 +164,12 @@ export async function collectSakshiNews(options: CollectSakshiOptions = {}): Pro
     checkedUrls.push(url);
     const raw = extractSakshiArticle(pageHtml, url);
     if (!raw) continue;
+    if (isReligionStory(raw.title, raw.summary, raw.content, raw.category)) {
+      stats.fetched += 1;
+      stats.rejected += 1;
+      stats.rejected_reasons.religion = (stats.rejected_reasons.religion || 0) + 1;
+      continue;
+    }
     stats.fetched += 1;
     const score = await validateConstituency(raw as unknown as Record<string, unknown>, fetchImpl);
     stats.scores.push(score.score);

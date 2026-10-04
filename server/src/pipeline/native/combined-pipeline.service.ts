@@ -17,6 +17,7 @@ import { mergeSourceResults } from '../combined-cycle';
 import { notifyFailureWhatsApp, notifyPendingWhatsApp, notifyPipelineWhatsApp } from '../../whatsapp/whatsapp.notify';
 import { describeFailure, FailureAlertGate, pipelineStatusWhatsAppEnabled } from './pipeline-alerts';
 import { ASSEMBLY_SEGMENTS, scoreConstituency, type AssemblySegment } from './constituency';
+import { isReligionStory } from './religion';
 import { whatsappAlertsEnabled } from '../../whatsapp/whatsapp.send';
 import { sendPipelineFailureEmail } from '../../notifications/failure-email';
 import { sendNewArticlesEmail } from '../../notifications/news-email';
@@ -99,6 +100,11 @@ export class CombinedPipelineService {
       const segment = resolveSegment(article);
       if (!segment) {
         this.logger.warn(`[SEGMENT_GATE] dropped source=${article.source} post_id=${article.post_id}: not one of the 7 assembly segments`);
+        continue;
+      }
+      if (isReligionStory(article.title, article.content)) {
+        checked.push(`post:${article.post_id}`);
+        this.logger.log(`[RELIGION] skipped source=${article.source} post_id=${article.post_id}`);
         continue;
       }
       mapped.push({ ...article, assembly_segment: segment });

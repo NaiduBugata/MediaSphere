@@ -1,3 +1,5 @@
+import { isReligionStory } from '../../pipeline/native/religion';
+
 /** Port of sources/youtube/parser.py TranscriptCleaner and caption text parsing. */
 
 const NEWS_CHANNELS = [
@@ -79,6 +81,7 @@ export function isNewsContent(title: string, channel: string, transcript: string
   const channelLower = (channel || '').toLowerCase();
   const isNewsChannel = NEWS_CHANNELS.some((name) => channelLower.includes(name));
   const hasNonNews = NON_NEWS_KEYWORDS.some((word) => titleLower.includes(word));
+  if (isReligionStory(title, transcript)) return false;
   const hasIndicators = NEWS_INDICATORS.some((word) => transcript.includes(word));
   if (isNewsChannel && !hasNonNews) return true;
   return hasIndicators && !hasNonNews;

@@ -29,6 +29,11 @@ describe('youtube transcript cleaner', () => {
     const result = cleanTranscript('పోలీస్ అరెస్ట్ ఘటన వివరాలు', 'Village report', 'Some Channel');
     expect(result.is_news).toBe(true);
   });
+
+  it('drops a worship video even from a news channel', () => {
+    const result = cleanTranscript('ఆరాధన కార్యక్రమం వివరాలు', 'ఆదివారం ఆరాధన నరసరావుపేట', 'TV9');
+    expect(result.is_news).toBe(false);
+  });
 });
 
 describe('youtube search url', () => {
