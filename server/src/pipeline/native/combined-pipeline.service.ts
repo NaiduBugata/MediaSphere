@@ -102,7 +102,7 @@ export class CombinedPipelineService {
         this.logger.warn(`[SEGMENT_GATE] dropped source=${article.source} post_id=${article.post_id}: not one of the 7 assembly segments`);
         continue;
       }
-      if (isReligionStory(article.title, article.content)) {
+      if (isReligionStory(article.title, article.content || '')) {
         checked.push(`post:${article.post_id}`);
         this.logger.log(`[RELIGION] skipped source=${article.source} post_id=${article.post_id}`);
         continue;
