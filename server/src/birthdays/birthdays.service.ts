@@ -63,10 +63,14 @@ export class BirthdaysService implements OnModuleInit {
 
   async setReplies(id: string, allowReplies: boolean): Promise<BirthdayContact> {
     const doc = await this.findDoc(id);
-    await this.db.collection(CONTACTS).updateOne({ _id: doc._id }, { $set: { allowReplies } });
+    const contact = toContact(doc);
+    const next = contact.role === 'user' ? allowReplies : true;
+    if (next !== (doc.allowReplies === true)) {
+      await this.db.collection(CONTACTS).updateOne({ _id: doc._id }, { $set: { allowReplies: next } });
+    }
     await this.refreshMuted();
-    this.logger.log(`[BIRTHDAY] replies ${allowReplies ? 'allowed' : 'blocked'} for ${maskPhone(String(doc.phone || ''))}`);
-    return toContact({ ...doc, allowReplies });
+    this.logger.log(`[BIRTHDAY] replies ${next ? 'allowed' : 'blocked'} for ${maskPhone(String(doc.phone || ''))}`);
+    return toContact({ ...doc, allowReplies: next });
   }
 
   async noteInbound(phones: string[], at = new Date().toISOString()): Promise<void> {
@@ -159,7 +163,14 @@ export class BirthdaysService implements OnModuleInit {
 
   async refreshMuted(): Promise<void> {
     try {
-      const contacts = await this.contacts();
+      await this.ready();
+      const rows = await this.db.collection(CONTACTS).find({}).toArray();
+      for (const doc of rows) {
+        if (staffRole(doc.role) === 'user' || doc.allowReplies === true) continue;
+        await this.db.collection(CONTACTS).updateOne({ _id: doc._id }, { $set: { allowReplies: true } });
+        doc.allowReplies = true;
+      }
+      const contacts = rows.map(toContact);
       setStaffDirectory(contacts.map((contact) => ({ phone: contact.phone, role: contact.role })));
       const answered = new Set(
         contacts.filter((contact) => contact.role !== 'user').map((contact) => contact.phone.replace(/\D/g, '')),
@@ -232,7 +243,7 @@ function toContact(doc: Record<string, unknown>): BirthdayContact {
     createdAt: String(doc.createdAt || ''),
     lastWish: wish,
     lastInboundAt: doc.lastInboundAt ? String(doc.lastInboundAt) : null,
-    allowReplies: doc.allowReplies === true,
+    allowReplies: staffRole(doc.role) !== 'user' || doc.allowReplies === true,
     role: staffRole(doc.role),
   };
 }

@@ -171,7 +171,7 @@ export class ChatbotService {
     const now = (deps.now || (() => new Date()))();
     const last = this.lastReplyAt.get(sender);
     const opening = last === undefined || now.getTime() - last > CONVERSATION_GAP_MS;
-    const fetchImpl = deps.fetchImpl || fetch;
+    const fetchImpl = replyFetch(deps.fetchImpl || fetch);
     try {
       const choice = menuChoice(event);
       if (choice === 'follow_up') {
@@ -407,6 +407,21 @@ function timeOf(value: string): number {
 
 function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+const REPLY_TIMEOUT_MS = 20_000;
+
+/** A stuck WhatsApp call must not hold later replies from the same admin. */
+function replyFetch(fetchImpl: typeof fetch): typeof fetch {
+  return (async (input, init) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REPLY_TIMEOUT_MS);
+    try {
+      return await fetchImpl(input, { ...init, signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+    }
+  }) as typeof fetch;
 }
 
 function allowlist(env: NodeJS.ProcessEnv): string[] {

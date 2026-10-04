@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException } from '@nestjs/common';
 import { ObjectId } from 'mongodb';
 import { DatabaseService } from '../database/database.service';
 import { matches } from '../database/pg-collection';
+import { clearStaffDirectory } from '../whatsapp/whatsapp.audience';
 import { contactSenders, isMutedSender, setMutedSenders, withoutMutedMessages } from '../whatsapp/whatsapp.muted';
 import {
   birthdayWishesEnabled,
@@ -162,6 +163,7 @@ describe('BirthdaysService', () => {
   afterEach(() => {
     WA_ENV.forEach((key) => { if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key]; });
     setMutedSenders([]);
+    clearStaffDirectory();
   });
 
   it('wishes only today\'s birthdays, once, and mutes every listed number', async () => {
@@ -212,6 +214,34 @@ describe('BirthdaysService', () => {
 
     await service.setReplies(saroj.id, false);
     expect(isMutedSender('916281168530')).toBe(true);
+  });
+
+  it('does not block an admin or super admin when visits or birthday replies are turned off', async () => {
+    const { db, docs } = fakeDb();
+    const service = new BirthdaysService(db);
+    const saroj = await service.create({ name: 'Sarojininaidu', phone: '6281168530', birthday: '30-09' });
+    const akshay = await service.create({ name: 'Akshay Guptha', phone: '9000000026' });
+    await service.create({ name: 'Udatha Sravani', phone: '8885230708', birthday: '30-09' });
+    const sarojDoc = docs.find((doc) => doc.name === 'Sarojininaidu');
+    const akshayDoc = docs.find((doc) => doc.name === 'Akshay Guptha');
+    if (sarojDoc) sarojDoc.role = 'superadmin';
+    if (akshayDoc) akshayDoc.role = 'admin';
+    await service.refreshMuted();
+
+    const message = (from: string) => ({ entry: [{ changes: [{ value: { messages: [{ from, id: 'x', type: 'text', text: { body: 'hi' } }] } }] }] });
+    expect(isMutedSender('916281168530')).toBe(false);
+    expect(isMutedSender('919000000026')).toBe(false);
+    expect(withoutMutedMessages(message('916281168530')).dropped).toBe(0);
+    expect(withoutMutedMessages(message('919000000026')).dropped).toBe(0);
+    expect(withoutMutedMessages(message('918885230708')).dropped).toBe(1);
+
+    expect((await service.setReplies(saroj.id, false)).allowReplies).toBe(true);
+    expect((await service.setReplies(akshay.id, false)).allowReplies).toBe(true);
+    expect(sarojDoc?.allowReplies).toBe(true);
+    expect(akshayDoc?.allowReplies).toBe(true);
+    expect(isMutedSender('916281168530')).toBe(false);
+    expect(isMutedSender('919000000026')).toBe(false);
+    expect(isMutedSender('918885230708')).toBe(true);
   });
 
   it('records a failed wish and retries it on the next check', async () => {

@@ -1,7 +1,10 @@
+import { replyRecipients, staffDirectoryLoaded } from './whatsapp.audience';
+
 /**
  * Numbers that only receive one-way messages (birthday wishes). Their incoming messages are dropped
  * before the webhook stores them or the chatbot sees them, even when the number is on WHATSAPP_RECIPIENTS.
  * A contact with replies allowed is in `contacts` but not in `muted`.
+ * Admin and super admin numbers are never dropped, including while visit or birthday messages are sending.
  */
 let muted = new Set<string>();
 let contacts = new Set<string>();
@@ -52,7 +55,10 @@ export async function noteContactInbound(numbers: string[]): Promise<void> {
 }
 
 export function isMutedSender(waId: unknown): boolean {
-  return muted.has(digits(waId));
+  const phone = digits(waId);
+  if (!phone) return false;
+  if (staffDirectoryLoaded() && replyRecipients().includes(phone)) return false;
+  return muted.has(phone);
 }
 
 /**

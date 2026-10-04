@@ -172,7 +172,8 @@ export default function AdminBirthdays({ onUnauthorized }) {
           </li>
           <li>
             One-way by default: replies are ignored, not stored, and the chatbot does not answer them. Click{' '}
-            <span className="font-semibold">Blocked</span> in the Replies column to let a person reply.
+            <span className="font-semibold">Blocked</span> in the Replies column to let a person reply. Admin and super
+            admin numbers stay on for visits, birthdays, and every other message until you ask to turn them off.
           </li>
         </ul>
       </section>
@@ -296,17 +297,26 @@ export default function AdminBirthdays({ onUnauthorized }) {
                         <WishCell wish={contact.lastWish} today={info.today} />
                       </td>
                       <td className="py-2.5 pr-3 whitespace-nowrap">
-                        <button
-                          type="button"
-                          onClick={() => toggleReplies(contact)}
-                          disabled={busyId === contact.id}
-                          title={contact.allowReplies ? 'Click to block replies' : 'Click to allow replies'}
-                          className={`rounded-md px-2 py-0.5 text-xs font-semibold disabled:opacity-60 ${
-                            contact.allowReplies ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'
-                          }`}
-                        >
-                          {contact.allowReplies ? 'Allowed' : 'Blocked'}
-                        </button>
+                        {contact.role === 'admin' || contact.role === 'superadmin' ? (
+                          <span
+                            className="rounded-md bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800"
+                            title="Replies stay on for this number until you ask to turn them off"
+                          >
+                            Always on
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => toggleReplies(contact)}
+                            disabled={busyId === contact.id}
+                            title={contact.allowReplies ? 'Click to block replies' : 'Click to allow replies'}
+                            className={`rounded-md px-2 py-0.5 text-xs font-semibold disabled:opacity-60 ${
+                              contact.allowReplies ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'
+                            }`}
+                          >
+                            {contact.allowReplies ? 'Allowed' : 'Blocked'}
+                          </button>
+                        )}
                       </td>
                       <td className="py-2.5 whitespace-nowrap">
                         <div className="flex items-center gap-3">
