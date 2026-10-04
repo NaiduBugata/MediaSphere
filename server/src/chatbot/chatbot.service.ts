@@ -118,6 +118,8 @@ export class ChatbotService {
   private readonly inflight = new Set<string>();
   private readonly queues = new Map<string, Promise<void>>();
   private readonly lastReplyAt = new Map<string, number>();
+  /** Visit messages go out after the menu reply, so a Follow up tap cannot freeze this chat. */
+  private followUps: Promise<void> = Promise.resolve();
   private newsCache: { at: number; briefs: NewsBrief[] } | null = null;
 
   constructor(
@@ -204,6 +206,27 @@ export class ChatbotService {
     env: NodeJS.ProcessEnv,
     deps: ChatbotDeps,
   ): Promise<void> {
+    if (this.followUp && typeof this.followUp.readyToSend === 'function') {
+      let ready = false;
+      try {
+        ready = await this.followUp.readyToSend();
+      } catch (err) {
+        this.logger.warn(`Visit follow-up failed: ${err instanceof Error ? err.message : 'send failed'}`);
+      }
+      if (!ready) {
+        const body = await this.renderSection('visits', deps);
+        await sendReplyButtons(sender, body, VISIT_BUTTONS, fetchImpl, env);
+        return;
+      }
+      await this.sendMenu(sender, FOLLOW_UP_SENT, fetchImpl, env);
+      const followUp = this.followUp;
+      this.followUps = this.followUps.then(() => followUp.sendAll(fetchImpl).then((result) => {
+        if (!result.sent) this.logger.warn('Visit follow-up was not accepted.');
+      }, (err) => {
+        this.logger.warn(`Visit follow-up failed: ${err instanceof Error ? err.message : 'send failed'}`);
+      }));
+      return;
+    }
     let sent = 0;
     try {
       if (this.followUp && this.followUp.sendAll) sent = (await this.followUp.sendAll(fetchImpl)).sent;

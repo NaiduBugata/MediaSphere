@@ -320,6 +320,49 @@ describe('ChatbotService', () => {
     expect(interactive.action.buttons.map((button) => button.reply.title)).toEqual(MAIN_BUTTONS.map((button) => button.title));
   });
 
+  it('answers Follow up before the visit messages finish', async () => {
+    const sent: Array<Record<string, unknown>> = [];
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const follow = {
+      readyToSend: async () => true,
+      sendAll: () => gate.then(() => ({ due: 2, sent: 1, failed: 0 })),
+    };
+    const bot = new ChatbotService(undefined, undefined, follow as never);
+    await bot.handle(buttonPayload('follow_up', 'Follow up', 'wamid.follow-now'), {
+      env: env(),
+      fetchImpl: capture(sent),
+      now: () => new Date('2026-10-03T04:00:00.000Z'),
+    });
+    const interactive = sent[0].interactive as { body: { text: string } };
+    expect(interactive.body.text).toBe(FOLLOW_UP_SENT);
+    expect(sent).toHaveLength(1);
+    release();
+    await gate;
+  });
+
+  it('stays on the visit list when there is nobody to message', async () => {
+    const sent: Array<Record<string, unknown>> = [];
+    const follow = {
+      readyToSend: async () => false,
+      sendAll: async () => {
+        throw new Error('should not send');
+      },
+    };
+    const bot = new ChatbotService(undefined, undefined, follow as never);
+    await bot.handle(buttonPayload('follow_up', 'Follow up', 'wamid.follow-empty'), {
+      env: env(),
+      fetchImpl: capture(sent),
+      records: { visits: [{ title: 'Ward meeting', detail: 'Ipur', status: 'Manual', date: '2026-10-03' }] },
+      now: () => new Date('2026-10-03T04:00:00.000Z'),
+    });
+    const interactive = sent[0].interactive as { body: { text: string }; action: { buttons: Array<{ reply: { id: string } }> } };
+    expect(interactive.body.text).toContain('Ward meeting');
+    expect(interactive.action.buttons.map((button) => button.reply.id)).toEqual(['follow_up', 'more']);
+  });
+
   it('stays on the visit list when no follow-up is accepted', async () => {
     const sent: Array<Record<string, unknown>> = [];
     const refused = { sendAll: async () => ({ due: 1, sent: 0, failed: 1 }) };

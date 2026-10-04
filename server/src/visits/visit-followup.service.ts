@@ -7,6 +7,20 @@ import { FOLLOW_UP_TEMPLATE, followUpParameters, isAutoDue, listedPhones, type F
 
 const RECORDS = 'jv_records';
 const ZONE = 'Asia/Kolkata';
+/** One stuck WhatsApp call must not hold the rest of the follow-ups. */
+const SEND_TIMEOUT_MS = 20_000;
+
+function limitedFetch(fetchImpl: typeof fetch): typeof fetch {
+  return (async (input, init) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), SEND_TIMEOUT_MS);
+    try {
+      return await fetchImpl(input, { ...init, signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+    }
+  }) as typeof fetch;
+}
 
 export interface FollowUpResult {
   due: number;
@@ -31,6 +45,13 @@ export class VisitFollowupService {
     return this.deliver(visits, fetchImpl, false);
   }
 
+  /** True when a Follow up tap has at least one number to message. The chat answers before those messages go out. */
+  async readyToSend(): Promise<boolean> {
+    if (!whatsappSenderReady()) return false;
+    const visits = await this.load();
+    return visits.some((visit) => listedPhones(visit).length > 0);
+  }
+
   /** Every saved visit, every tap. Nothing is marked, so Follow up can be sent again. */
   async sendAll(fetchImpl: typeof fetch = fetch): Promise<FollowUpResult> {
     const visits = (await this.load()).filter((visit) => listedPhones(visit).length);
@@ -51,12 +72,13 @@ export class VisitFollowupService {
     let sent = 0;
     let failed = 0;
     const failedIds = new Set<string>();
+    const limited = limitedFetch(fetchImpl);
     for (const job of jobs) {
       try {
         await sendTemplateMessage(job.phone, FOLLOW_UP_TEMPLATE, {
           language: 'en',
           namedParameters: followUpParameters(job.visit),
-          fetchImpl,
+          fetchImpl: limited,
         });
         sent += 1;
       } catch (err) {
