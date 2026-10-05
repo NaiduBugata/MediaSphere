@@ -299,7 +299,8 @@ export async function deliverWhatsApp(
     await rememberStatus(skipped, input.notificationType, false);
     return skipped;
   }
-  if (!whatsappAlertsEnabled(env)) {
+  // News, health, and summaries stay on email. Pipeline success and failure still go to the super admin.
+  if (!whatsappAlertsEnabled(env) && input.audience !== 'pipeline') {
     const skipped: WaSendResult = { success: true, skipped: true, skip_reason: 'whatsapp_alerts_off_email_only', error: null, messageId: null, attempts: 0 };
     await rememberStatus(skipped, input.notificationType, true);
     return skipped;

@@ -221,7 +221,7 @@ describe('CombinedPipelineService', () => {
     expect(failures()).toHaveLength(2);
     expect(news()).toHaveLength(4);
     expect(emails).toHaveLength(6);
-    expect(whatsappCalls).toBe(0);
+    expect(whatsappCalls).toBe(3);
 
     process.env.NEWS_EMAIL_ENABLED = 'false';
     await service.runCombinedOnce({ fetchImpl });

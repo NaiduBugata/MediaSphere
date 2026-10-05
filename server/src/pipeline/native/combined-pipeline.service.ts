@@ -62,7 +62,7 @@ interface KnownItems {
 
 /**
  * Nest combined cycle: Lokal → YouTube → Sakshi → Groq stages → upsert → notify.
- * New articles and failures are emailed; WhatsApp alerts only with WHATSAPP_ALERTS_ENABLED=true.
+ * New articles and failures are emailed. Pipeline success and failure also go to the super admin on WhatsApp.
  * Sequential, matching Flask pipeline/runner.py. Notification errors never roll back writes.
  * PIPELINE_EXECUTOR=python keeps the Phase 3 bridge for tests.
  */
@@ -459,15 +459,23 @@ export class CombinedPipelineService {
       `[NOTIFY_PIPELINE] exit=${exitCode} inserted=${stats.inserted} errors=${stats.errors.length}`,
     );
     if (stats.errors.length) await this.alertFailure(stats.errors, fetchImpl);
-    else this.failureAlerts.clear();
+    else {
+      this.failureAlerts.clear();
+      if (pipelineStatusWhatsAppEnabled()) {
+        try {
+          await notifyPipelineWhatsApp({
+            ...stats,
+            duration_seconds: Math.round(durationMs / 1000),
+            status: 'Finished Successfully',
+          }, fetchImpl);
+        } catch (err) {
+          this.logger.error(`[NOTIFY_PIPELINE] WhatsApp failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+    }
     await this.emailNewArticles(added, fetchImpl);
     try {
       if (!whatsappAlertsEnabled()) return;
-      const payload = {
-        ...stats,
-        duration_seconds: Math.round(durationMs / 1000),
-        status: exitCode === 0 ? 'Finished Successfully' : 'Completed with errors',
-      };
       await notifyPendingWhatsApp({
         fetchImpl,
         findPending: async () => {
@@ -489,7 +497,6 @@ export class CombinedPipelineService {
           await this.db.collection(this.db.articlesCollectionName).updateOne({ post_id: postId }, { $set: update });
         },
       });
-      if (pipelineStatusWhatsAppEnabled()) await notifyPipelineWhatsApp(payload, fetchImpl);
     } catch (err) {
       this.logger.error(
         'notification failed (ignored): ' + (err instanceof Error ? err.message : String(err)),
@@ -510,7 +517,7 @@ export class CombinedPipelineService {
   }
 
   /**
-   * Failure alert by email (and WhatsApp when WHATSAPP_ALERTS_ENABLED=true). A new problem alerts at once;
+   * Failure alert by email, and on WhatsApp to the super admin. A new problem alerts at once;
    * the same problem repeats only after PIPELINE_ALERT_REPEAT_HOURS. Never throws.
    */
   async alertFailure(errors: readonly string[], fetchImpl: typeof fetch = fetch): Promise<void> {
@@ -519,12 +526,10 @@ export class CombinedPipelineService {
       this.logger.warn(`[NOTIFY_FAILURE] same problem as the last alert; email skipped: ${reason}`);
       return;
     }
-    if (whatsappAlertsEnabled()) {
-      try {
-        await notifyFailureWhatsApp('combined_pipeline', reason, 'N/A', fetchImpl);
-      } catch (err) {
-        this.logger.error(`[NOTIFY_FAILURE] WhatsApp failed: ${err instanceof Error ? err.message : String(err)}`);
-      }
+    try {
+      await notifyFailureWhatsApp('combined_pipeline', reason, 'N/A', fetchImpl);
+    } catch (err) {
+      this.logger.error(`[NOTIFY_FAILURE] WhatsApp failed: ${err instanceof Error ? err.message : String(err)}`);
     }
     try {
       const email = await sendPipelineFailureEmail({ reason, errors, fetchImpl });

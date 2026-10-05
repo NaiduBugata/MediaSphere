@@ -47,6 +47,8 @@ export class FailureAlertGate {
   }
 }
 
+/** On unless WHATSAPP_PIPELINE_STATUS is explicitly turned off. The super admin receives each clean run. */
 export function pipelineStatusWhatsAppEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return ['1', 'true', 'yes', 'on'].includes((env.WHATSAPP_PIPELINE_STATUS || '').trim().toLowerCase());
+  const raw = (env.WHATSAPP_PIPELINE_STATUS ?? 'true').trim().toLowerCase();
+  return ['1', 'true', 'yes', 'on'].includes(raw);
 }

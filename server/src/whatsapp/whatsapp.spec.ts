@@ -157,17 +157,19 @@ describe('WhatsApp sending', () => {
 
     const alert = await deliverWhatsApp({ text: 'PIPELINE FAILURE' }, fetchImpl);
     expect(alert).toMatchObject({ skipped: true, skip_reason: 'whatsapp_alerts_off_email_only' });
-    expect(await notifyFailureWhatsApp('combined_pipeline', 'down', 'N/A', fetchImpl)).toMatchObject({ skipped: true });
+    const failure = await notifyFailureWhatsApp('combined_pipeline', 'down', 'N/A', fetchImpl);
+    expect(failure.skipped).toBe(false);
+    expect(calls).toHaveLength(1);
     const pending = await notifyPendingWhatsApp({
       fetchImpl,
       findPending: async () => { throw new Error('should not look up pending articles'); },
       markSent: async () => { throw new Error('should not mark'); },
     });
     expect(pending).toMatchObject({ skipped: true, skip_reason: 'whatsapp_alerts_off_email_only', sent: 0 });
-    expect(calls).toHaveLength(0);
+    expect(calls).toHaveLength(1);
 
     await sendReplyButtons('919876543210', 'Tap a section', [{ id: 'news', title: 'News' }], fetchImpl);
-    expect(calls.map((call) => call.type)).toEqual(['interactive']);
+    expect(calls.map((call) => call.type)).toEqual(['template', 'interactive']);
   });
 
   it('posts a template and falls back to text when Meta rejects the template', async () => {

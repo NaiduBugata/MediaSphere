@@ -28,8 +28,8 @@ describe('pipeline alerts', () => {
     expect(gate.shouldAlert(['sakshi_http_403'], 16 * hour, env)).toBe(true);
   });
 
-  it('keeps the routine status message off unless enabled', () => {
-    expect(pipelineStatusWhatsAppEnabled({})).toBe(false);
-    expect(pipelineStatusWhatsAppEnabled({ WHATSAPP_PIPELINE_STATUS: 'true' })).toBe(true);
+  it('sends the routine status message unless it is turned off', () => {
+    expect(pipelineStatusWhatsAppEnabled({})).toBe(true);
+    expect(pipelineStatusWhatsAppEnabled({ WHATSAPP_PIPELINE_STATUS: 'false' })).toBe(false);
   });
 });
