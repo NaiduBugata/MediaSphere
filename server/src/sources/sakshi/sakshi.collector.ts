@@ -14,6 +14,8 @@ import { PermanentHttpError, TransientHttpError, fetchSakshiHtml } from './saksh
 import type { SakshiCollectorEnvelope, SakshiFilterStats } from './sakshi.models';
 import { normalizeSakshiArticle } from './sakshi.normalizer';
 import { isReligionStory } from '../../pipeline/native/religion';
+import { fetchSegmentHeadlines } from './sakshi.feed';
+import type { SakshiRawArticle } from './sakshi.models';
 import {
   isArticleUrl,
   isSectionHubUrl,
@@ -144,7 +146,13 @@ export async function collectSakshiNews(options: CollectSakshiOptions = {}): Pro
       firstError ??= status ? `sakshi_http_${status}` : 'sakshi_fetch_failed';
     }
   }
-  if (!perTag.length) return finish([], emptyStats(), 0, 0, firstError || 'sakshi_fetch_failed');
+  if (!perTag.length) {
+    const recovered = await recoverRefusedTags(fetchImpl, existing, maxArticles, now);
+    if (recovered.linksFound) {
+      return finish(recovered.articles, recovered.stats, recovered.linksFound, recovered.skippedExisting);
+    }
+    return finish([], emptyStats(), 0, 0, firstError || 'sakshi_fetch_failed');
+  }
 
   const links = interleaveUnique(perTag);
   const fresh = links.filter((url) => !existing.has(url));
@@ -184,4 +192,73 @@ export async function collectSakshiNews(options: CollectSakshiOptions = {}): Pro
   }
 
   return finish(articles, stats, links.length, links.length - fresh.length);
+}
+
+/** Sakshi's site answers 403 from this server. The public news feed still lists those stories. */
+async function recoverRefusedTags(
+  fetchImpl: typeof fetch,
+  existing: Set<string>,
+  maxArticles: number,
+  now: Date,
+): Promise<{
+  articles: SakshiCollectorEnvelope['articles'];
+  stats: SakshiFilterStats;
+  linksFound: number;
+  skippedExisting: number;
+}> {
+  const stats: SakshiFilterStats = { fetched: 0, accepted: 0, rejected: 0, rejected_reasons: {}, scores: [] };
+  const articles: SakshiCollectorEnvelope['articles'] = [];
+  const seen = new Set<string>();
+  let linksFound = 0;
+  let skippedExisting = 0;
+  for (const tagUrl of sakshiTagUrls()) {
+    let headlines;
+    try {
+      headlines = await fetchSegmentHeadlines(tagUrl, fetchImpl);
+    } catch {
+      continue;
+    }
+    for (const item of headlines) {
+      if (seen.has(item.link)) continue;
+      seen.add(item.link);
+      linksFound += 1;
+      if (existing.has(item.link)) {
+        skippedExisting += 1;
+        continue;
+      }
+      if (articles.length >= maxArticles) continue;
+      if (isReligionStory(item.title)) {
+        stats.fetched += 1;
+        stats.rejected += 1;
+        stats.rejected_reasons.religion = (stats.rejected_reasons.religion || 0) + 1;
+        continue;
+      }
+      const raw: SakshiRawArticle = {
+        url: item.link,
+        title: item.title,
+        content: `${item.title}. ${item.segment}`,
+        summary: item.title,
+        author: '',
+        category: item.segment,
+        tags: [item.segment],
+        breadcrumb: [item.segment],
+        thumbnail: '',
+        description: item.title,
+        published_at: item.published,
+        og_description: item.title,
+      };
+      stats.fetched += 1;
+      const score = await validateConstituency(raw as unknown as Record<string, unknown>, fetchImpl);
+      stats.scores.push(score.score);
+      if (!score.valid) {
+        stats.rejected += 1;
+        stats.rejected_reasons[score.reason] = (stats.rejected_reasons[score.reason] || 0) + 1;
+        continue;
+      }
+      stats.accepted += 1;
+      raw._constituency_validation = { valid: score.valid, score: score.score, reason: score.reason, segment: score.segment };
+      articles.push(normalizeSakshiArticle(raw, now));
+    }
+  }
+  return { articles, stats, linksFound, skippedExisting };
 }

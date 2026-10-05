@@ -80,12 +80,11 @@ export async function fetchTeluguTranscriptResult(
   const language = YOUTUBE_TRANSCRIPT_LANGUAGES[0];
   let primary: TranscriptResult = { text: null, reason: 'player_failed' };
   try {
-    primary = await fetchInnertubeTranscript(videoId, 'WEB', fetchImpl);
-    if (primary.text) return primary;
-    if (primary.reason.startsWith('caption_http_429') || primary.reason.startsWith('player_http_')) {
-      const android = await fetchInnertubeTranscript(videoId, 'ANDROID', fetchImpl);
-      if (android.text) return android;
-      if (!android.reason.startsWith('caption_http_429')) primary = android;
+    // The web player answers LOGIN_REQUIRED from this server. The Android player still returns tracks.
+    for (const client of ['ANDROID', 'WEB'] as const) {
+      const result = await fetchInnertubeTranscript(videoId, client, fetchImpl);
+      if (result.text || result.reason === 'no_captions') return result;
+      if (primary.reason === 'player_failed' || result.reason !== 'playability_login_required') primary = result;
     }
   } catch {
     // Watch-page captions are the fallback.

@@ -190,6 +190,41 @@ describe('collectYoutubeNews', () => {
     expect(collected.noCaptions).toBe(0);
   });
 
+  it('uses the Android player when the web player asks for a login', async () => {
+    process.env.YOUTUBE_API_KEY = 'yt-test';
+    const localNews = 'నరసరావుపేటలో పోలీస్ అరెస్ట్ ఘటన వివరాలు. '.repeat(6);
+    const fetchImpl = (async (url: string, init?: RequestInit) => {
+      const target = String(url);
+      if (target.includes('googleapis.com')) {
+        return jsonResponse({
+          items: [{
+            id: { videoId: 'local1' },
+            snippet: { title: 'నరసరావుపేట వార్త', channelTitle: 'TV9 Telugu', publishedAt: '2026-07-10T08:30:00Z' },
+          }],
+        });
+      }
+      if (target.includes('youtubei/v1/player')) {
+        const body = JSON.parse(String(init?.body || '{}')) as { context?: { client?: { clientName?: string } } };
+        if (body.context?.client?.clientName === 'ANDROID') {
+          return jsonResponse({
+            playabilityStatus: { status: 'OK' },
+            captions: { playerCaptionsTracklistRenderer: { captionTracks: [{ baseUrl: 'https://captions.test/local1', languageCode: 'te' }] } },
+          });
+        }
+        return jsonResponse({ playabilityStatus: { status: 'LOGIN_REQUIRED' } });
+      }
+      if (target.includes('captions.test/local1')) return jsonResponse(`<text>${localNews}</text>`);
+      return jsonResponse({}, 404);
+    }) as typeof fetch;
+    const collected = await collectYoutubeNews({
+      fetchImpl,
+      now: new Date('2026-07-10T12:00:00Z'),
+      maxNew: 5,
+    });
+    expect(collected.errors).toEqual([]);
+    expect(collected.envelope.articles.map((article) => article.video_id)).toEqual(['local1']);
+  });
+
   it('skips videos without Telugu captions without calling it an error', async () => {
     process.env.YOUTUBE_API_KEY = 'yt-test';
     const collected = await collectYoutubeNews({

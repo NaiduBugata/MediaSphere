@@ -136,6 +136,38 @@ describe('collectSakshiNews', () => {
       else process.env.SAKSHI_TAG_URLS = original;
     }
   });
+
+  it('saves the public feed when Sakshi refuses the tag page', async () => {
+    const original = process.env.SAKSHI_TAG_URLS;
+    process.env.SAKSHI_TAG_URLS = 'https://www.sakshi.com/tags/narasaraopet';
+    const fetchImpl = (async (url: string) => {
+      const target = String(url);
+      if (target.includes('news.google.com')) {
+        return htmlResponse(
+          '<rss><channel><item><title>నరసరావుపేటలో రోడ్డు పనులు - sakshi.com</title>' +
+            '<link>https://news.google.com/rss/articles/story1</link>' +
+            '<pubDate>Sun, 04 Oct 2026 19:33:00 GMT</pubDate></item></channel></rss>',
+        );
+      }
+      return htmlResponse('refused', 403);
+    }) as typeof fetch;
+    try {
+      const collected = await collectSakshiNews({
+        fetchImpl,
+        requestDelayMs: 0,
+        retryDelayMs: 0,
+        now: new Date('2026-10-05T12:00:00Z'),
+      });
+      expect(collected.error).toBeUndefined();
+      expect(collected.envelope.articles).toHaveLength(1);
+      expect(collected.envelope.articles[0].title).toBe('నరసరావుపేటలో రోడ్డు పనులు');
+      expect(collected.envelope.articles[0].assembly_segment).toBe('Narasaraopet');
+      expect(collected.envelope.articles[0].source_url).toBe('https://news.google.com/rss/articles/story1');
+    } finally {
+      if (original === undefined) delete process.env.SAKSHI_TAG_URLS;
+      else process.env.SAKSHI_TAG_URLS = original;
+    }
+  });
 });
 
 describe('sakshi http', () => {
