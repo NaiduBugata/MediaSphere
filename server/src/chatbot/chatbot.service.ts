@@ -7,7 +7,7 @@ import { VisitFollowupService } from '../visits/visit-followup.service';
 import { formatVisitTime } from '../visits/visits-import';
 import { parseWebhookPayload, type WhatsAppEvent } from '../whatsapp/whatsapp.parser';
 import { replyRecipients, staffDirectoryLoaded } from '../whatsapp/whatsapp.audience';
-import { normalizePhone, sendReplyButtons, type MenuRow } from '../whatsapp/whatsapp.send';
+import { normalizePhone, sendReplyList, type MenuRow } from '../whatsapp/whatsapp.send';
 import { newestFirst, toBrief, type NewsBrief } from './news-context';
 
 const RECORDS = 'jv_records';
@@ -15,8 +15,8 @@ const TOP = 5;
 const NEWS_CACHE_MS = 60_000;
 const CONVERSATION_GAP_MS = 4 * 60 * 60 * 1000;
 const DEFAULT_ADDRESSEE = 'Sri. Lavu Sri Krishna Devarayalu Sir';
-const MENU_PROMPT = 'Tap a section. The reply stays in this chat.';
-export const MAIN_MENU_TEXT = '*Main menu*\n\nHere are the options.';
+const MENU_PROMPT = 'Choose a section.';
+export const MAIN_MENU_TEXT = 'Choose a section.';
 
 export const FOLLOW_UP_ROW: MenuRow = { id: 'follow_up', title: 'Follow up', description: 'Message the visit leads' };
 export const MAIN_BUTTONS: MenuRow[] = [
@@ -172,7 +172,7 @@ export class ChatbotService {
       } else if (choice) {
         const body = await this.renderSection(choice, deps);
         const rows = choice === 'visits' ? VISIT_BUTTONS : MAIN_BUTTONS;
-        await this.sendChoices(sender, body, rows, fetchImpl, env);
+        await this.sendList(sender, body, rows, fetchImpl, env);
       } else {
         const lead = opening ? `${openingLine(now, env)}\n\n${MENU_PROMPT}` : MAIN_MENU_TEXT;
         await this.sendMenu(sender, lead, fetchImpl, env);
@@ -204,7 +204,7 @@ export class ChatbotService {
       }
       if (!ready) {
         const body = await this.renderSection('visits', deps);
-        await this.sendChoices(sender, body, VISIT_BUTTONS, fetchImpl, env);
+        await this.sendList(sender, body, VISIT_BUTTONS, fetchImpl, env);
         return;
       }
       await this.sendMenu(sender, FOLLOW_UP_SENT, fetchImpl, env);
@@ -227,7 +227,7 @@ export class ChatbotService {
       return;
     }
     const body = await this.renderSection('visits', deps);
-    await this.sendChoices(sender, body, VISIT_BUTTONS, fetchImpl, env);
+    await this.sendList(sender, body, VISIT_BUTTONS, fetchImpl, env);
   }
 
   private async sendMenu(
@@ -236,23 +236,24 @@ export class ChatbotService {
     fetchImpl: typeof fetch,
     env: NodeJS.ProcessEnv,
   ): Promise<void> {
-    await this.sendChoices(sender, lead, MAIN_BUTTONS, fetchImpl, env);
+    await this.sendList(sender, lead, MAIN_BUTTONS, fetchImpl, env);
   }
 
-  /** Reply buttons send on the first tap. A list would ask for Send again, and one message holds only three. */
-  private async sendChoices(
+  /** One list. The person opens Menu, picks a row, then taps Send. */
+  private async sendList(
     sender: string,
     lead: string,
     rows: MenuRow[],
     fetchImpl: typeof fetch,
     env: NodeJS.ProcessEnv,
   ): Promise<void> {
-    const groups: MenuRow[][] = [];
-    for (let index = 0; index < rows.length; index += 3) groups.push(rows.slice(index, index + 3));
-    for (let index = 0; index < groups.length; index += 1) {
-      const text = index === 0 ? lead : 'Tap a section.';
-      await sendReplyButtons(sender, text, groups[index], fetchImpl, env);
-    }
+    await sendReplyList(sender, lead, rows, {
+      button: 'Menu',
+      header: 'Menu',
+      section: 'Menu',
+      fetchImpl,
+      env,
+    });
   }
 
   private async renderSection(choice: MenuId, deps: ChatbotDeps): Promise<string> {
@@ -266,25 +267,31 @@ export class ChatbotService {
 
   private async newsBriefs(deps: ChatbotDeps): Promise<NewsBrief[]> {
     const briefs = deps.news || await this.loadNews();
-    return newestFirst(briefs).slice(0, TOP);
+    const seen = new Set<string>();
+    return newestFirst(briefs).filter((brief) => {
+      const key = brief.title.trim().toLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).slice(0, TOP);
   }
 
   private async sectionRecords(
     section: 'grievances' | 'projects' | 'people' | 'campaigns' | 'visits',
     deps: ChatbotDeps,
   ): Promise<MenuRecord[]> {
-    if (deps.records) return latestRecords(deps.records[section] || []);
+    if (deps.records) return latestRecords(uniqueRecords(deps.records[section] || []));
     if (!this.db) return [];
     try {
       const ok = await this.db.ensureConnected();
       if (!ok) return [];
-      const rows = await this.db.collection(RECORDS).find({ section }).sort({ createdAt: -1 }).limit(TOP).toArray();
-      return rows.map((row) => ({
+      const rows = await this.db.collection(RECORDS).find({ section }).sort({ createdAt: -1 }).limit(TOP * 4).toArray();
+      return latestRecords(uniqueRecords(rows.map((row) => ({
         title: text(row.title),
         detail: [formatVisitTime(text(row.visitTime)), text(row.place), text(row.detail)].filter(Boolean).join(' – '),
         status: text(row.status),
         date: text(row.visitDate) || text(row.createdAt),
-      }));
+      }))));
     } catch (err) {
       this.logger.warn(`Chatbot could not load ${section}: ${err instanceof Error ? err.message : 'database error'}`);
       return [];
@@ -348,7 +355,7 @@ export function menuFromText(value: string): MenuChoice | null {
 export function formatSection(title: string, items: string[]): string {
   if (!items.length) return `*${title}*\nNothing saved yet.`;
   const lines = items.slice(0, TOP).map((item, index) => `${index + 1}. ${item}`);
-  return `*${title}*\nLatest ${lines.length}\n\n${lines.join('\n\n')}`;
+  return `*${title}*\n\n${lines.join('\n\n')}`;
 }
 
 function newsLine(brief: NewsBrief): string {
@@ -367,6 +374,18 @@ function analyticsLine(brief: NewsBrief): string {
 function recordLine(row: MenuRecord): string {
   const meta = [plain(row.status), shortWhen(row.date)].filter(Boolean).join(' · ');
   return [bold(row.title), plain(row.detail), meta].filter(Boolean).join('\n');
+}
+
+function uniqueRecords(rows: MenuRecord[]): MenuRecord[] {
+  const seen = new Set<string>();
+  const unique: MenuRecord[] = [];
+  for (const row of rows) {
+    const key = `${row.title}|${row.date}|${row.detail}`.toLowerCase();
+    if (!row.title || seen.has(key)) continue;
+    seen.add(key);
+    unique.push(row);
+  }
+  return unique;
 }
 
 function latestRecords(rows: MenuRecord[]): MenuRecord[] {

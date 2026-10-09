@@ -17,8 +17,21 @@ function payload(body: string, id = 'wamid.1', from = '919876543210') {
   };
 }
 
+function messageText(message: Record<string, unknown>): string {
+  if (message.type === 'text') return String((message.text as { body?: string } | undefined)?.body || '');
+  const interactive = message.interactive as { body?: { text?: string } } | undefined;
+  return interactive?.body?.text || '';
+}
+
 function replyButtons(message: Record<string, unknown>): Array<{ id: string; title: string }> {
-  const interactive = message.interactive as { type?: string; action?: { buttons?: Array<{ reply: { id: string; title: string } }> } } | undefined;
+  const interactive = message.interactive as {
+    type?: string;
+    action?: {
+      buttons?: Array<{ reply: { id: string; title: string } }>;
+      sections?: Array<{ rows?: Array<{ id: string; title: string }> }>;
+    };
+  } | undefined;
+  if (interactive?.type === 'list') return (interactive.action?.sections || []).flatMap((section) => section.rows || []);
   if (interactive?.type !== 'button') return [];
   return (interactive.action?.buttons || []).map((button) => button.reply);
 }
@@ -88,7 +101,7 @@ describe('ChatbotService', () => {
     const bot = new ChatbotService();
     await bot.handle(payload('Who are you?'), { env: env(), fetchImpl: fetchImpl(calls) });
     await bot.handle(payload('Who are you?'), { env: env(), fetchImpl: fetchImpl(calls) });
-    expect(calls).toEqual(['interactive:919876543210', 'interactive:919876543210', 'interactive:919876543210']);
+    expect(calls).toEqual(['interactive:919876543210']);
   });
 
   it('does not reply when the allowlist is empty or the sender is not listed', async () => {
@@ -108,7 +121,7 @@ describe('ChatbotService', () => {
     const bot = new ChatbotService();
     await bot.handle(payload('Hello', 'wamid.user', '919876543210'), { env: env(), fetchImpl: fetchImpl(calls) });
     await bot.handle(payload('Hello', 'wamid.admin', '919000000002'), { env: env(), fetchImpl: fetchImpl(calls) });
-    expect(calls).toEqual(['interactive:919000000002', 'interactive:919000000002', 'interactive:919000000002']);
+    expect(calls).toEqual(['interactive:919000000002']);
   });
 
   it('does not reply to delivery statuses', async () => {
@@ -129,15 +142,15 @@ describe('ChatbotService', () => {
       fetchImpl: capture(sent),
       now: () => new Date('2026-09-28T13:49:00Z'),
     });
-    expect(sent.length).toBeGreaterThan(1);
-    const first = sent[0].interactive as { type: string; body: { text: string } };
-    expect(first.type).toBe('button');
+    expect(sent).toHaveLength(1);
+    const first = sent[0].interactive as { type: string; body: { text: string }; action: { button: string } };
+    expect(first.type).toBe('list');
+    expect(first.action.button).toBe('Menu');
     expect(first.body.text).toContain("Good evening, Sri. Lavu Sri Krishna Devarayalu Sir! I'm your Media Assistant.");
-    expect(first.body.text).toContain('Tap a section');
+    expect(first.body.text).toContain('Choose a section.');
     const buttons = sent.flatMap(replyButtons);
     expect(buttons.map((button) => button.title)).toEqual(MAIN_BUTTONS.map((row) => row.title));
     expect(buttons.length).toBeGreaterThan(3);
-    expect(JSON.stringify(sent)).not.toContain('"type":"list"');
     expect(JSON.stringify(sent)).not.toContain('http');
   });
 
@@ -150,16 +163,17 @@ describe('ChatbotService', () => {
       news,
       now: () => new Date('2026-09-28T13:49:00Z'),
     });
-    const interactive = sent[0].interactive as { type: string; body: { text: string } };
-    expect(interactive.type).toBe('button');
-    expect(interactive.body.text).toContain('*News*');
-    expect(interactive.body.text).toContain('Latest 5');
-    expect(interactive.body.text).toContain('Cordon search in Narasaraopet');
-    expect(interactive.body.text).toContain('Second item');
-    expect(interactive.body.text).not.toContain('Sixth item');
-    expect(interactive.body.text).not.toContain('Older road work');
-    expect(interactive.body.text).not.toContain('http');
-    expect(interactive.body.text).not.toContain("I'm your Media Assistant");
+    expect((sent[0].interactive as { type: string }).type).toBe('list');
+    const body = messageText(sent[0]);
+    expect(body).toContain('*News*');
+    expect(body).not.toContain('Latest');
+    expect(body.toLowerCase()).not.toContain('menu');
+    expect(body).toContain('Cordon search in Narasaraopet');
+    expect(body).toContain('Second item');
+    expect(body).not.toContain('Sixth item');
+    expect(body).not.toContain('Older road work');
+    expect(body).not.toContain('http');
+    expect(body).not.toContain("I'm your Media Assistant");
     expect(sent.flatMap(replyButtons).map((button) => button.id)).toEqual(MAIN_BUTTONS.map((row) => row.id));
   });
 
@@ -186,7 +200,7 @@ describe('ChatbotService', () => {
       now: () => new Date('2026-09-28T13:49:00Z'),
     });
     const interactive = sent[0].interactive as { type: string; body: { text: string } };
-    expect(interactive.type).toBe('button');
+    expect(interactive.type).toBe('list');
     expect(interactive.body.text).toBe(MAIN_MENU_TEXT);
     const buttons = sent.flatMap(replyButtons);
     expect(buttons.map((button) => button.id)).toEqual(['news', 'visits', 'grievances', 'projects', 'constituency', 'campaigns', 'analytics']);
@@ -214,7 +228,7 @@ describe('ChatbotService', () => {
       records,
       now: () => new Date('2026-09-28T04:00:00Z'),
     });
-    const body = (sent[0].interactive as { body: { text: string } }).body.text;
+    const body = messageText(sent[0]);
     expect(body).toContain('*Grievances*');
     expect(body).toContain('Ration card');
     expect(body).toContain('Street light');
@@ -242,8 +256,9 @@ describe('ChatbotService', () => {
     await bot.handle(payload('any news?', 'wamid.g3'), deps);
     expect(sent[0]).toContain('*News*');
     expect(sent[0]).not.toContain("I'm your Media Assistant");
-    expect(sent[3]).toBe(MAIN_MENU_TEXT);
-    expect(sent[6]).toContain("Good morning, Sri. Lavu Sri Krishna Devarayalu Sir! I'm your Media Assistant.");
+    expect(sent[0].toLowerCase()).not.toContain('menu');
+    expect(sent[1]).toBe(MAIN_MENU_TEXT);
+    expect(sent[2]).toContain("Good morning, Sri. Lavu Sri Krishna Devarayalu Sir! I'm your Media Assistant.");
   });
 
   it('greets by India time of day', () => {
@@ -305,9 +320,10 @@ describe('ChatbotService', () => {
       fetchImpl: capture(sent),
       now: () => new Date('2026-10-03T04:00:00.000Z'),
     });
-    const interactive = sent[0].interactive as { body: { text: string } };
-    expect(interactive.body.text).toContain('*Hospital round*');
-    expect(interactive.body.text).not.toContain('9876543210');
+    const body = messageText(sent[0]);
+    expect(body).toContain('*Hospital round*');
+    expect(body.toLowerCase()).not.toContain('menu');
+    expect(body).not.toContain('9876543210');
     expect(sent.flatMap(replyButtons).map((button) => button.id)).toEqual(VISIT_BUTTONS.map((row) => row.id));
   });
 
@@ -363,8 +379,8 @@ describe('ChatbotService', () => {
       records: { visits: [{ title: 'Ward meeting', detail: 'Ipur', status: 'Manual', date: '2026-10-03' }] },
       now: () => new Date('2026-10-03T04:00:00.000Z'),
     });
-    const interactive = sent[0].interactive as { body: { text: string }; action: { sections: Array<{ rows: Array<{ id: string }> }> } };
-    expect(interactive.body.text).toContain('Ward meeting');
+    expect(messageText(sent[0])).toContain('Ward meeting');
+    expect(messageText(sent[0]).toLowerCase()).not.toContain('menu');
     expect(sent.flatMap(replyButtons).map((button) => button.id)).toEqual(VISIT_BUTTONS.map((row) => row.id));
   });
 
@@ -378,15 +394,16 @@ describe('ChatbotService', () => {
       records: { visits: [{ title: 'Ward meeting', detail: 'Ipur', status: 'Manual', date: '2026-10-03' }] },
       now: () => new Date('2026-10-03T04:00:00.000Z'),
     });
-    const interactive = sent[0].interactive as { body: { text: string }; action: { sections: Array<{ rows: Array<{ id: string }> }> } };
-    expect(interactive.body.text).toContain('Ward meeting');
-    expect(interactive.body.text).not.toContain(FOLLOW_UP_SENT);
+    expect(messageText(sent[0])).toContain('Ward meeting');
+    expect(messageText(sent[0])).not.toContain(FOLLOW_UP_SENT);
+    expect(messageText(sent[0]).toLowerCase()).not.toContain('menu');
     expect(sent.flatMap(replyButtons).map((button) => button.id)).toEqual(VISIT_BUTTONS.map((row) => row.id));
   });
 
   it('caps a section at five lines', () => {
     const body = formatSection('News', ['a', 'b', 'c', 'd', 'e', 'f']);
-    expect(body).toContain('Latest 5');
+    expect(body).toContain('5. e');
+    expect(body).not.toContain('Latest');
     expect(body).not.toContain('6. f');
   });
 });
