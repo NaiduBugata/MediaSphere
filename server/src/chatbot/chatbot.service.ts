@@ -7,7 +7,7 @@ import { VisitFollowupService } from '../visits/visit-followup.service';
 import { formatVisitTime } from '../visits/visits-import';
 import { parseWebhookPayload, type WhatsAppEvent } from '../whatsapp/whatsapp.parser';
 import { replyRecipients, staffDirectoryLoaded } from '../whatsapp/whatsapp.audience';
-import { normalizePhone, sendReplyList, type MenuRow } from '../whatsapp/whatsapp.send';
+import { normalizePhone, sendReplyButtons, type MenuRow } from '../whatsapp/whatsapp.send';
 import { newestFirst, toBrief, type NewsBrief } from './news-context';
 
 const RECORDS = 'jv_records';
@@ -172,7 +172,7 @@ export class ChatbotService {
       } else if (choice) {
         const body = await this.renderSection(choice, deps);
         const rows = choice === 'visits' ? VISIT_BUTTONS : MAIN_BUTTONS;
-        await sendReplyList(sender, body, rows, { fetchImpl, env });
+        await this.sendChoices(sender, body, rows, fetchImpl, env);
       } else {
         const lead = opening ? `${openingLine(now, env)}\n\n${MENU_PROMPT}` : MAIN_MENU_TEXT;
         await this.sendMenu(sender, lead, fetchImpl, env);
@@ -204,7 +204,7 @@ export class ChatbotService {
       }
       if (!ready) {
         const body = await this.renderSection('visits', deps);
-        await sendReplyList(sender, body, VISIT_BUTTONS, { fetchImpl, env });
+        await this.sendChoices(sender, body, VISIT_BUTTONS, fetchImpl, env);
         return;
       }
       await this.sendMenu(sender, FOLLOW_UP_SENT, fetchImpl, env);
@@ -227,7 +227,7 @@ export class ChatbotService {
       return;
     }
     const body = await this.renderSection('visits', deps);
-    await sendReplyList(sender, body, VISIT_BUTTONS, { fetchImpl, env });
+    await this.sendChoices(sender, body, VISIT_BUTTONS, fetchImpl, env);
   }
 
   private async sendMenu(
@@ -236,7 +236,23 @@ export class ChatbotService {
     fetchImpl: typeof fetch,
     env: NodeJS.ProcessEnv,
   ): Promise<void> {
-    await sendReplyList(sender, lead, MAIN_BUTTONS, { fetchImpl, env });
+    await this.sendChoices(sender, lead, MAIN_BUTTONS, fetchImpl, env);
+  }
+
+  /** Reply buttons send on the first tap. A list would ask for Send again, and one message holds only three. */
+  private async sendChoices(
+    sender: string,
+    lead: string,
+    rows: MenuRow[],
+    fetchImpl: typeof fetch,
+    env: NodeJS.ProcessEnv,
+  ): Promise<void> {
+    const groups: MenuRow[][] = [];
+    for (let index = 0; index < rows.length; index += 3) groups.push(rows.slice(index, index + 3));
+    for (let index = 0; index < groups.length; index += 1) {
+      const text = index === 0 ? lead : 'Tap a section.';
+      await sendReplyButtons(sender, text, groups[index], fetchImpl, env);
+    }
   }
 
   private async renderSection(choice: MenuId, deps: ChatbotDeps): Promise<string> {
