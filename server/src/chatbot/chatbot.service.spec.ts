@@ -1,6 +1,6 @@
 import { FOLLOW_UP_SENT } from '../visits/visit-followup';
 import { clearStaffDirectory, setStaffDirectory } from '../whatsapp/whatsapp.audience';
-import { ChatbotService, HOME_BUTTON, MAIN_BUTTONS, MAIN_MENU_TEXT, MORE_BUTTONS, MORE_MENU_TEXT, VISIT_BUTTONS, formatSection, isGreetingOnly, openingLine, timeGreeting, toWhatsAppFormat } from './chatbot.service';
+import { ChatbotService, MAIN_BUTTONS, MAIN_MENU_TEXT, VISIT_BUTTONS, formatSection, isGreetingOnly, openingLine, timeGreeting, toWhatsAppFormat } from './chatbot.service';
 
 function payload(body: string, id = 'wamid.1', from = '919876543210') {
   return {
@@ -178,7 +178,7 @@ describe('ChatbotService', () => {
     expect(body).not.toContain("I'm your Media Assistant");
   });
 
-  it('opens more than three further choices from More', async () => {
+  it('keeps every section on the one menu list', async () => {
     const sent: Array<Record<string, unknown>> = [];
     const bot = new ChatbotService();
     await bot.handle(buttonPayload('more', 'More', 'wamid.more'), {
@@ -187,14 +187,13 @@ describe('ChatbotService', () => {
       now: () => new Date('2026-09-28T13:49:00Z'),
     });
     expect(sent).toHaveLength(1);
-    const interactive = sent[0].interactive as { type: string; body: { text: string }; action: { button: string; sections: Array<{ title: string; rows: Array<{ id: string; title: string }> }> } };
+    const interactive = sent[0].interactive as { type: string; body: { text: string }; action: { button: string; sections: Array<{ rows: Array<{ id: string; title: string }> }> } };
     expect(interactive.type).toBe('list');
-    expect(interactive.action.button).toBe('More');
-    expect(interactive.body.text).toBe(MORE_MENU_TEXT);
+    expect(interactive.action.button).toBe('Menu');
+    expect(interactive.body.text).toBe(MAIN_MENU_TEXT);
     const rows = listRows(interactive);
-    expect(rows.length).toBeGreaterThan(3);
-    expect(rows.map((row) => row.title)).toEqual(MORE_BUTTONS.map((row) => row.title));
-    expect(rows.map((row) => row.id)).toEqual(['constituency', 'campaigns', 'analytics', HOME_BUTTON.id]);
+    expect(rows.map((row) => row.id)).toEqual(['news', 'visits', 'grievances', 'projects', 'constituency', 'campaigns', 'analytics']);
+    expect(rows.some((row) => row.id === 'more')).toBe(false);
   });
 
   it('returns the five newest grievances and keeps projects separate', async () => {

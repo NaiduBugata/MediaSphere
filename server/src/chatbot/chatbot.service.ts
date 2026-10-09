@@ -17,35 +17,28 @@ const CONVERSATION_GAP_MS = 4 * 60 * 60 * 1000;
 const DEFAULT_ADDRESSEE = 'Sri. Lavu Sri Krishna Devarayalu Sir';
 const MENU_PROMPT = 'Tap a section. The reply stays in this chat.';
 export const MAIN_MENU_TEXT = '*Main menu*\n\nHere are the options.';
-export const MORE_MENU_TEXT = '*More options*\n\nHere are the options available.';
 
-export const MORE_BUTTON: MenuRow = { id: 'more', title: 'More', description: 'Constituency, campaigns, analytics' };
-export const HOME_BUTTON: MenuRow = { id: 'home', title: 'Main menu', description: 'News, visits, and grievances' };
 export const FOLLOW_UP_ROW: MenuRow = { id: 'follow_up', title: 'Follow up', description: 'Message the visit leads' };
 export const MAIN_BUTTONS: MenuRow[] = [
   { id: 'news', title: 'News', description: 'Latest stories' },
   { id: 'visits', title: 'Visits', description: 'Scheduled visits' },
   { id: 'grievances', title: 'Grievances', description: 'Saved grievances' },
   { id: 'projects', title: 'Projects & reports', description: 'Projects and reports' },
-  MORE_BUTTON,
-];
-export const MORE_BUTTONS: MenuRow[] = [
   { id: 'constituency', title: 'Constituency', description: 'People and places' },
   { id: 'campaigns', title: 'Campaigns', description: 'Campaign updates' },
   { id: 'analytics', title: 'Analytics', description: 'What the news is about' },
-  HOME_BUTTON,
 ];
 export const VISIT_BUTTONS: MenuRow[] = [FOLLOW_UP_ROW, ...MAIN_BUTTONS];
 
 const CHOICE_BUTTONS: MenuRow[] = [
   ...MAIN_BUTTONS,
-  ...MORE_BUTTONS,
   FOLLOW_UP_ROW,
-  { id: 'menu', title: 'More' },
+  { id: 'menu', title: 'Menu' },
+  { id: 'home', title: 'Main menu' },
 ];
 
 export type MenuId = 'grievances' | 'projects' | 'news' | 'constituency' | 'campaigns' | 'analytics' | 'visits';
-export type MenuChoice = MenuId | 'more' | 'home' | 'menu' | 'follow_up';
+export type MenuChoice = MenuId | 'home' | 'menu' | 'follow_up';
 
 const RECORD_SECTION: Partial<Record<MenuId, 'grievances' | 'projects' | 'people' | 'campaigns' | 'visits'>> = {
   grievances: 'grievances',
@@ -87,7 +80,7 @@ const TEXT_ALIASES: Record<string, MenuChoice> = {
   followup: 'follow_up',
   constituency: 'constituency',
   people: 'constituency',
-  more: 'more',
+  more: 'home',
   campaign: 'campaigns',
   campaigns: 'campaigns',
   analytic: 'analytics',
@@ -174,8 +167,6 @@ export class ChatbotService {
       const choice = menuChoice(event);
       if (choice === 'follow_up') {
         await this.replyFollowUp(sender, fetchImpl, env, deps);
-      } else if (choice === 'more') {
-        await this.sendMore(sender, fetchImpl, env);
       } else if (choice === 'home' || choice === 'menu') {
         await this.sendMenu(sender, MAIN_MENU_TEXT, fetchImpl, env);
       } else if (choice) {
@@ -246,20 +237,6 @@ export class ChatbotService {
     env: NodeJS.ProcessEnv,
   ): Promise<void> {
     await sendReplyList(sender, lead, MAIN_BUTTONS, { fetchImpl, env });
-  }
-
-  private async sendMore(
-    sender: string,
-    fetchImpl: typeof fetch,
-    env: NodeJS.ProcessEnv,
-  ): Promise<void> {
-    await sendReplyList(sender, MORE_MENU_TEXT, MORE_BUTTONS, {
-      button: 'More',
-      header: 'More options',
-      section: 'More options',
-      fetchImpl,
-      env,
-    });
   }
 
   private async renderSection(choice: MenuId, deps: ChatbotDeps): Promise<string> {
