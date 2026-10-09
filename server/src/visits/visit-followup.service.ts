@@ -3,7 +3,7 @@ import { DatabaseService } from '../database/database.service';
 import { whatsappSenderReady } from '../birthdays/birthdays';
 import { calendarDay } from '../reports/report-stats';
 import { sendTemplateMessage } from '../whatsapp/whatsapp.send';
-import { FOLLOW_UP_TEMPLATE, followUpParameters, isAutoDue, listedPhones, type FollowUpVisit } from './visit-followup';
+import { FOLLOW_UP_TEMPLATE, followUpParameters, listedPhones, reminderPlan, type FollowUpVisit } from './visit-followup';
 
 const RECORDS = 'jv_records';
 const ZONE = 'Asia/Kolkata';
@@ -30,6 +30,7 @@ export interface FollowUpResult {
 
 interface StoredVisit extends FollowUpVisit {
   rawId: unknown;
+  pendingSlot?: string;
 }
 
 @Injectable()
@@ -58,9 +59,17 @@ export class VisitFollowupService {
     return this.deliver(visits, fetchImpl, false);
   }
 
-  /** One automatic reminder per visit: 7:00 AM, or 3 hours before a visit that is earlier than 7:00 AM. */
+  /** Up to three reminders before the visit, only to the numbers allotted to that visit. */
   async sendDue(fetchImpl: typeof fetch = fetch, now = new Date()): Promise<FollowUpResult> {
-    const due = (await this.load()).filter((visit) => isAutoDue(visit, now));
+    const visits = await this.load();
+    const due: StoredVisit[] = [];
+    for (const visit of visits) {
+      const plan = reminderPlan(visit, now);
+      if (plan.skip.length) await this.markSlots(visit, plan.skip);
+      if (!plan.send) continue;
+      visit.pendingSlot = plan.send.id;
+      due.push(visit);
+    }
     return this.deliver(due, fetchImpl, true);
   }
 
@@ -89,8 +98,8 @@ export class VisitFollowupService {
     }
     if (mark) {
       for (const visit of visits) {
-        if (!listedPhones(visit).length || failedIds.has(visit.id)) continue;
-        await this.markSent(visit);
+        if (!visit.pendingSlot || !listedPhones(visit).length || failedIds.has(visit.id)) continue;
+        await this.markSlots(visit, [visit.pendingSlot]);
       }
     }
     return { due: jobs.length, sent, failed };
@@ -109,13 +118,13 @@ export class VisitFollowupService {
       leadPhone: String(row.leadPhone || ''),
       leadPhones: Array.isArray(row.leadPhones) ? row.leadPhones.map((phone) => String(phone || '')) : [],
       followUpAutoDay: String(row.followUpAutoDay || ''),
+      followUpSent: Array.isArray(row.followUpSent) ? row.followUpSent.map((slot) => String(slot || '')).filter(Boolean) : [],
     }));
   }
 
-  private async markSent(visit: StoredVisit): Promise<void> {
-    await this.db.collection(RECORDS).updateOne(
-      { _id: visit.rawId },
-      { $set: { followUpAutoDay: visit.visitDate } },
-    );
+  private async markSlots(visit: StoredVisit, slots: string[]): Promise<void> {
+    const followUpSent = [...new Set([...(visit.followUpSent || []), ...slots])];
+    visit.followUpSent = followUpSent;
+    await this.db.collection(RECORDS).updateOne({ _id: visit.rawId }, { $set: { followUpSent } });
   }
 }

@@ -5,8 +5,8 @@ import { whatsappSenderReady } from '../birthdays/birthdays';
 import { VisitFollowupService } from './visit-followup.service';
 
 /**
- * Checks every 15 minutes, including overnight, because a visit before 7:00 AM is reminded 3 hours earlier.
- * Each visit is marked after a successful automatic send, so a restart does not send it again.
+ * Checks every 15 minutes. A visit gets at most three reminders before it starts, and only to its own numbers.
+ * Each reminder is marked after it is accepted, so a restart does not send that reminder again.
  */
 @Injectable()
 export class VisitFollowupScheduler implements OnModuleInit {

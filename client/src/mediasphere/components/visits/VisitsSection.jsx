@@ -22,12 +22,10 @@ function VisitCard({ visit }) {
             {formatDate(visit.visitDate || visit.createdAt)}
           </span>
         ) : null}
-        {visit.visitTime ? (
-          <span className="inline-flex items-center gap-1">
-            <Clock className="h-3.5 w-3.5" aria-hidden />
-            {formatVisitTime(visit.visitTime)}
-          </span>
-        ) : null}
+        <span className="inline-flex items-center gap-1">
+          <Clock className="h-3.5 w-3.5" aria-hidden />
+          {visit.visitTime ? formatVisitTime(visit.visitTime) : 'Anytime'}
+        </span>
         {visit.place ? (
           <span className="inline-flex items-center gap-1">
             <MapPin className="h-3.5 w-3.5" aria-hidden />

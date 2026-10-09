@@ -41,7 +41,7 @@ export function whatsappReady(env: NodeJS.ProcessEnv = process.env): boolean {
 
 /**
  * Automatic alerts (news, failures, summaries, health, startup). Off unless WHATSAPP_ALERTS_ENABLED=true:
- * those go by email. The WhatsApp menu bot replies through sendReplyButtons/sendTextMessage and is not affected.
+ * those go by email. The WhatsApp menu bot replies through sendReplyList/sendTextMessage and is not affected.
  */
 export function whatsappAlertsEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return whatsappReady(env) && ['1', 'true', 'yes', 'on'].includes((env.WHATSAPP_ALERTS_ENABLED || '').trim().toLowerCase());
@@ -134,6 +134,51 @@ export async function sendTextMessage(
 export interface ReplyButton {
   id: string;
   title: string;
+}
+
+export interface MenuRow {
+  id: string;
+  title: string;
+  description?: string;
+}
+
+/** A tappable list. Meta allows up to ten rows, each with a title and a short description. */
+export async function sendReplyList(
+  recipient: string,
+  message: string,
+  rows: MenuRow[],
+  options: { button?: string; header?: string; section?: string; footer?: string; fetchImpl?: typeof fetch; env?: NodeJS.ProcessEnv } = {},
+): Promise<Record<string, unknown>> {
+  const body = message.trim();
+  if (!body) throw new Error('message must not be empty');
+  if (rows.length < 1 || rows.length > 10) throw new Error('list rows must be 1 to 10');
+  return postGraph({
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    to: normalizePhone(recipient),
+    type: 'interactive',
+    interactive: {
+      type: 'list',
+      header: { type: 'text', text: (options.header || 'Menu').trim().slice(0, 60) },
+      body: { text: body.slice(0, 1024) },
+      footer: { text: (options.footer || 'Tap to select an item').trim().slice(0, 60) },
+      action: {
+        button: (options.button || 'Menu').trim().slice(0, 20),
+        sections: [{
+          title: (options.section || 'Menu').trim().slice(0, 24),
+          rows: rows.map((row) => {
+            const item: { id: string; title: string; description?: string } = {
+              id: row.id.trim().slice(0, 200),
+              title: row.title.trim().slice(0, 24),
+            };
+            const description = (row.description || '').trim().slice(0, 72);
+            if (description) item.description = description;
+            return item;
+          }),
+        }],
+      },
+    },
+  }, options.fetchImpl || fetch, options.env || process.env);
 }
 
 /** Session reply buttons. Meta allows at most three per message, and none of them are links. */

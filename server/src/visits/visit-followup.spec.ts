@@ -1,5 +1,5 @@
 import { VisitFollowupService } from './visit-followup.service';
-import { FOLLOW_UP_TEMPLATE, followUpDueAt, followUpParameters, isAutoDue, listedPhones, type FollowUpVisit } from './visit-followup';
+import { FOLLOW_UP_TEMPLATE, followUpParameters, listedPhones, reminderPlan, reminderSlots, type FollowUpVisit } from './visit-followup';
 
 function visit(overrides: Partial<FollowUpVisit> = {}): FollowUpVisit {
   return {
@@ -15,23 +15,31 @@ function visit(overrides: Partial<FollowUpVisit> = {}): FollowUpVisit {
 }
 
 describe('visit follow-up timing', () => {
-  it('reminds a daytime visit at 7:00 AM and an early visit 3 hours before', () => {
-    expect(followUpDueAt('2026-10-03', '10:30')?.toISOString()).toBe('2026-10-03T01:30:00.000Z');
-    expect(followUpDueAt('2026-10-03', '')?.toISOString()).toBe('2026-10-03T01:30:00.000Z');
-    expect(followUpDueAt('2026-10-03', '06:00')?.toISOString()).toBe('2026-10-02T21:30:00.000Z');
-    expect(followUpDueAt('2026-10-03', '02:00')?.toISOString()).toBe('2026-10-02T17:30:00.000Z');
+  it('plans three reminders before a timed visit and three daytime reminders when the time is anytime', () => {
+    expect(reminderSlots('2026-10-03', '10:30').map((slot) => slot.at.toISOString())).toEqual([
+      '2026-10-03T02:00:00.000Z',
+      '2026-10-03T03:00:00.000Z',
+      '2026-10-03T04:00:00.000Z',
+    ]);
+    expect(reminderSlots('2026-10-03', '').map((slot) => slot.at.toISOString())).toEqual([
+      '2026-10-03T01:30:00.000Z',
+      '2026-10-03T06:30:00.000Z',
+      '2026-10-03T10:30:00.000Z',
+    ]);
+    expect(reminderSlots('2026-10-03', '02:00')[0].at.toISOString()).toBe('2026-10-02T17:30:00.000Z');
   });
 
-  it('is due after that time until the visit day ends, and only once', () => {
+  it('sends only the allotted number, skips a missed earlier reminder, and stops at the event', () => {
     const daytime = visit();
-    expect(isAutoDue(daytime, new Date('2026-10-03T01:29:00.000Z'))).toBe(false);
-    expect(isAutoDue(daytime, new Date('2026-10-03T01:30:00.000Z'))).toBe(true);
-    expect(isAutoDue(daytime, new Date('2026-10-03T12:00:00.000Z'))).toBe(true);
-    expect(isAutoDue(daytime, new Date('2026-10-03T18:30:00.000Z'))).toBe(false);
-    expect(isAutoDue(visit({ followUpAutoDay: '2026-10-03' }), new Date('2026-10-03T02:00:00.000Z'))).toBe(false);
-    expect(isAutoDue(visit({ visitTime: '06:00' }), new Date('2026-10-02T21:30:00.000Z'))).toBe(true);
-    expect(isAutoDue(visit({ leadPhone: '' }), new Date('2026-10-03T02:00:00.000Z'))).toBe(false);
-    expect(isAutoDue(visit({ leadPhone: '', leadPhones: ['919876543210'] }), new Date('2026-10-03T02:00:00.000Z'))).toBe(true);
+    expect(reminderPlan(daytime, new Date('2026-10-03T01:59:00.000Z')).send).toBeNull();
+    expect(reminderPlan(daytime, new Date('2026-10-03T02:00:00.000Z')).send?.id).toBe('2026-10-03@450');
+    expect(reminderPlan(daytime, new Date('2026-10-03T03:00:00.000Z')).skip).toEqual(['2026-10-03@450']);
+    expect(reminderPlan(daytime, new Date('2026-10-03T03:00:00.000Z')).send?.id).toBe('2026-10-03@510');
+    expect(reminderPlan(visit({ followUpSent: ['2026-10-03@450'] }), new Date('2026-10-03T02:15:00.000Z')).send).toBeNull();
+    expect(reminderPlan(visit({ followUpAutoDay: '2026-10-03' }), new Date('2026-10-03T02:00:00.000Z')).send).toBeNull();
+    expect(reminderPlan(daytime, new Date('2026-10-03T05:00:00.000Z')).send).toBeNull();
+    expect(reminderPlan(visit({ leadPhone: '' }), new Date('2026-10-03T02:00:00.000Z')).send).toBeNull();
+    expect(reminderPlan(visit({ leadPhone: '', leadPhones: ['919876543210'] }), new Date('2026-10-03T02:00:00.000Z')).send).not.toBeNull();
     expect(listedPhones(visit({ leadPhone: '919876543210', leadPhones: ['919876543210', '918888888888'] }))).toEqual([
       '919876543210',
       '918888888888',
@@ -42,7 +50,7 @@ describe('visit follow-up timing', () => {
     expect(followUpParameters(visit({ place: '', visitTime: '' }))).toEqual({
       title: 'Hospital visit',
       place: 'as scheduled',
-      time: 'as scheduled',
+      time: 'Anytime',
     });
     expect(followUpParameters(visit()).time).toBe('10:30 AM');
   });
@@ -81,7 +89,7 @@ describe('VisitFollowupService', () => {
       ensureConnected: async () => true,
       collection: () => ({
         find: () => ({ toArray: async () => docs }),
-        updateOne: async (_filter: unknown, update: { $set: Record<string, string> }) => {
+        updateOne: async (_filter: unknown, update: { $set: { followUpSent?: string[] } }) => {
           Object.assign(docs[0], update.$set);
           return { matchedCount: 1 };
         },
@@ -103,8 +111,11 @@ describe('VisitFollowupService', () => {
 
     const automatic = await service.sendDue(fetchImpl, now);
     expect(automatic.sent).toBe(1);
-    expect(docs[0].followUpAutoDay).toBe('2026-10-03');
+    expect(docs[0].followUpSent).toEqual(['2026-10-03@450']);
     expect((await service.sendDue(fetchImpl, now)).due).toBe(0);
+    const later = await service.sendDue(fetchImpl, new Date('2026-10-03T03:00:00.000Z'));
+    expect(later.sent).toBe(1);
+    expect(docs[0].followUpSent).toEqual(['2026-10-03@450', '2026-10-03@510']);
     expect((await service.sendToday(fetchImpl, now)).sent).toBe(1);
   });
 

@@ -17,7 +17,7 @@ import {
 import { formatDate, formatDateTime } from '../../utils/format';
 import VisitKindBadge from './VisitKindBadge';
 
-const EMPTY_FORM = { title: '', place: '', visitDate: '', visitTime: '', detail: '', leadPhone: '' };
+const EMPTY_FORM = { title: '', place: '', visitDate: '', visitTime: '', anytime: false, detail: '', leadPhone: '' };
 const REJECTED_SHOWN = 15;
 
 function extensionOf(name) {
@@ -254,7 +254,21 @@ function SingleVisitPanel({ onSaved, handleError }) {
       </label>
       <label className="block text-sm">
         <span className="text-msmuted">Visit time</span>
-        <input type="time" className="input-field mt-1 w-full" value={form.visitTime} onChange={setField('visitTime')} />
+        <input
+          type="time"
+          className="input-field mt-1 w-full"
+          value={form.visitTime}
+          onChange={setField('visitTime')}
+          disabled={form.anytime}
+        />
+        <label className="mt-2 flex items-center gap-2 text-xs text-msmuted">
+          <input
+            type="checkbox"
+            checked={Boolean(form.anytime)}
+            onChange={(event) => setForm((current) => ({ ...current, anytime: event.target.checked, visitTime: event.target.checked ? '' : current.visitTime }))}
+          />
+          Anytime
+        </label>
       </label>
       <label className="block text-sm md:col-span-2">
         <span className="text-msmuted">Place</span>
@@ -441,8 +455,8 @@ export default function AdminVisits({ onUnauthorized }) {
                     <td className="py-2.5 pr-3 font-medium text-app max-w-[240px]">{visit.title}</td>
                     <td className="py-2.5 pr-3 whitespace-nowrap">
                       {visit.visitDate ? formatDate(visit.visitDate) : '—'}
-                      {visit.visitTime ? (
-                        <span className="block text-xs text-msmuted">{formatVisitTime(visit.visitTime)}</span>
+                      {visit.visitDate ? (
+                        <span className="block text-xs text-msmuted">{visit.visitTime ? formatVisitTime(visit.visitTime) : 'Anytime'}</span>
                       ) : null}
                     </td>
                     <td className="py-2.5 pr-3">{visit.place || '—'}</td>

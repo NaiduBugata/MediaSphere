@@ -7,7 +7,7 @@ import { VisitFollowupService } from '../visits/visit-followup.service';
 import { formatVisitTime } from '../visits/visits-import';
 import { parseWebhookPayload, type WhatsAppEvent } from '../whatsapp/whatsapp.parser';
 import { replyRecipients, staffDirectoryLoaded } from '../whatsapp/whatsapp.audience';
-import { normalizePhone, sendReplyButtons, type ReplyButton } from '../whatsapp/whatsapp.send';
+import { normalizePhone, sendReplyList, type MenuRow } from '../whatsapp/whatsapp.send';
 import { newestFirst, toBrief, type NewsBrief } from './news-context';
 
 const RECORDS = 'jv_records';
@@ -19,31 +19,29 @@ const MENU_PROMPT = 'Tap a section. The reply stays in this chat.';
 export const MAIN_MENU_TEXT = '*Main menu*\n\nHere are the options.';
 export const MORE_MENU_TEXT = '*More options*\n\nHere are the options available.';
 
-export const MORE_BUTTON: ReplyButton = { id: 'more', title: 'More' };
-export const HOME_BUTTON: ReplyButton = { id: 'home', title: '☰ Main menu' };
-export const MAIN_BUTTONS: ReplyButton[] = [
-  { id: 'news', title: 'News' },
-  { id: 'visits', title: 'Visits' },
+export const MORE_BUTTON: MenuRow = { id: 'more', title: 'More', description: 'Constituency, campaigns, analytics' };
+export const HOME_BUTTON: MenuRow = { id: 'home', title: 'Main menu', description: 'News, visits, and grievances' };
+export const FOLLOW_UP_ROW: MenuRow = { id: 'follow_up', title: 'Follow up', description: 'Message the visit leads' };
+export const MAIN_BUTTONS: MenuRow[] = [
+  { id: 'news', title: 'News', description: 'Latest stories' },
+  { id: 'visits', title: 'Visits', description: 'Scheduled visits' },
+  { id: 'grievances', title: 'Grievances', description: 'Saved grievances' },
+  { id: 'projects', title: 'Projects & reports', description: 'Projects and reports' },
   MORE_BUTTON,
 ];
-export const MORE_BUTTONS: ReplyButton[] = [
-  { id: 'grievances', title: 'Grievances' },
-  { id: 'analytics', title: 'Analytics' },
+export const MORE_BUTTONS: MenuRow[] = [
+  { id: 'constituency', title: 'Constituency', description: 'People and places' },
+  { id: 'campaigns', title: 'Campaigns', description: 'Campaign updates' },
+  { id: 'analytics', title: 'Analytics', description: 'What the news is about' },
   HOME_BUTTON,
 ];
-export const VISIT_BUTTONS: ReplyButton[] = [
-  { id: 'follow_up', title: 'Follow up' },
-  MORE_BUTTON,
-];
+export const VISIT_BUTTONS: MenuRow[] = [FOLLOW_UP_ROW, ...MAIN_BUTTONS];
 
-const CHOICE_BUTTONS: ReplyButton[] = [
+const CHOICE_BUTTONS: MenuRow[] = [
   ...MAIN_BUTTONS,
   ...MORE_BUTTONS,
+  FOLLOW_UP_ROW,
   { id: 'menu', title: 'More' },
-  { id: 'follow_up', title: 'Follow up' },
-  { id: 'projects', title: 'Projects & reports' },
-  { id: 'campaigns', title: 'Campaigns' },
-  { id: 'constituency', title: 'Constituency' },
 ];
 
 export type MenuId = 'grievances' | 'projects' | 'news' | 'constituency' | 'campaigns' | 'analytics' | 'visits';
@@ -182,8 +180,8 @@ export class ChatbotService {
         await this.sendMenu(sender, MAIN_MENU_TEXT, fetchImpl, env);
       } else if (choice) {
         const body = await this.renderSection(choice, deps);
-        const buttons = choice === 'visits' ? VISIT_BUTTONS : [MORE_BUTTON];
-        await sendReplyButtons(sender, body, buttons, fetchImpl, env);
+        const rows = choice === 'visits' ? VISIT_BUTTONS : MAIN_BUTTONS;
+        await sendReplyList(sender, body, rows, { fetchImpl, env });
       } else {
         const lead = opening ? `${openingLine(now, env)}\n\n${MENU_PROMPT}` : MAIN_MENU_TEXT;
         await this.sendMenu(sender, lead, fetchImpl, env);
@@ -215,7 +213,7 @@ export class ChatbotService {
       }
       if (!ready) {
         const body = await this.renderSection('visits', deps);
-        await sendReplyButtons(sender, body, VISIT_BUTTONS, fetchImpl, env);
+        await sendReplyList(sender, body, VISIT_BUTTONS, { fetchImpl, env });
         return;
       }
       await this.sendMenu(sender, FOLLOW_UP_SENT, fetchImpl, env);
@@ -238,7 +236,7 @@ export class ChatbotService {
       return;
     }
     const body = await this.renderSection('visits', deps);
-    await sendReplyButtons(sender, body, VISIT_BUTTONS, fetchImpl, env);
+    await sendReplyList(sender, body, VISIT_BUTTONS, { fetchImpl, env });
   }
 
   private async sendMenu(
@@ -247,7 +245,7 @@ export class ChatbotService {
     fetchImpl: typeof fetch,
     env: NodeJS.ProcessEnv,
   ): Promise<void> {
-    await sendReplyButtons(sender, lead, MAIN_BUTTONS, fetchImpl, env);
+    await sendReplyList(sender, lead, MAIN_BUTTONS, { fetchImpl, env });
   }
 
   private async sendMore(
@@ -255,7 +253,13 @@ export class ChatbotService {
     fetchImpl: typeof fetch,
     env: NodeJS.ProcessEnv,
   ): Promise<void> {
-    await sendReplyButtons(sender, MORE_MENU_TEXT, MORE_BUTTONS, fetchImpl, env);
+    await sendReplyList(sender, MORE_MENU_TEXT, MORE_BUTTONS, {
+      button: 'More',
+      header: 'More options',
+      section: 'More options',
+      fetchImpl,
+      env,
+    });
   }
 
   private async renderSection(choice: MenuId, deps: ChatbotDeps): Promise<string> {
@@ -328,7 +332,7 @@ export function chatbotEnabled(env: NodeJS.ProcessEnv): boolean {
 }
 
 export function menuChoice(event: WhatsAppEvent): MenuChoice | null {
-  const reply = event.interactive_response?.button_reply;
+  const reply = event.interactive_response?.list_reply || event.interactive_response?.button_reply;
   if (reply && typeof reply === 'object') {
     const row = reply as Record<string, unknown>;
     const id = text(row.id).toLowerCase();

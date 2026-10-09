@@ -1,6 +1,6 @@
 import { FOLLOW_UP_SENT } from '../visits/visit-followup';
 import { clearStaffDirectory, setStaffDirectory } from '../whatsapp/whatsapp.audience';
-import { ChatbotService, HOME_BUTTON, MAIN_BUTTONS, MAIN_MENU_TEXT, MORE_BUTTON, MORE_BUTTONS, MORE_MENU_TEXT, VISIT_BUTTONS, formatSection, isGreetingOnly, openingLine, timeGreeting, toWhatsAppFormat } from './chatbot.service';
+import { ChatbotService, HOME_BUTTON, MAIN_BUTTONS, MAIN_MENU_TEXT, MORE_BUTTONS, MORE_MENU_TEXT, VISIT_BUTTONS, formatSection, isGreetingOnly, openingLine, timeGreeting, toWhatsAppFormat } from './chatbot.service';
 
 function payload(body: string, id = 'wamid.1', from = '919876543210') {
   return {
@@ -15,6 +15,10 @@ function payload(body: string, id = 'wamid.1', from = '919876543210') {
       }],
     }],
   };
+}
+
+function listRows(interactive: { action?: { sections?: Array<{ rows?: Array<{ id: string; title: string; description?: string }> }> } }): Array<{ id: string; title: string; description?: string }> {
+  return (interactive.action?.sections || []).flatMap((section) => section.rows || []);
 }
 
 function buttonPayload(id: string, title: string, messageId = 'wamid.btn', from = '919876543210') {
@@ -115,7 +119,7 @@ describe('ChatbotService', () => {
     expect(calls).toEqual([]);
   });
 
-  it('answers a greeting with reply buttons, not links', async () => {
+  it('answers a greeting with a menu list of more than three choices', async () => {
     const sent: Array<Record<string, unknown>> = [];
     const bot = new ChatbotService();
     await bot.handle(payload('Hi', 'wamid.hi'), {
@@ -124,16 +128,20 @@ describe('ChatbotService', () => {
       now: () => new Date('2026-09-28T13:49:00Z'),
     });
     expect(sent).toHaveLength(1);
-    const first = sent[0].interactive as { type: string; body: { text: string }; action: { buttons: Array<{ type: string; reply: { id: string; title: string } }> } };
-    expect(first.type).toBe('button');
+    const first = sent[0].interactive as { type: string; body: { text: string }; footer: { text: string }; action: { button: string; sections: Array<{ rows: Array<{ id: string; title: string; description?: string }> }> } };
+    expect(first.type).toBe('list');
+    expect(first.action.button).toBe('Menu');
+    expect(first.footer.text).toBe('Tap to select an item');
     expect(first.body.text).toContain("Good evening, Sri. Lavu Sri Krishna Devarayalu Sir! I'm your Media Assistant.");
     expect(first.body.text).toContain('Tap a section');
-    expect(first.action.buttons.map((button) => button.reply.title)).toEqual(['News', 'Visits', 'More']);
-    expect(first.action.buttons.every((button) => button.type === 'reply')).toBe(true);
+    const rows = listRows(first);
+    expect(rows.length).toBeGreaterThan(3);
+    expect(rows.map((row) => row.title)).toEqual(MAIN_BUTTONS.map((row) => row.title));
+    expect(rows.every((row) => row.description)).toBe(true);
     expect(JSON.stringify(sent)).not.toContain('http');
   });
 
-  it('returns only the latest five news items when News is tapped, then a single More button', async () => {
+  it('returns only the latest five news items when News is tapped, then the menu list', async () => {
     const sent: Array<Record<string, unknown>> = [];
     const bot = new ChatbotService();
     await bot.handle(buttonPayload('news', 'News', 'wamid.news'), {
@@ -143,7 +151,7 @@ describe('ChatbotService', () => {
       now: () => new Date('2026-09-28T13:49:00Z'),
     });
     expect(sent).toHaveLength(1);
-    const interactive = sent[0].interactive as { body: { text: string }; action: { buttons: Array<{ reply: { id: string; title: string } }> } };
+    const interactive = sent[0].interactive as { body: { text: string }; action: { sections: Array<{ rows: Array<{ id: string; title: string }> }> } };
     expect(interactive.body.text).toContain('*News*');
     expect(interactive.body.text).toContain('Latest 5');
     expect(interactive.body.text).toContain('Cordon search in Narasaraopet');
@@ -152,7 +160,7 @@ describe('ChatbotService', () => {
     expect(interactive.body.text).not.toContain('Older road work');
     expect(interactive.body.text).not.toContain('http');
     expect(interactive.body.text).not.toContain("I'm your Media Assistant");
-    expect(interactive.action.buttons).toEqual([{ type: 'reply', reply: { id: MORE_BUTTON.id, title: 'More' } }]);
+    expect(listRows(interactive).map((row) => row.id)).toEqual(MAIN_BUTTONS.map((row) => row.id));
   });
 
   it('returns to News, Visits, and More from the second More without another message', async () => {
@@ -163,17 +171,14 @@ describe('ChatbotService', () => {
       fetchImpl: capture(sent),
       now: () => new Date('2026-09-28T13:49:00Z'),
     });
-    const titles = sent.flatMap((row) => {
-      const interactive = row.interactive as { action: { buttons: Array<{ reply: { title: string } }> } };
-      return interactive.action.buttons.map((button) => button.reply.title);
-    });
-    expect(titles).toEqual(MAIN_BUTTONS.map((button) => button.title));
+    const titles = sent.flatMap((row) => listRows(row.interactive as { action: { sections: Array<{ rows: Array<{ id: string; title: string }> }> } }).map((item) => item.title));
+    expect(titles).toEqual(MAIN_BUTTONS.map((row) => row.title));
     const body = (sent[0].interactive as { body: { text: string } }).body.text;
     expect(body).toBe(MAIN_MENU_TEXT);
     expect(body).not.toContain("I'm your Media Assistant");
   });
 
-  it('opens Grievances, Analytics, and More from More', async () => {
+  it('opens more than three further choices from More', async () => {
     const sent: Array<Record<string, unknown>> = [];
     const bot = new ChatbotService();
     await bot.handle(buttonPayload('more', 'More', 'wamid.more'), {
@@ -182,10 +187,14 @@ describe('ChatbotService', () => {
       now: () => new Date('2026-09-28T13:49:00Z'),
     });
     expect(sent).toHaveLength(1);
-    const interactive = sent[0].interactive as { body: { text: string }; action: { buttons: Array<{ reply: { id: string; title: string } }> } };
+    const interactive = sent[0].interactive as { type: string; body: { text: string }; action: { button: string; sections: Array<{ title: string; rows: Array<{ id: string; title: string }> }> } };
+    expect(interactive.type).toBe('list');
+    expect(interactive.action.button).toBe('More');
     expect(interactive.body.text).toBe(MORE_MENU_TEXT);
-    expect(interactive.action.buttons.map((button) => button.reply.title)).toEqual(MORE_BUTTONS.map((button) => button.title));
-    expect(interactive.action.buttons.map((button) => button.reply.id)).toEqual(['grievances', 'analytics', HOME_BUTTON.id]);
+    const rows = listRows(interactive);
+    expect(rows.length).toBeGreaterThan(3);
+    expect(rows.map((row) => row.title)).toEqual(MORE_BUTTONS.map((row) => row.title));
+    expect(rows.map((row) => row.id)).toEqual(['constituency', 'campaigns', 'analytics', HOME_BUTTON.id]);
   });
 
   it('returns the five newest grievances and keeps projects separate', async () => {
@@ -300,10 +309,10 @@ describe('ChatbotService', () => {
       fetchImpl: capture(sent),
       now: () => new Date('2026-10-03T04:00:00.000Z'),
     });
-    const interactive = sent[0].interactive as { body: { text: string }; action: { buttons: Array<{ reply: { id: string; title: string } }> } };
+    const interactive = sent[0].interactive as { body: { text: string }; action: { sections: Array<{ rows: Array<{ id: string }> }> } };
     expect(interactive.body.text).toContain('*Hospital round*');
     expect(interactive.body.text).not.toContain('9876543210');
-    expect(interactive.action.buttons.map((button) => button.reply.id)).toEqual(VISIT_BUTTONS.map((button) => button.id));
+    expect(listRows(interactive).map((row) => row.id)).toEqual(VISIT_BUTTONS.map((row) => row.id));
   });
 
   it('returns to News, Visits, and More only after a follow-up is accepted', async () => {
@@ -315,9 +324,9 @@ describe('ChatbotService', () => {
       fetchImpl: capture(sent),
       now: () => new Date('2026-10-03T04:00:00.000Z'),
     });
-    const interactive = sent[0].interactive as { body: { text: string }; action: { buttons: Array<{ reply: { title: string } }> } };
+    const interactive = sent[0].interactive as { body: { text: string }; action: { sections: Array<{ rows: Array<{ title: string }> }> } };
     expect(interactive.body.text).toBe(FOLLOW_UP_SENT);
-    expect(interactive.action.buttons.map((button) => button.reply.title)).toEqual(MAIN_BUTTONS.map((button) => button.title));
+    expect(listRows(interactive).map((row) => row.title)).toEqual(MAIN_BUTTONS.map((row) => row.title));
   });
 
   it('answers Follow up before the visit messages finish', async () => {
@@ -358,9 +367,9 @@ describe('ChatbotService', () => {
       records: { visits: [{ title: 'Ward meeting', detail: 'Ipur', status: 'Manual', date: '2026-10-03' }] },
       now: () => new Date('2026-10-03T04:00:00.000Z'),
     });
-    const interactive = sent[0].interactive as { body: { text: string }; action: { buttons: Array<{ reply: { id: string } }> } };
+    const interactive = sent[0].interactive as { body: { text: string }; action: { sections: Array<{ rows: Array<{ id: string }> }> } };
     expect(interactive.body.text).toContain('Ward meeting');
-    expect(interactive.action.buttons.map((button) => button.reply.id)).toEqual(['follow_up', 'more']);
+    expect(listRows(interactive).map((row) => row.id)).toEqual(VISIT_BUTTONS.map((row) => row.id));
   });
 
   it('stays on the visit list when no follow-up is accepted', async () => {
@@ -373,10 +382,10 @@ describe('ChatbotService', () => {
       records: { visits: [{ title: 'Ward meeting', detail: 'Ipur', status: 'Manual', date: '2026-10-03' }] },
       now: () => new Date('2026-10-03T04:00:00.000Z'),
     });
-    const interactive = sent[0].interactive as { body: { text: string }; action: { buttons: Array<{ reply: { id: string } }> } };
+    const interactive = sent[0].interactive as { body: { text: string }; action: { sections: Array<{ rows: Array<{ id: string }> }> } };
     expect(interactive.body.text).toContain('Ward meeting');
     expect(interactive.body.text).not.toContain(FOLLOW_UP_SENT);
-    expect(interactive.action.buttons.map((button) => button.reply.id)).toEqual(['follow_up', 'more']);
+    expect(listRows(interactive).map((row) => row.id)).toEqual(VISIT_BUTTONS.map((row) => row.id));
   });
 
   it('caps a section at five lines', () => {

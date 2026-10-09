@@ -4,10 +4,10 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 export const FOLLOW_UP_TEMPLATE = 'visit_followup_en';
 export const FOLLOW_UP_SENT = 'Follow-up message sent successfully.';
-/** Automatic reminder hour for a visit at or after 7:00 AM, or with no time. */
-export const FOLLOW_UP_HOUR = 7;
-/** A visit earlier than 7:00 AM is reminded this many hours beforehand. */
-export const EARLY_LEAD_HOURS = 3;
+/** A visit with no clock time is reminded at these hours on the visit day. */
+const ANYTIME_MINUTES = [7 * 60, 12 * 60, 16 * 60];
+/** Hours before a timed visit. Three is the most that go out. */
+const TIMED_LEAD_HOURS = [3, 2, 1];
 
 export interface FollowUpVisit {
   id: string;
@@ -19,6 +19,13 @@ export interface FollowUpVisit {
   /** Extra follow-up numbers. A visit can message more than one person. */
   leadPhones?: string[];
   followUpAutoDay: string;
+  /** Reminder slots already sent or skipped for this visit. */
+  followUpSent?: string[];
+}
+
+export interface ReminderSlot {
+  id: string;
+  at: Date;
 }
 
 /** Every distinct mobile on the visit. The same number is not messaged twice. */
@@ -34,38 +41,41 @@ export function listedPhones(visit: Pick<FollowUpVisit, 'leadPhone' | 'leadPhone
   return phones;
 }
 
-/** When the automatic reminder for this visit should go out. Null when the visit has no date. */
-export function followUpDueAt(visitDate: string, visitTime: string): Date | null {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(visitDate)) return null;
+/** Up to three times before the visit. A timed visit is 3, 2, and 1 hour before. Anytime is 7:00 AM, 12:00 PM, and 4:00 PM. */
+export function reminderSlots(visitDate: string, visitTime: string): ReminderSlot[] {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(visitDate)) return [];
   const start = firstMinutes(visitTime);
-  let day = visitDate;
-  let minutes = FOLLOW_UP_HOUR * 60;
-  if (start !== null && start < FOLLOW_UP_HOUR * 60) {
-    const shifted = start - EARLY_LEAD_HOURS * 60;
-    if (shifted < 0) {
-      day = shiftDay(visitDate, -1);
-      minutes = shifted + 24 * 60;
-    } else {
-      minutes = shifted;
-    }
+  if (start === null) {
+    return ANYTIME_MINUTES.map((minutes) => ({ id: `${visitDate}@${minutes}`, at: istDate(visitDate, minutes) }));
   }
-  return istDate(day, minutes);
+  return TIMED_LEAD_HOURS.map((hours) => {
+    const shifted = start - hours * 60;
+    const day = shifted < 0 ? shiftDay(visitDate, -1) : visitDate;
+    const minutes = shifted < 0 ? shifted + 24 * 60 : shifted;
+    return { id: `${day}@${minutes}`, at: istDate(day, minutes) };
+  });
 }
 
-/** True once the reminder time has passed and the visit day has not ended, and it has not already been sent. */
-export function isAutoDue(visit: FollowUpVisit, now: Date): boolean {
-  if (!listedPhones(visit).length || !visit.visitDate || visit.followUpAutoDay === visit.visitDate) return false;
-  const due = followUpDueAt(visit.visitDate, visit.visitTime);
-  if (!due || now.getTime() < due.getTime()) return false;
-  const end = istDate(shiftDay(visit.visitDate, 1), 0);
-  return now.getTime() < end.getTime();
+/** The next reminder to send, plus earlier missed slots that should not be sent late. */
+export function reminderPlan(visit: FollowUpVisit, now: Date): { send: ReminderSlot | null; skip: string[] } {
+  const none = { send: null, skip: [] as string[] };
+  if (!listedPhones(visit).length || !visit.visitDate) return none;
+  const sent = new Set(visit.followUpSent || []);
+  if (visit.followUpAutoDay === visit.visitDate && sent.size === 0) return none;
+  const cutoff = eventCutoff(visit.visitDate, visit.visitTime);
+  if (!cutoff || now.getTime() >= cutoff.getTime()) return none;
+  const due = reminderSlots(visit.visitDate, visit.visitTime).filter(
+    (slot) => !sent.has(slot.id) && now.getTime() >= slot.at.getTime(),
+  );
+  if (!due.length) return none;
+  return { send: due[due.length - 1], skip: due.slice(0, -1).map((slot) => slot.id) };
 }
 
 export function followUpParameters(visit: Pick<FollowUpVisit, 'title' | 'place' | 'visitTime'>): Record<string, string> {
   return {
     title: templateValue(visit.title, 'Scheduled visit'),
     place: templateValue(visit.place, 'as scheduled'),
-    time: templateValue(displayTime(visit.visitTime), 'as scheduled'),
+    time: templateValue(displayTime(visit.visitTime), 'Anytime'),
   };
 }
 
@@ -85,6 +95,13 @@ function displayTime(value: string): string {
     })
     .filter(Boolean)
     .join(' - ');
+}
+
+function eventCutoff(visitDate: string, visitTime: string): Date | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(visitDate)) return null;
+  const start = firstMinutes(visitTime);
+  if (start === null) return istDate(shiftDay(visitDate, 1), 0);
+  return istDate(visitDate, start);
 }
 
 function firstMinutes(visitTime: string): number | null {
