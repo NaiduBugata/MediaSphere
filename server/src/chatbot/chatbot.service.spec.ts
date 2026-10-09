@@ -146,6 +146,8 @@ describe('ChatbotService', () => {
     const first = sent[0].interactive as { type: string; body: { text: string }; action: { button: string } };
     expect(first.type).toBe('list');
     expect(first.action.button).toBe('Menu');
+    expect(first).not.toHaveProperty('header');
+    expect(JSON.stringify(first)).not.toContain('Campaign updates');
     expect(first.body.text).toContain("Good evening, Sri. Lavu Sri Krishna Devarayalu Sir! I'm your Media Assistant.");
     expect(first.body.text).toContain('Choose a section.');
     const buttons = sent.flatMap(replyButtons);

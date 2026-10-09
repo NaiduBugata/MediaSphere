@@ -18,15 +18,15 @@ const DEFAULT_ADDRESSEE = 'Sri. Lavu Sri Krishna Devarayalu Sir';
 const MENU_PROMPT = 'Choose a section.';
 export const MAIN_MENU_TEXT = 'Choose a section.';
 
-export const FOLLOW_UP_ROW: MenuRow = { id: 'follow_up', title: 'Follow up', description: 'Message the visit leads' };
+export const FOLLOW_UP_ROW: MenuRow = { id: 'follow_up', title: 'Follow up' };
 export const MAIN_BUTTONS: MenuRow[] = [
-  { id: 'news', title: 'News', description: 'Latest stories' },
-  { id: 'visits', title: 'Visits', description: 'Scheduled visits' },
-  { id: 'grievances', title: 'Grievances', description: 'Saved grievances' },
-  { id: 'projects', title: 'Projects & reports', description: 'Projects and reports' },
-  { id: 'constituency', title: 'Constituency', description: 'People and places' },
-  { id: 'campaigns', title: 'Campaigns', description: 'Campaign updates' },
-  { id: 'analytics', title: 'Analytics', description: 'What the news is about' },
+  { id: 'news', title: 'News' },
+  { id: 'visits', title: 'Visits' },
+  { id: 'grievances', title: 'Grievances' },
+  { id: 'projects', title: 'Projects & reports' },
+  { id: 'constituency', title: 'Constituency' },
+  { id: 'campaigns', title: 'Campaigns' },
+  { id: 'analytics', title: 'Analytics' },
 ];
 export const VISIT_BUTTONS: MenuRow[] = [FOLLOW_UP_ROW, ...MAIN_BUTTONS];
 
@@ -249,8 +249,6 @@ export class ChatbotService {
   ): Promise<void> {
     await sendReplyList(sender, lead, rows, {
       button: 'Menu',
-      header: 'Menu',
-      section: 'Menu',
       fetchImpl,
       env,
     });

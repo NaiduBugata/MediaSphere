@@ -159,13 +159,13 @@ export async function sendReplyList(
     type: 'interactive',
     interactive: {
       type: 'list',
-      header: { type: 'text', text: (options.header || 'Menu').trim().slice(0, 60) },
+      ...(options.header?.trim() ? { header: { type: 'text', text: options.header.trim().slice(0, 60) } } : {}),
       body: { text: body.slice(0, 1024) },
       footer: { text: (options.footer || 'Tap to select an item').trim().slice(0, 60) },
       action: {
         button: (options.button || 'Menu').trim().slice(0, 20),
         sections: [{
-          title: (options.section || 'Menu').trim().slice(0, 24),
+          ...(options.section?.trim() ? { title: options.section.trim().slice(0, 24) } : {}),
           rows: rows.map((row) => {
             const item: { id: string; title: string; description?: string } = {
               id: row.id.trim().slice(0, 200),
