@@ -449,16 +449,19 @@ export class ChatbotService {
     todayFirst = false,
     now = new Date(),
   ): Promise<MenuRecord[]> {
-    const mapRow = (row: MenuRecord & Record<string, unknown>): MenuRecord => ({
-      id: idOf(row.id) || idOf(row._id) || text(row.sourceMessageId) || text(row.title),
-      title: text(row.title),
-      detail: [formatVisitTime(text(row.visitTime)), text(row.place), text(row.detail)].filter(Boolean).join(' – '),
-      status: text(row.status),
-      date: text(row.visitDate) || text(row.date) || text(row.createdAt),
-      priority: row.priority === 'high' || row.priority === 'normal'
-        ? row.priority
-        : classifyGrievance(`${text(row.title)} ${text(row.detail)}`).priority,
-    });
+    const mapRow = (row: object): MenuRecord => {
+      const source = row as Record<string, unknown>;
+      return {
+        id: idOf(source.id) || idOf(source._id) || text(source.sourceMessageId) || text(source.title),
+        title: text(source.title),
+        detail: [formatVisitTime(text(source.visitTime)), text(source.place), text(source.detail)].filter(Boolean).join(' – '),
+        status: text(source.status),
+        date: text(source.visitDate) || text(source.date) || text(source.createdAt),
+        priority: source.priority === 'high' || source.priority === 'normal'
+          ? source.priority
+          : classifyGrievance(`${text(source.title)} ${text(source.detail)}`).priority,
+      };
+    };
     if (deps.records) {
       const mapped = (deps.records[section] || []).map((row) => mapRow(row));
       const unique = uniqueRecords(mapped);
@@ -470,7 +473,7 @@ export class ChatbotService {
       const ok = await this.db.ensureConnected();
       if (!ok) return [];
       const rows = await this.db.collection(RECORDS).find({ section }).sort({ createdAt: -1 }).limit(Math.max(limit, TOP) * 4).toArray();
-      const unique = uniqueRecords(rows.map((row) => mapRow(row as MenuRecord & Record<string, unknown>)));
+      const unique = uniqueRecords(rows.map((row) => mapRow(row)));
       if (section === 'grievances' && limit > TOP) return unique;
       return preferToday(latestRecords(unique, limit * 4), (row) => row.date, limit, todayFirst, now);
     } catch (err) {

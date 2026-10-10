@@ -19,10 +19,11 @@ export function contactRole(value: unknown): ContactRole {
   return value === 'superadmin' || value === 'admin' || value === 'person' || value === 'mp' ? value : 'user';
 }
 
-/** Admins stay admins. A person files grievances and is not treated as staff. */
+/** Admins stay admins. A person or the MP is not given a staff rank here. */
 export function staffRole(value: unknown): StaffRole {
   const role = contactRole(value);
-  return role === 'person' ? 'user' : role;
+  if (role === 'person' || role === 'mp') return 'user';
+  return role;
 }
 
 /** The highest staff role wins when the same number is stored more than once. */
