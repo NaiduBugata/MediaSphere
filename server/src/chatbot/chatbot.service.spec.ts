@@ -611,8 +611,8 @@ describe('ChatbotService', () => {
       },
     });
     expect(messageText(sent[1])).toContain('Colony has no water');
-    expect(replyButtons(sent[1]).map((row) => row.title)).toEqual(['Follow up', 'More']);
-    expect(replyButtons(sent[1]).map((row) => row.id)).toEqual(['gf:high-1', 'home']);
+    expect(replyButtons(sent[1]).map((row) => row.title)).toEqual(['Follow up', 'Menu']);
+    expect(replyButtons(sent[1]).map((row) => row.id)).toEqual(['gf:high-1', 'menu']);
   });
 
   it('sends the grievance follow up to Akshay and hides who reported it', async () => {

@@ -371,7 +371,7 @@ export class ChatbotService {
     if (picked) {
       await sendReplyButtons(sender, grievanceView(picked), [
         { id: `gf:${picked.id || picked.title}`, title: 'Follow up' },
-        { id: 'home', title: 'More' },
+        { id: 'menu', title: 'Menu' },
       ], fetchImpl, env);
       return;
     }
@@ -415,7 +415,7 @@ export class ChatbotService {
     }
     await sendTextMessage(phone, departmentOrder(issue, desk), fetchImpl, env);
     await sendTextMessage(phone, leaderUpdate(messageLanguage(issue)), fetchImpl, env);
-    await sendReplyButtons(sender, 'Follow up sent.', [{ id: 'home', title: 'More' }], fetchImpl, env);
+    await sendReplyButtons(sender, 'Follow up sent.', [{ id: 'menu', title: 'Menu' }], fetchImpl, env);
     this.logger.log(`Grievance follow up sent to ${maskPhone(phone)}.`);
   }
 
