@@ -6,6 +6,8 @@ import {
   Building2,
   CheckCircle2,
   ChevronRight,
+  Eye,
+  EyeOff,
   ClipboardList,
   FileText,
   LayoutDashboard,
@@ -219,13 +221,16 @@ function App() {
 function Login({ notice, onLogin }: { notice?: string; onLogin: (session: Session) => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [name, setName] = useState("");
   const [signup, setSignup] = useState(false);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     setError("");
+    setLoading(true);
     try {
       const path = signup ? "/api/workspace/register" : "/api/workspace/login";
       const next = await api<{ token: string; user: { email: string; name: string } }>(path, { method: "POST", body: { email, password, name: name || undefined } });
@@ -234,6 +239,8 @@ function Login({ notice, onLogin }: { notice?: string; onLogin: (session: Sessio
       onLogin(saved);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign-in failed");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -247,9 +254,14 @@ function Login({ notice, onLogin }: { notice?: string; onLogin: (session: Sessio
         <form onSubmit={(event) => void submit(event)} className="mt-6 space-y-4">
           {signup && <input value={name} onChange={(event) => setName(event.target.value)} required className="h-11 w-full rounded-lg border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring" placeholder="Full name" />}
           <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required className="h-11 w-full rounded-lg border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring" placeholder="Email address" />
-          <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} minLength={8} required className="h-11 w-full rounded-lg border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring" placeholder="Password (8+ characters)" />
+          <div className="relative">
+            <input type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} minLength={8} required className="h-11 w-full rounded-lg border bg-background px-3 pr-10 text-sm outline-none focus:ring-2 focus:ring-ring" placeholder="Password (8+ characters)" />
+            <button type="button" aria-label={showPassword ? "Hide password" : "Show password"} onClick={() => setShowPassword((current) => !current)} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground">
+              {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+            </button>
+          </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
-          <button className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-primary font-medium text-primary-foreground hover:bg-primary/90">{signup ? "Create account" : "Sign in"}<ChevronRight className="size-4" /></button>
+          <button disabled={loading} className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-primary font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60">{loading ? (signup ? "Creating account...." : "Signing in....") : (signup ? "Create account" : "Sign in")}{loading ? null : <ChevronRight className="size-4" />}</button>
         </form>
         <button onClick={() => { setSignup(!signup); setError(""); }} className="mt-5 w-full text-sm text-muted-foreground hover:text-foreground">{signup ? "Already have an account? Sign in" : "New here? Create an account"}</button>
       </div>

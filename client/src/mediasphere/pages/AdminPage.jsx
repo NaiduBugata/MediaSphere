@@ -14,12 +14,15 @@ import {
   triggerAdminFetch,
 } from '../services/adminApi';
 import { formatDateTime, formatRelativeTime } from '../utils/format';
+import { Eye, EyeOff } from 'lucide-react';
 import AdminVisits from '../components/visits/AdminVisits';
 import AdminBirthdays from '../components/birthdays/AdminBirthdays';
 import AdminMessages from '../components/birthdays/AdminMessages';
+import AdminUpload from '../components/upload/AdminUpload';
 
 const VIEWS = [
   { id: 'fetch', label: 'Fetch monitoring' },
+  { id: 'upload', label: 'Upload' },
   { id: 'visits', label: 'Visits' },
   { id: 'birthdays', label: 'Birthdays' },
   { id: 'messages', label: 'Send WhatsApp' },
@@ -66,6 +69,7 @@ function StatCard({ label, value, sub }) {
 function AdminLogin({ onSuccess }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -114,14 +118,24 @@ function AdminLogin({ onSuccess }) {
         </label>
         <label className="block text-sm">
           <span className="text-msmuted">Password</span>
-          <input
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="input-field mt-1 w-full"
-            required
-          />
+          <span className="relative mt-1 block">
+            <input
+              type={showPassword ? 'text' : 'password'}
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="input-field w-full pr-10"
+              required
+            />
+            <button
+              type="button"
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+              onClick={() => setShowPassword((current) => !current)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-msmuted"
+            >
+              {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+            </button>
+          </span>
         </label>
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
         <button
@@ -129,7 +143,7 @@ function AdminLogin({ onSuccess }) {
           disabled={loading}
           className="w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-hover disabled:opacity-60"
         >
-          {loading ? 'Signing in…' : 'Sign in'}
+          {loading ? 'Signing in....' : 'Sign in'}
         </button>
         <Link to="/news" className="block text-center text-sm text-msmuted hover:text-primary">
           ← Back to site
@@ -400,7 +414,16 @@ function AdminDashboard({ onLogout }) {
         </div>
       </header>
 
-      {view === 'visits' ? (
+      {view === 'upload' ? (
+        <main className="mx-auto max-w-7xl px-4 py-6">
+          <AdminUpload
+            onUnauthorized={() => {
+              clearAdminToken();
+              onLogout();
+            }}
+          />
+        </main>
+      ) : view === 'visits' ? (
         <main className="mx-auto max-w-7xl px-4 py-6">
           <AdminVisits
             onUnauthorized={() => {

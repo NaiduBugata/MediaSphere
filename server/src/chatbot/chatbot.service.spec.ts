@@ -1,6 +1,7 @@
 import { FOLLOW_UP_SENT } from '../visits/visit-followup';
 import { clearStaffDirectory, setStaffDirectory } from '../whatsapp/whatsapp.audience';
-import { ChatbotService, MAIN_BUTTONS, MAIN_MENU_TEXT, VISIT_BUTTONS, formatSection, isGreetingOnly, openingLine, timeGreeting, toWhatsAppFormat } from './chatbot.service';
+import { classifyGrievance } from './grievance-priority';
+import { ChatbotService, GRIEVANCE_RECEIPT, MAIN_BUTTONS, MAIN_MENU_TEXT, VISIT_BUTTONS, formatSection, isGreetingOnly, openingLine, timeGreeting, toWhatsAppFormat } from './chatbot.service';
 
 function payload(body: string, id = 'wamid.1', from = '919876543210') {
   return {
@@ -74,6 +75,30 @@ function fetchImpl(calls: string[]): typeof fetch {
     calls.push(`${body.type}:${body.to}`);
     return { ok: true, json: async () => ({ messages: [{ id: 'out' }] }) } as Response;
   }) as typeof fetch;
+}
+
+function memoryRecords() {
+  const rows: Array<Record<string, unknown>> = [];
+  const matches = (row: Record<string, unknown>, filter: Record<string, unknown>) =>
+    Object.entries(filter).every(([key, value]) => row[key] === value);
+  const db = {
+    ensureConnected: async () => true,
+    collection: () => ({
+      findOne: async (filter: Record<string, unknown>) => rows.find((row) => matches(row, filter)) || null,
+      insertOne: async (doc: Record<string, unknown>) => {
+        rows.push({ ...doc });
+        return { insertedId: 'id' };
+      },
+      find: (filter: Record<string, unknown>) => ({
+        sort: () => ({
+          limit: () => ({
+            toArray: async () => rows.filter((row) => matches(row, filter)),
+          }),
+        }),
+      }),
+    }),
+  };
+  return { rows, db };
 }
 
 function capture(sent: Array<Record<string, unknown>>): typeof fetch {
@@ -400,6 +425,197 @@ describe('ChatbotService', () => {
     expect(messageText(sent[0])).not.toContain(FOLLOW_UP_SENT);
     expect(messageText(sent[0]).toLowerCase()).not.toContain('menu');
     expect(sent.flatMap(replyButtons).map((button) => button.id)).toEqual(VISIT_BUTTONS.map((row) => row.id));
+  });
+
+  it('saves a person message as a grievance and sends only a receipt', async () => {
+    setStaffDirectory([
+      { phone: '919000000002', role: 'admin' },
+      { phone: '918885230708', role: 'person', name: 'Udatha Sravani' },
+    ]);
+    const { rows, db } = memoryRecords();
+    const sent: Array<Record<string, unknown>> = [];
+    const bot = new ChatbotService(undefined, db as never);
+    await bot.handle(payload('The road is broken', 'wamid.road', '918885230708'), {
+      env: env(),
+      fetchImpl: capture(sent),
+    });
+    expect(rows).toEqual([expect.objectContaining({
+      section: 'grievances',
+      title: 'Udatha Sravani',
+      detail: 'Normal — The road is broken',
+      priority: 'normal',
+      status: 'Open',
+      createdBy: 'Udatha Sravani',
+      sourceMessageId: 'wamid.road',
+    })]);
+    expect(sent).toHaveLength(1);
+    expect(sent[0].type).toBe('text');
+    expect(sent[0].to).toBe('918885230708');
+    expect((sent[0].text as { body: string }).body).toBe(GRIEVANCE_RECEIPT);
+    expect(JSON.stringify(sent)).not.toContain('"type":"list"');
+  });
+
+  it('does not save the same grievance twice', async () => {
+    setStaffDirectory([{ phone: '918919537879', role: 'person', name: 'Balaji' }]);
+    const { rows, db } = memoryRecords();
+    const first: Array<Record<string, unknown>> = [];
+    const bot = new ChatbotService(undefined, db as never);
+    const body = payload('Water supply stopped', 'wamid.water', '918919537879');
+    await bot.handle(body, { env: env(), fetchImpl: capture(first) });
+    const again: Array<Record<string, unknown>> = [];
+    const retry = new ChatbotService(undefined, db as never);
+    await retry.handle(body, { env: env(), fetchImpl: capture(again) });
+    expect(rows).toHaveLength(1);
+    expect(first).toHaveLength(1);
+    expect(again).toEqual([]);
+  });
+
+  it('shows a saved grievance when an admin opens Grievances', async () => {
+    setStaffDirectory([
+      { phone: '919000000002', role: 'admin' },
+      { phone: '918885230708', role: 'person', name: 'Udatha Sravani' },
+    ]);
+    const { db } = memoryRecords();
+    const bot = new ChatbotService(undefined, db as never);
+    await bot.handle(payload('Street light is out', 'wamid.light', '918885230708'), {
+      env: env(),
+      fetchImpl: capture([]),
+    });
+    const sent: Array<Record<string, unknown>> = [];
+    await bot.handle(buttonPayload('grievances', 'Grievances', 'wamid.ask', '919000000002'), {
+      env: env(),
+      fetchImpl: capture(sent),
+    });
+    const body = messageText(sent[0]);
+    expect(body).toContain('Udatha Sravani');
+    expect(body).toContain('Street light is out');
+    expect(sent).toHaveLength(1);
+    expect(sent[0].type).toBe('interactive');
+  });
+
+  it('stores a photo from a person as a short note', async () => {
+    setStaffDirectory([{ phone: '918919537879', role: 'person', name: 'Balaji' }]);
+    const { rows, db } = memoryRecords();
+    const bot = new ChatbotService(undefined, db as never);
+    await bot.handle({
+      object: 'whatsapp_business_account',
+      entry: [{ changes: [{ value: { messages: [{ from: '918919537879', id: 'wamid.photo', timestamp: '1', type: 'image', image: { id: 'media' } }] } }] }],
+    }, { env: env(), fetchImpl: capture([]) });
+    expect(rows[0]).toMatchObject({ title: 'Balaji', detail: 'Normal — Sent a photo.', status: 'Open', priority: 'normal' });
+  });
+
+  it('marks urgent grievance words as high priority', () => {
+    expect(classifyGrievance('No drinking water in the colony').priority).toBe('high');
+    expect(classifyGrievance('Please share the meeting time').priority).toBe('normal');
+  });
+
+  it('gives the MP six updated items and keeps an admin at five', async () => {
+    setStaffDirectory([
+      { phone: '919912514034', role: 'mp', name: 'Shri Lavu Sri Krishna Devarayalu' },
+      { phone: '919876543210', role: 'admin' },
+    ]);
+    const mpSent: Array<Record<string, unknown>> = [];
+    const bot = new ChatbotService();
+    await bot.handle(buttonPayload('news', 'News', 'wamid.mp-news', '919912514034'), {
+      env: env(),
+      fetchImpl: capture(mpSent),
+      news,
+      now: () => new Date('2026-09-28T13:49:00Z'),
+    });
+    const mpBody = messageText(mpSent[0]);
+    expect(mpBody).toContain('6. *Sixth item*');
+    expect(mpBody).not.toContain('Older road work');
+    const adminSent: Array<Record<string, unknown>> = [];
+    await bot.handle(buttonPayload('news', 'News', 'wamid.admin-news', '919876543210'), {
+      env: env(),
+      fetchImpl: capture(adminSent),
+      news,
+      now: () => new Date('2026-09-28T13:49:00Z'),
+    });
+    const adminBody = messageText(adminSent[0]);
+    expect(adminBody).toContain('5. *Fifth item*');
+    expect(adminBody).not.toContain('Sixth item');
+  });
+
+  it('shows the MP grievances as options with high priority first', async () => {
+    setStaffDirectory([{ phone: '919553147457', role: 'mp' }]);
+    const sent: Array<Record<string, unknown>> = [];
+    const bot = new ChatbotService();
+    await bot.handle(buttonPayload('grievances', 'Grievances', 'wamid.mp-g', '919553147457'), {
+      env: env(),
+      fetchImpl: capture(sent),
+      records: {
+        grievances: [
+          { id: 'normal-1', title: 'Street lights', detail: 'Lights are out', status: 'Open', date: '2026-10-10T00:00:00Z', priority: 'normal' },
+          { id: 'high-1', title: 'No drinking water', detail: 'Colony has no water', status: 'Open', date: '2026-10-09T00:00:00Z', priority: 'high' },
+        ],
+      },
+    });
+    const rows = sent.flatMap(replyButtons);
+    expect(rows.map((row) => row.id)).toEqual(['g:high-1', 'g:normal-1', 'home']);
+    expect(rows[0]).toMatchObject({ title: 'No drinking water' });
+    expect(JSON.stringify(sent)).toContain('High priority');
+    await bot.handle(buttonPayload('g:high-1', 'No drinking water', 'wamid.mp-pick', '919553147457'), {
+      env: env(),
+      fetchImpl: capture(sent),
+      records: {
+        grievances: [
+          { id: 'normal-1', title: 'Street lights', detail: 'Lights are out', status: 'Open', date: '2026-10-10T00:00:00Z', priority: 'normal' },
+          { id: 'high-1', title: 'No drinking water', detail: 'Colony has no water', status: 'Open', date: '2026-10-09T00:00:00Z', priority: 'high' },
+        ],
+      },
+    });
+    expect(messageText(sent[1])).toContain('Colony has no water');
+  });
+
+  it('tells the super admin when a person files a grievance', async () => {
+    setStaffDirectory([
+      { phone: '916281168530', role: 'superadmin', name: 'Sarojininaidu' },
+      { phone: '918885230708', role: 'person', name: 'Udatha Sravani' },
+    ]);
+    const { rows, db } = memoryRecords();
+    const sent: Array<Record<string, unknown>> = [];
+    const bot = new ChatbotService(undefined, db as never);
+    await bot.handle(payload('No drinking water since morning', 'wamid.water-g', '918885230708'), {
+      env: env(),
+      fetchImpl: capture(sent),
+    });
+    expect(rows[0]).toMatchObject({ priority: 'high', title: 'Udatha Sravani' });
+    expect(sent.map((message) => message.to)).toEqual(['918885230708', '916281168530']);
+    expect((sent[1].text as { body: string }).body).toContain('Udatha Sravani');
+    expect((sent[1].text as { body: string }).body).toContain('High priority');
+    expect(sent.every((message) => message.type === 'text')).toBe(true);
+  });
+
+  it('lets the super admin open the same grievance list as the MP', async () => {
+    setStaffDirectory([{ phone: '916281168530', role: 'superadmin', name: 'Sarojininaidu' }]);
+    const sent: Array<Record<string, unknown>> = [];
+    const bot = new ChatbotService();
+    await bot.handle(buttonPayload('grievances', 'Grievances', 'wamid.super-g', '916281168530'), {
+      env: env(),
+      fetchImpl: capture(sent),
+      records: {
+        grievances: [
+          { id: 'normal-1', title: 'Street lights', detail: 'Lights are out', status: 'Open', date: '2026-10-10T00:00:00Z', priority: 'normal' },
+          { id: 'high-1', title: 'No drinking water', detail: 'Colony has no water', status: 'Open', date: '2026-10-09T00:00:00Z', priority: 'high' },
+        ],
+      },
+    });
+    expect(sent.flatMap(replyButtons).map((row) => row.id)).toEqual(['g:high-1', 'g:normal-1', 'home']);
+  });
+
+  it('stores sample campaigns when that section is empty', async () => {
+    setStaffDirectory([{ phone: '919876543210', role: 'admin' }]);
+    const { rows, db } = memoryRecords();
+    const sent: Array<Record<string, unknown>> = [];
+    const bot = new ChatbotService(undefined, db as never);
+    await bot.handle(buttonPayload('campaigns', 'Campaigns', 'wamid.camp'), {
+      env: env(),
+      fetchImpl: capture(sent),
+    });
+    expect(rows.map((row) => row.title)).toEqual(['Door to door', 'Youth meeting', 'Rythu bharosa', 'Health camp']);
+    expect(messageText(sent[0])).toContain('Door to door');
+    expect(messageText(sent[0])).toContain('Health camp');
   });
 
   it('caps a section at five lines', () => {

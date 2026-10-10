@@ -8,7 +8,9 @@ import {
   summaryText,
   summaryVariables,
 } from './whatsapp.messages';
-import { deliverWhatsApp, whatsappAlertsEnabled, whatsappReady, type WaSendResult } from './whatsapp.send';
+import { pipelineRecipients, staffDirectoryLoaded } from './whatsapp.audience';
+import { parseWebhookPayload } from './whatsapp.parser';
+import { deliverWhatsApp, sendTextMessage, whatsappAlertsEnabled, whatsappReady, type WaSendResult } from './whatsapp.send';
 
 export interface WhatsAppNotice extends WaSendResult {
   notification_type: string;
@@ -210,4 +212,48 @@ export async function notifyPendingWhatsApp(deps: PendingDeps): Promise<WhatsApp
     sent,
     failed,
   };
+}
+
+const toldFailures = new Set<string>();
+
+/** A session message to Sarojininaidu only. Skipped until the contact list has loaded. */
+export async function notifySuperAdminText(
+  text: string,
+  fetchImpl: typeof fetch = fetch,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<void> {
+  if (!staffDirectoryLoaded()) return;
+  const body = text.trim().slice(0, 1000);
+  if (!body) return;
+  for (const phone of pipelineRecipients()) {
+    try {
+      await sendTextMessage(phone, body, fetchImpl, env);
+    } catch {
+      // A missed notice must not stop the reply that caused it.
+    }
+  }
+}
+
+/** One notice per failed delivery, so a webhook retry does not repeat it. */
+export async function notifyFailedStatuses(payload: unknown, fetchImpl: typeof fetch = fetch): Promise<void> {
+  if (!payload || typeof payload !== 'object') return;
+  let events: ReturnType<typeof parseWebhookPayload> = [];
+  try {
+    events = parseWebhookPayload(payload as Record<string, unknown>);
+  } catch {
+    return;
+  }
+  for (const event of events) {
+    if (event.event_category !== 'status' || event.status !== 'failed' || !event.message_id) continue;
+    if (toldFailures.has(event.message_id)) continue;
+    if (toldFailures.size > 500) toldFailures.clear();
+    toldFailures.add(event.message_id);
+    const digits = String(event.sender_wa_id || '').replace(/\D/g, '');
+    const tail = digits.length >= 2 ? digits.slice(-2) : '';
+    const reason = event.error_codes[0]?.title ? String(event.error_codes[0].title) : 'delivery failed';
+    await notifySuperAdminText(
+      `A WhatsApp message failed${tail ? ` for a number ending ${tail}` : ''}. ${reason}`.slice(0, 300),
+      fetchImpl,
+    );
+  }
 }

@@ -96,6 +96,35 @@ export async function getAdminFetchDetail(runId) {
   return data;
 }
 
+export async function getUploadKinds() {
+  const { data } = await api.get('/admin/upload/kinds', { headers: adminHeaders() });
+  return data;
+}
+
+export async function downloadUploadTemplate(kind) {
+  const { data } = await api.get(`/admin/upload/template/${encodeURIComponent(kind)}`, {
+    headers: adminHeaders(),
+    responseType: 'blob',
+  });
+  return data;
+}
+
+export async function uploadAdminFile(kind, file) {
+  const token = getAdminToken();
+  const body = new FormData();
+  body.append('kind', kind);
+  body.append('file', file);
+  const response = await api.post('/admin/upload', body, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    transformRequest: [(data, headers) => {
+      delete headers['Content-Type'];
+      return data;
+    }],
+    validateStatus: () => true,
+  });
+  return { status: response.status, data: response.data };
+}
+
 export async function getAdminHealth() {
   const { data } = await api.get('/admin/health', {
     headers: adminHeaders(),

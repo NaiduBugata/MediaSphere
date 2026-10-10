@@ -8,7 +8,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
-import { setStaffDirectory, staffRole } from '../whatsapp/whatsapp.audience';
+import { contactRole, setStaffDirectory, staffRole } from '../whatsapp/whatsapp.audience';
 import { setContactInboundRecorder, setMutedSenders } from '../whatsapp/whatsapp.muted';
 import {
   isDue,
@@ -166,21 +166,12 @@ export class BirthdaysService implements OnModuleInit {
       await this.ready();
       const rows = await this.db.collection(CONTACTS).find({}).toArray();
       for (const doc of rows) {
-        if (staffRole(doc.role) === 'user' || doc.allowReplies === true) continue;
+        const role = contactRole(doc.role);
+        if (role === 'user' || role === 'person' || doc.allowReplies === true) continue;
         await this.db.collection(CONTACTS).updateOne({ _id: doc._id }, { $set: { allowReplies: true } });
         doc.allowReplies = true;
       }
-      const contacts = rows.map(toContact);
-      setStaffDirectory(contacts.map((contact) => ({ phone: contact.phone, role: contact.role })));
-      const answered = new Set(
-        contacts.filter((contact) => contact.role !== 'user').map((contact) => contact.phone.replace(/\D/g, '')),
-      );
-      setMutedSenders(
-        contacts
-          .filter((contact) => !answered.has(contact.phone.replace(/\D/g, '')) && !contact.allowReplies)
-          .map((contact) => contact.phone),
-        contacts.map((contact) => contact.phone),
-      );
+      applyContactDirectory(rows);
     } catch (err) {
       this.logger.warn(`Could not load birthday contacts (${err instanceof Error ? err.message : 'database error'}); retrying in a minute.`);
       setTimeout(() => void this.refreshMuted(), RELOAD_RETRY_MS).unref?.();
@@ -228,6 +219,31 @@ function upcoming(birthday: string, today: string): string {
   return `${birthday >= current ? '0' : '1'}${birthday}`;
 }
 
+/** Reloads who may be answered and who is one-way, from the stored contacts. */
+export function applyContactDirectory(rows: Array<Record<string, unknown>>): void {
+  const contacts = rows.map(toContact);
+  setStaffDirectory(rows.map((doc) => ({
+    phone: String(doc.phone || ''),
+    role: contactRole(doc.role),
+    name: String(doc.name || ''),
+  })));
+  const personPhones = new Set(
+    rows.filter((doc) => contactRole(doc.role) === 'person').map((doc) => String(doc.phone || '').replace(/\D/g, '')),
+  );
+  const answered = new Set(
+    contacts.filter((contact) => contact.role !== 'user').map((contact) => contact.phone.replace(/\D/g, '')),
+  );
+  setMutedSenders(
+    contacts
+      .filter((contact) => {
+        const phone = contact.phone.replace(/\D/g, '');
+        return !personPhones.has(phone) && !answered.has(phone) && !contact.allowReplies;
+      })
+      .map((contact) => contact.phone),
+    contacts.map((contact) => contact.phone),
+  );
+}
+
 function toContact(doc: Record<string, unknown>): BirthdayContact {
   const wish = doc.lastWish && typeof doc.lastWish === 'object' ? (doc.lastWish as WishRecord) : null;
   return {
@@ -243,7 +259,7 @@ function toContact(doc: Record<string, unknown>): BirthdayContact {
     createdAt: String(doc.createdAt || ''),
     lastWish: wish,
     lastInboundAt: doc.lastInboundAt ? String(doc.lastInboundAt) : null,
-    allowReplies: staffRole(doc.role) !== 'user' || doc.allowReplies === true,
-    role: staffRole(doc.role),
+    allowReplies: ['superadmin', 'admin', 'mp'].includes(contactRole(doc.role)) || doc.allowReplies === true,
+    role: contactRole(doc.role) === 'mp' ? 'mp' : staffRole(doc.role),
   };
 }

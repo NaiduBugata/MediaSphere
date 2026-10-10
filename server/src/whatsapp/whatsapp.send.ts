@@ -1,4 +1,4 @@
-import { pipelineRecipients, replyRecipients, staffDirectoryLoaded } from './whatsapp.audience';
+import { alertRecipients, pipelineRecipients, staffDirectoryLoaded } from './whatsapp.audience';
 
 const RECIPIENT = /^\d{8,15}$/;
 const TEMPLATE_ERROR_CODES = new Set([132000, 132001, 132005, 132007, 132012, 132015, 132016]);
@@ -60,12 +60,12 @@ function configuredRecipients(env: NodeJS.ProcessEnv): string[] {
 
 /**
  * Pipeline success and failure go only to the super admin.
- * Other alerts go to the super admin and the admins.
+ * Other automatic alerts go to the super admin and the admins, not the MP.
  * Before the contact list has loaded, the configured recipient list is used so a restart still delivers.
  */
 function recipients(env: NodeJS.ProcessEnv, audience?: 'pipeline' | 'staff'): string[] {
   if (!audience || !staffDirectoryLoaded()) return configuredRecipients(env);
-  return audience === 'pipeline' ? pipelineRecipients() : replyRecipients();
+  return audience === 'pipeline' ? pipelineRecipients() : alertRecipients();
 }
 
 function errorReason(status: number, data: Record<string, unknown>): string {

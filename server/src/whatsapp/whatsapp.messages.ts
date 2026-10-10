@@ -86,6 +86,7 @@ export function summaryText(stats: Record<string, unknown>, reportDate: string):
 export function pipelineStatusText(stats: Record<string, unknown>): string {
   return [
     'PIPELINE COMPLETED',
+    'News fetched successfully.',
     `Articles Collected: ${stats.articles_fetched || stats.fetched || 0}`,
     `AI Processed: ${stats.total || 0}`,
     `Stored (inserted): ${stats.inserted || 0}`,

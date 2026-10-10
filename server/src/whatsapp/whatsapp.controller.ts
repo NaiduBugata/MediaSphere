@@ -2,6 +2,7 @@ import { Controller, Get, Logger, Post, Req, Res } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { contactSenders, noteContactInbound, withoutMutedMessages } from './whatsapp.muted';
 import { WhatsAppWebhookRepository } from './whatsapp.repository';
+import { notifyFailedStatuses } from './whatsapp.notify';
 import { processWebhookPost, verifyWebhook, webhookEnabled } from './whatsapp.webhook';
 
 export interface ChatbotReply {

@@ -6,17 +6,35 @@ import { FOLLOW_UP_SENT } from '../visits/visit-followup';
 import { VisitFollowupService } from '../visits/visit-followup.service';
 import { formatVisitTime } from '../visits/visits-import';
 import { parseWebhookPayload, type WhatsAppEvent } from '../whatsapp/whatsapp.parser';
-import { replyRecipients, staffDirectoryLoaded } from '../whatsapp/whatsapp.audience';
-import { normalizePhone, sendReplyList, type MenuRow } from '../whatsapp/whatsapp.send';
+import { todayInIndia } from '../birthdays/birthdays';
+import { isMpPhone, isPersonPhone, isSuperAdminPhone, personName, replyRecipients, staffDirectoryLoaded } from '../whatsapp/whatsapp.audience';
+import { notifySuperAdminText } from '../whatsapp/whatsapp.notify';
+import { normalizePhone, sendReplyList, sendTextMessage, type MenuRow } from '../whatsapp/whatsapp.send';
+import { classifyGrievance, MOCK_GRIEVANCES, priorityLabel, type GrievancePriority } from './grievance-priority';
 import { newestFirst, toBrief, type NewsBrief } from './news-context';
 
 const RECORDS = 'jv_records';
 const TOP = 5;
+const MP_TOP = 6;
+const GRIEVANCE_OPTIONS = 8;
+
+const MOCK_CAMPAIGNS: Array<{ title: string; detail: string; status: string }> = [
+  { title: 'Door to door', detail: 'Narasaraopet ward visits this week.', status: 'Open' },
+  { title: 'Youth meeting', detail: 'Chilakaluripet youth meeting on Sunday.', status: 'Open' },
+  { title: 'Rythu bharosa', detail: 'Sattenapalle camp for farmers.', status: 'In progress' },
+  { title: 'Health camp', detail: 'Vinukonda medical camp.', status: 'Open' },
+];
+
+/** Super admin sees the MP list and the admin list. */
+function fullMenu(sender: string): boolean {
+  return isMpPhone(sender) || isSuperAdminPhone(sender);
+}
 const NEWS_CACHE_MS = 60_000;
 const CONVERSATION_GAP_MS = 4 * 60 * 60 * 1000;
 const DEFAULT_ADDRESSEE = 'Sri. Lavu Sri Krishna Devarayalu Sir';
 const MENU_PROMPT = 'Choose a section.';
 export const MAIN_MENU_TEXT = 'Choose a section.';
+export const GRIEVANCE_RECEIPT = 'Received. It is saved in the grievance portal.';
 
 export const FOLLOW_UP_ROW: MenuRow = { id: 'follow_up', title: 'Follow up' };
 export const MAIN_BUTTONS: MenuRow[] = [
@@ -92,6 +110,8 @@ export interface MenuRecord {
   detail: string;
   status: string;
   date: string;
+  id?: string;
+  priority?: GrievancePriority;
 }
 
 export interface ChatbotDeps {
@@ -130,12 +150,6 @@ export class ChatbotService {
     const env = deps.env || process.env;
     if (!chatbotEnabled(env)) return;
     const allowed = allowlist(env);
-    if (!allowed.length) {
-      this.logger.warn(staffDirectoryLoaded()
-        ? 'Chatbot replies are off because no admin numbers are set.'
-        : 'Chatbot replies are off because WHATSAPP_RECIPIENTS is empty.');
-      return;
-    }
     let events: WhatsAppEvent[] = [];
     try {
       if (payload && typeof payload === 'object') {
@@ -144,14 +158,78 @@ export class ChatbotService {
     } catch {
       return;
     }
-    for (const event of events) {
-      if (event.event_category !== 'message' || !event.sender_wa_id || !event.message_id) continue;
-      if (!allowed.includes(digits(event.sender_wa_id))) {
-        this.logger.warn(`Ignored chatbot message from ${maskPhone(event.sender_wa_id)}.`);
+    const messages = events.filter((event) => event.event_category === 'message' && event.sender_wa_id && event.message_id);
+    const filing = messages.some((event) => isPersonPhone(event.sender_wa_id || ''));
+    if (!allowed.length && !filing) {
+      this.logger.warn(staffDirectoryLoaded()
+        ? 'Chatbot replies are off because no admin numbers are set.'
+        : 'Chatbot replies are off because WHATSAPP_RECIPIENTS is empty.');
+      return;
+    }
+    for (const event of messages) {
+      const sender = event.sender_wa_id || '';
+      if (isPersonPhone(sender)) {
+        await this.enqueue(sender, () => this.fileGrievance(event, env, deps));
         continue;
       }
-      await this.enqueue(event.sender_wa_id, () => this.replyTo(event, env, deps));
+      if (!allowed.includes(digits(sender))) {
+        this.logger.warn(`Ignored chatbot message from ${maskPhone(sender)}.`);
+        continue;
+      }
+      await this.enqueue(sender, () => this.replyTo(event, env, deps));
     }
+  }
+
+  /** A person files a grievance on the website. The text is not sent on to an admin. */
+  private async fileGrievance(event: WhatsAppEvent, env: NodeJS.ProcessEnv, deps: ChatbotDeps): Promise<void> {
+    const messageId = event.message_id || '';
+    if (!messageId || this.answered.has(messageId) || this.inflight.has(messageId)) return;
+    this.inflight.add(messageId);
+    const sender = event.sender_wa_id || '';
+    const fetchImpl = replyFetch(deps.fetchImpl || fetch);
+    try {
+      const saved = await this.saveGrievance(event);
+      if (saved !== 'saved') {
+        this.answered.add(messageId);
+        return;
+      }
+      await sendTextMessage(sender, GRIEVANCE_RECEIPT, fetchImpl, env);
+      const name = personName(sender) || 'Person';
+      const detail = grievanceDetail(event);
+      const { priority } = classifyGrievance(detail);
+      await notifySuperAdminText(`Grievance from ${name}. ${priorityLabel(priority)}. ${detail}`, fetchImpl, env);
+      this.answered.add(messageId);
+      this.logger.log(`Grievance saved from ${maskPhone(sender)}.`);
+    } catch (err) {
+      this.logger.warn(
+        `Grievance was not saved from ${maskPhone(sender)}: ${err instanceof Error ? err.message : 'save failed'}`,
+      );
+    } finally {
+      this.inflight.delete(messageId);
+    }
+  }
+
+  private async saveGrievance(event: WhatsAppEvent): Promise<'saved' | 'duplicate' | 'unavailable'> {
+    if (!this.db) return 'unavailable';
+    const ok = await this.db.ensureConnected();
+    if (!ok) return 'unavailable';
+    const messageId = event.message_id || '';
+    const existing = await this.db.collection(RECORDS).findOne({ section: 'grievances', sourceMessageId: messageId });
+    if (existing) return 'duplicate';
+    const name = personName(event.sender_wa_id || '') || 'Person';
+    const detail = grievanceDetail(event);
+    const { priority } = classifyGrievance(detail);
+    await this.db.collection(RECORDS).insertOne({
+      section: 'grievances',
+      title: name.slice(0, 80),
+      detail: `${priorityLabel(priority)} — ${detail}`.slice(0, 2000),
+      status: 'Open',
+      priority,
+      createdAt: new Date().toISOString(),
+      createdBy: name.slice(0, 80),
+      sourceMessageId: messageId,
+    });
+    return 'saved';
   }
 
   private async replyTo(event: WhatsAppEvent, env: NodeJS.ProcessEnv, deps: ChatbotDeps): Promise<void> {
@@ -165,12 +243,16 @@ export class ChatbotService {
     const fetchImpl = replyFetch(deps.fetchImpl || fetch);
     try {
       const choice = menuChoice(event);
-      if (choice === 'follow_up') {
+      const picked = grievancePick(event);
+      if (fullMenu(sender) && (picked || choice === 'grievances')) {
+        await this.sendMpGrievances(sender, picked, fetchImpl, env, deps);
+      } else if (choice === 'follow_up') {
         await this.replyFollowUp(sender, fetchImpl, env, deps);
       } else if (choice === 'home' || choice === 'menu') {
         await this.sendMenu(sender, MAIN_MENU_TEXT, fetchImpl, env);
       } else if (choice) {
-        const body = await this.renderSection(choice, deps);
+        const limit = fullMenu(sender) ? MP_TOP : TOP;
+        const body = await this.renderSection(choice, deps, limit, now);
         const rows = choice === 'visits' ? VISIT_BUTTONS : MAIN_BUTTONS;
         await this.sendList(sender, body, rows, fetchImpl, env);
       } else {
@@ -203,7 +285,7 @@ export class ChatbotService {
         this.logger.warn(`Visit follow-up failed: ${err instanceof Error ? err.message : 'send failed'}`);
       }
       if (!ready) {
-        const body = await this.renderSection('visits', deps);
+        const body = await this.renderSection('visits', deps, fullMenu(sender) ? MP_TOP : TOP);
         await this.sendList(sender, body, VISIT_BUTTONS, fetchImpl, env);
         return;
       }
@@ -226,8 +308,91 @@ export class ChatbotService {
       await this.sendMenu(sender, FOLLOW_UP_SENT, fetchImpl, env);
       return;
     }
-    const body = await this.renderSection('visits', deps);
+    const body = await this.renderSection('visits', deps, fullMenu(sender) ? MP_TOP : TOP);
     await this.sendList(sender, body, VISIT_BUTTONS, fetchImpl, env);
+  }
+
+  /** Grievances as list rows, high priority first. The text stays in the database the website reads. */
+  private async sendMpGrievances(
+    sender: string,
+    pickedId: string | null,
+    fetchImpl: typeof fetch,
+    env: NodeJS.ProcessEnv,
+    deps: ChatbotDeps,
+  ): Promise<void> {
+    const items = await this.mpGrievances(deps);
+    const picked = pickedId ? items.find((item) => item.id === pickedId) : undefined;
+    const body = picked
+      ? grievanceBody(picked)
+      : items.length
+        ? '*Grievances*\n\nHigh priority first. Choose one.'
+        : '*Grievances*\nNothing saved yet.';
+    const rows: MenuRow[] = items.slice(0, GRIEVANCE_OPTIONS).map((item) => ({
+      id: `g:${item.id || item.title}`,
+      title: clip(item.title, 24) || 'Grievance',
+      description: priorityLabel(item.priority || 'normal'),
+    }));
+    if (rows.length < 10) rows.push({ id: 'home', title: 'Main menu' });
+    if (!rows.length) {
+      await this.sendMenu(sender, body, fetchImpl, env);
+      return;
+    }
+    await this.sendList(sender, body, rows, fetchImpl, env);
+  }
+
+  private async mpGrievances(deps: ChatbotDeps): Promise<MenuRecord[]> {
+    if (!deps.records) await this.ensureMockGrievances();
+    const loaded = await this.sectionRecords('grievances', deps, 40);
+    return byPriority(loaded).slice(0, GRIEVANCE_OPTIONS);
+  }
+
+  private async ensureMockCampaigns(): Promise<void> {
+    if (!this.db) return;
+    try {
+      const ok = await this.db.ensureConnected();
+      if (!ok) return;
+      const existing = await this.db.collection(RECORDS).find({ section: 'campaigns' }).sort({ createdAt: -1 }).limit(1).toArray();
+      if (existing.length) return;
+      const createdAt = new Date().toISOString();
+      for (const item of MOCK_CAMPAIGNS) {
+        await this.db.collection(RECORDS).insertOne({
+          section: 'campaigns',
+          title: item.title,
+          detail: item.detail,
+          status: item.status,
+          createdAt,
+          createdBy: 'Sample',
+          source: 'mock',
+        });
+      }
+    } catch (err) {
+      this.logger.warn(`Chatbot could not store sample campaigns: ${err instanceof Error ? err.message : 'database error'}`);
+    }
+  }
+
+  private async ensureMockGrievances(): Promise<void> {
+    if (!this.db) return;
+    try {
+      const ok = await this.db.ensureConnected();
+      if (!ok) return;
+      const existing = await this.db.collection(RECORDS).find({ section: 'grievances' }).sort({ createdAt: -1 }).limit(1).toArray();
+      if (existing.length) return;
+      const createdAt = new Date().toISOString();
+      for (const item of MOCK_GRIEVANCES) {
+        await this.db.collection(RECORDS).insertOne({
+          section: 'grievances',
+          title: item.title,
+          detail: `${priorityLabel(item.priority)} — ${item.detail}`,
+          status: 'Open',
+          priority: item.priority,
+          createdAt,
+          createdBy: 'Sample',
+          source: 'mock',
+        });
+      }
+    } catch (err) {
+      this.logger.warn(`Chatbot could not store sample grievances: ${err instanceof Error ? err.message : 'database error'}`);
+    }
   }
 
   private async sendMenu(
@@ -254,42 +419,60 @@ export class ChatbotService {
     });
   }
 
-  private async renderSection(choice: MenuId, deps: ChatbotDeps): Promise<string> {
+  private async renderSection(choice: MenuId, deps: ChatbotDeps, limit = TOP, now = new Date()): Promise<string> {
     const title = SECTION_TITLE[choice];
-    if (choice === 'news') return formatSection(title, (await this.newsBriefs(deps)).map(newsLine));
-    if (choice === 'analytics') return formatSection(title, (await this.newsBriefs(deps)).map(analyticsLine));
+    const todayFirst = limit > TOP;
+    if (choice === 'campaigns' && !deps.records) await this.ensureMockCampaigns();
+    if (choice === 'news') return formatSection(title, (await this.newsBriefs(deps, limit, todayFirst, now)).map(newsLine), limit);
+    if (choice === 'analytics') return formatSection(title, (await this.newsBriefs(deps, limit, todayFirst, now)).map(analyticsLine), limit);
     const section = RECORD_SECTION[choice];
-    const rows = section ? await this.sectionRecords(section, deps) : [];
-    return formatSection(title, rows.map(recordLine));
+    const rows = section ? await this.sectionRecords(section, deps, limit, todayFirst, now) : [];
+    return formatSection(title, rows.map(recordLine), limit);
   }
 
-  private async newsBriefs(deps: ChatbotDeps): Promise<NewsBrief[]> {
+  private async newsBriefs(deps: ChatbotDeps, limit = TOP, todayFirst = false, now = new Date()): Promise<NewsBrief[]> {
     const briefs = deps.news || await this.loadNews();
     const seen = new Set<string>();
-    return newestFirst(briefs).filter((brief) => {
+    const unique = newestFirst(briefs).filter((brief) => {
       const key = brief.title.trim().toLowerCase();
       if (!key || seen.has(key)) return false;
       seen.add(key);
       return true;
-    }).slice(0, TOP);
+    });
+    return preferToday(unique, (brief) => brief.publishedAt || brief.collectedAt, limit, todayFirst, now);
   }
 
   private async sectionRecords(
     section: 'grievances' | 'projects' | 'people' | 'campaigns' | 'visits',
     deps: ChatbotDeps,
+    limit = TOP,
+    todayFirst = false,
+    now = new Date(),
   ): Promise<MenuRecord[]> {
-    if (deps.records) return latestRecords(uniqueRecords(deps.records[section] || []));
+    const mapRow = (row: MenuRecord & Record<string, unknown>): MenuRecord => ({
+      id: idOf(row.id) || idOf(row._id) || text(row.sourceMessageId) || text(row.title),
+      title: text(row.title),
+      detail: [formatVisitTime(text(row.visitTime)), text(row.place), text(row.detail)].filter(Boolean).join(' – '),
+      status: text(row.status),
+      date: text(row.visitDate) || text(row.date) || text(row.createdAt),
+      priority: row.priority === 'high' || row.priority === 'normal'
+        ? row.priority
+        : classifyGrievance(`${text(row.title)} ${text(row.detail)}`).priority,
+    });
+    if (deps.records) {
+      const mapped = (deps.records[section] || []).map((row) => mapRow(row));
+      const unique = uniqueRecords(mapped);
+      if (section === 'grievances' && limit > TOP) return unique;
+      return preferToday(latestRecords(unique, limit * 4), (row) => row.date, limit, todayFirst, now);
+    }
     if (!this.db) return [];
     try {
       const ok = await this.db.ensureConnected();
       if (!ok) return [];
-      const rows = await this.db.collection(RECORDS).find({ section }).sort({ createdAt: -1 }).limit(TOP * 4).toArray();
-      return latestRecords(uniqueRecords(rows.map((row) => ({
-        title: text(row.title),
-        detail: [formatVisitTime(text(row.visitTime)), text(row.place), text(row.detail)].filter(Boolean).join(' – '),
-        status: text(row.status),
-        date: text(row.visitDate) || text(row.createdAt),
-      }))));
+      const rows = await this.db.collection(RECORDS).find({ section }).sort({ createdAt: -1 }).limit(Math.max(limit, TOP) * 4).toArray();
+      const unique = uniqueRecords(rows.map((row) => mapRow(row as MenuRecord & Record<string, unknown>)));
+      if (section === 'grievances' && limit > TOP) return unique;
+      return preferToday(latestRecords(unique, limit * 4), (row) => row.date, limit, todayFirst, now);
     } catch (err) {
       this.logger.warn(`Chatbot could not load ${section}: ${err instanceof Error ? err.message : 'database error'}`);
       return [];
@@ -329,6 +512,13 @@ export function chatbotEnabled(env: NodeJS.ProcessEnv): boolean {
     && ['1', 'true', 'yes', 'on'].includes(whatsapp);
 }
 
+export function grievancePick(event: WhatsAppEvent): string | null {
+  const reply = event.interactive_response?.list_reply || event.interactive_response?.button_reply;
+  if (!reply || typeof reply !== 'object') return null;
+  const id = text((reply as Record<string, unknown>).id);
+  return id.toLowerCase().startsWith('g:') ? id.slice(2) : null;
+}
+
 export function menuChoice(event: WhatsAppEvent): MenuChoice | null {
   const reply = event.interactive_response?.list_reply || event.interactive_response?.button_reply;
   if (reply && typeof reply === 'object') {
@@ -350,9 +540,9 @@ export function menuFromText(value: string): MenuChoice | null {
   return TEXT_ALIASES[key] || null;
 }
 
-export function formatSection(title: string, items: string[]): string {
+export function formatSection(title: string, items: string[], limit = TOP): string {
   if (!items.length) return `*${title}*\nNothing saved yet.`;
-  const lines = items.slice(0, TOP).map((item, index) => `${index + 1}. ${item}`);
+  const lines = items.slice(0, limit).map((item, index) => `${index + 1}. ${item}`);
   return `*${title}*\n\n${lines.join('\n\n')}`;
 }
 
@@ -386,8 +576,26 @@ function uniqueRecords(rows: MenuRecord[]): MenuRecord[] {
   return unique;
 }
 
-function latestRecords(rows: MenuRecord[]): MenuRecord[] {
-  return [...rows].sort((left, right) => timeOf(right.date) - timeOf(left.date)).slice(0, TOP);
+function latestRecords(rows: MenuRecord[], limit = TOP): MenuRecord[] {
+  return [...rows].sort((left, right) => timeOf(right.date) - timeOf(left.date)).slice(0, limit);
+}
+
+function preferToday<T>(items: T[], dateOf: (item: T) => string, limit: number, todayFirst: boolean, now: Date): T[] {
+  if (!todayFirst) return items.slice(0, limit);
+  const today = todayInIndia(now);
+  const onDay = items.filter((item) => dateOf(item).slice(0, 10) === today);
+  const rest = items.filter((item) => dateOf(item).slice(0, 10) !== today);
+  return [...onDay, ...rest].slice(0, limit);
+}
+
+function byPriority(rows: MenuRecord[]): MenuRecord[] {
+  const rank = (row: MenuRecord) => (row.priority === 'high' ? 0 : 1);
+  return [...rows].sort((left, right) => rank(left) - rank(right) || timeOf(right.date) - timeOf(left.date));
+}
+
+function grievanceBody(row: MenuRecord): string {
+  const meta = [plain(row.status), shortWhen(row.date)].filter(Boolean).join(' · ');
+  return [bold(row.title), priorityLabel(row.priority || 'normal'), plain(row.detail), meta].filter(Boolean).join('\n');
 }
 
 function bold(value: string): string {
@@ -423,6 +631,14 @@ function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function idOf(value: unknown): string {
+  if (typeof value === 'string') return value.trim();
+  if (value && typeof value === 'object' && 'toHexString' in value && typeof (value as { toHexString?: () => string }).toHexString === 'function') {
+    return (value as { toHexString: () => string }).toHexString();
+  }
+  return '';
+}
+
 const REPLY_TIMEOUT_MS = 20_000;
 
 /** A stuck WhatsApp call must not hold later replies from the same admin. */
@@ -451,6 +667,19 @@ function allowlist(env: NodeJS.ProcessEnv): string[] {
     }
   }
   return numbers;
+}
+
+function grievanceDetail(event: WhatsAppEvent): string {
+  const written = (event.message_text || '').trim();
+  if (written) return written.slice(0, 2000);
+  const notes: Record<string, string> = {
+    image: 'Sent a photo.',
+    audio: 'Sent a voice note.',
+    video: 'Sent a video.',
+    document: 'Sent a document.',
+    sticker: 'Sent a sticker.',
+  };
+  return notes[event.event_type] || 'Sent a message.';
 }
 
 function digits(value: string): string {

@@ -98,6 +98,7 @@ describe('birthday rules', () => {
     expect(isDue(contact({ lastWish: { ...wish, status: 'failed', tries: 2 } }), day)).toBe(true);
     expect(isDue(contact({ lastWish: { ...wish, status: 'failed', tries: 3 } }), day)).toBe(false);
     expect(isDue(contact({ lastWish: { ...wish, day: '2025-09-30', status: 'sent', tries: 1 } }), day)).toBe(true);
+    expect(isDue(contact({ birthday: '', name: 'Balaji' }), day)).toBe(false);
   });
 
   it('sends the approved template with the contact name as {{name}}', async () => {
@@ -242,6 +243,25 @@ describe('BirthdaysService', () => {
     expect(isMutedSender('916281168530')).toBe(false);
     expect(isMutedSender('919000000026')).toBe(false);
     expect(isMutedSender('918885230708')).toBe(true);
+  });
+
+  it('does not mute a person phone when another row on that number is one-way', async () => {
+    const { db, docs } = fakeDb();
+    const service = new BirthdaysService(db);
+    await service.create({ name: 'Udatha Sravani', phone: '8885230708', birthday: '10-10' });
+    docs[0].role = 'person';
+    docs.push({
+      _id: new ObjectId(),
+      name: 'Sravani test',
+      phone: '918885230708',
+      birthday: '10-11',
+      role: 'user',
+      allowReplies: false,
+    });
+    await service.refreshMuted();
+    const message = { entry: [{ changes: [{ value: { messages: [{ from: '918885230708', id: 'x', type: 'text', text: { body: 'The road is broken' } }] } }] }] };
+    expect(isMutedSender('918885230708')).toBe(false);
+    expect(withoutMutedMessages(message).dropped).toBe(0);
   });
 
   it('records a failed wish and retries it on the next check', async () => {
