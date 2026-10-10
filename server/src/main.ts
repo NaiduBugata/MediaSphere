@@ -78,7 +78,7 @@ async function bootstrap() {
     'Read path: GET /api/health /api/database/health /api/news /api/news/stats /api/notifications/status',
   );
   logger.log(
-    'Control plane: /api/admin/auth/* /api/admin/fetch/* /api/admin/scheduler/status /api/admin/health ' +
+    'Control plane: /api/admin/auth/* /api/admin/fetch/* /api/admin/upload/* /api/admin/scheduler/status /api/admin/health ' +
       '/api/pipeline/health POST /api/pipeline/run-now',
   );
   if (config.get<boolean>('pipeline.onApi')) {
