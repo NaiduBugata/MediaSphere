@@ -7,14 +7,16 @@ import { VisitFollowupService } from '../visits/visit-followup.service';
 import { formatVisitTime } from '../visits/visits-import';
 import { parseWebhookPayload, type WhatsAppEvent } from '../whatsapp/whatsapp.parser';
 import { todayInIndia } from '../birthdays/birthdays';
-import { isMpPhone, isPersonPhone, isSuperAdminPhone, personName, replyRecipients, staffDirectoryLoaded } from '../whatsapp/whatsapp.audience';
+import { isMpPhone, isPersonPhone, isSuperAdminPhone, personName, phoneForName, replyRecipients, staffDirectoryLoaded } from '../whatsapp/whatsapp.audience';
 import { notifySuperAdminText } from '../whatsapp/whatsapp.notify';
-import { normalizePhone, sendReplyList, sendTextMessage, type MenuRow } from '../whatsapp/whatsapp.send';
-import { classifyGrievance, MOCK_GRIEVANCES, priorityLabel, type GrievancePriority } from './grievance-priority';
+import { normalizePhone, sendReplyButtons, sendReplyList, sendTextMessage, type MenuRow } from '../whatsapp/whatsapp.send';
+import { assignDesk, classifyGrievance, departmentOrder, grievanceReceipt, leaderUpdate, messageLanguage, MOCK_GRIEVANCES, priorityLabel, type GrievanceLanguage, type GrievancePriority } from './grievance-priority';
 import { newestFirst, toBrief, type NewsBrief } from './news-context';
 
 const RECORDS = 'jv_records';
 const TOP = 5;
+const LIST_BODY_LIMIT = 1024;
+const TEXT_LIMIT = 4096;
 const MP_TOP = 6;
 const GRIEVANCE_OPTIONS = 8;
 
@@ -23,6 +25,37 @@ const MOCK_CAMPAIGNS: Array<{ title: string; detail: string; status: string }> =
   { title: 'Youth meeting', detail: 'Chilakaluripet youth meeting on Sunday.', status: 'Open' },
   { title: 'Rythu bharosa', detail: 'Sattenapalle camp for farmers.', status: 'In progress' },
   { title: 'Health camp', detail: 'Vinukonda medical camp.', status: 'Open' },
+];
+
+const MOCK_PROJECTS: Array<{ title: string; detail: string; status: string }> = [
+  { title: 'Drinking water supply', detail: 'Narasaraopet municipal pipeline replacement in ward 12.', status: 'In progress' },
+  { title: 'Chilakaluripet road', detail: 'Widening the market road inside Chilakaluripet.', status: 'Open' },
+  { title: 'Vinukonda hospital', detail: 'New ward block at the Vinukonda area hospital.', status: 'In progress' },
+  { title: 'Sattenapalle classrooms', detail: 'Extra classrooms at the government high school.', status: 'Open' },
+  { title: 'Gurazala canal', detail: 'Repair of the irrigation channel before the crop season.', status: 'Open' },
+  { title: 'Macherla health camp report', detail: 'Weekly camp report for Macherla mandal.', status: 'Open' },
+];
+
+const MOCK_CONSTITUENCY: Array<{ title: string; detail: string; status: string }> = [
+  {
+    title: 'Narasaraopet Lok Sabha',
+    detail: 'Palnadu district, Andhra Pradesh. MP: Sri Lavu Sri Krishna Devarayalu. Assembly: Narasaraopet, Chilakaluripet, Sattenapalle, Vinukonda, Gurazala, Macherla, Pedakurapadu.',
+    status: 'Open',
+  },
+  { title: 'Narasaraopet', detail: 'Assembly segment of Narasaraopet constituency.', status: 'Open' },
+  { title: 'Chilakaluripet', detail: 'Assembly segment of Narasaraopet constituency.', status: 'Open' },
+  { title: 'Sattenapalle', detail: 'Assembly segment of Narasaraopet constituency.', status: 'Open' },
+  { title: 'Vinukonda', detail: 'Assembly segment of Narasaraopet constituency.', status: 'Open' },
+  { title: 'Gurazala', detail: 'Assembly segment of Narasaraopet constituency.', status: 'Open' },
+  { title: 'Macherla', detail: 'Assembly segment of Narasaraopet constituency.', status: 'Open' },
+  { title: 'Pedakurapadu', detail: 'Assembly segment of Narasaraopet constituency.', status: 'Open' },
+];
+
+const MOCK_ANALYTICS = [
+  '*Narasaraopet constituency*\n48 articles counted this week',
+  '*Sentiment*\nPositive 19 · Negative 16 · Neutral 13',
+  '*Issues*\nRoads 11 · Water 8 · Health 6 · Farming 5',
+  '*Places*\nNarasaraopet 18 · Chilakaluripet 9 · Vinukonda 7 · Sattenapalle 6',
 ];
 
 /** Super admin sees the MP list and the admin list. */
@@ -34,7 +67,7 @@ const CONVERSATION_GAP_MS = 4 * 60 * 60 * 1000;
 const DEFAULT_ADDRESSEE = 'Sri. Lavu Sri Krishna Devarayalu Sir';
 const MENU_PROMPT = 'Choose a section.';
 export const MAIN_MENU_TEXT = 'Choose a section.';
-export const GRIEVANCE_RECEIPT = 'Received. It is saved in the grievance portal.';
+export const GRIEVANCE_RECEIPT = grievanceReceipt('en');
 
 export const FOLLOW_UP_ROW: MenuRow = { id: 'follow_up', title: 'Follow up' };
 export const MAIN_BUTTONS: MenuRow[] = [
@@ -112,6 +145,11 @@ export interface MenuRecord {
   date: string;
   id?: string;
   priority?: GrievancePriority;
+  issue?: string;
+  place?: string;
+  department?: string;
+  leader?: string;
+  language?: GrievanceLanguage;
 }
 
 export interface ChatbotDeps {
@@ -193,7 +231,7 @@ export class ChatbotService {
         this.answered.add(messageId);
         return;
       }
-      await sendTextMessage(sender, GRIEVANCE_RECEIPT, fetchImpl, env);
+      await sendTextMessage(sender, grievanceReceipt(messageLanguage(grievanceDetail(event))), fetchImpl, env);
       const name = personName(sender) || 'Person';
       const detail = grievanceDetail(event);
       const { priority } = classifyGrievance(detail);
@@ -219,10 +257,15 @@ export class ChatbotService {
     const name = personName(event.sender_wa_id || '') || 'Person';
     const detail = grievanceDetail(event);
     const { priority } = classifyGrievance(detail);
+    const desk = assignDesk(detail);
     await this.db.collection(RECORDS).insertOne({
       section: 'grievances',
-      title: name.slice(0, 80),
-      detail: `${priorityLabel(priority)} — ${detail}`.slice(0, 2000),
+      title: detail.slice(0, 80),
+      detail: detail.slice(0, 2000),
+      place: desk.place,
+      department: desk.department,
+      leader: desk.leader,
+      language: messageLanguage(detail),
       status: 'Open',
       priority,
       createdAt: new Date().toISOString(),
@@ -242,9 +285,12 @@ export class ChatbotService {
     const opening = last === undefined || now.getTime() - last > CONVERSATION_GAP_MS;
     const fetchImpl = replyFetch(deps.fetchImpl || fetch);
     try {
-      const choice = menuChoice(event);
+      const followId = grievanceFollow(event);
       const picked = grievancePick(event);
-      if (fullMenu(sender) && (picked || choice === 'grievances')) {
+      const choice = followId || picked ? null : menuChoice(event);
+      if (followId) {
+        await this.followGrievance(sender, followId, fetchImpl, env, deps);
+      } else if (picked || choice === 'grievances') {
         await this.sendMpGrievances(sender, picked, fetchImpl, env, deps);
       } else if (choice === 'follow_up') {
         await this.replyFollowUp(sender, fetchImpl, env, deps);
@@ -254,7 +300,7 @@ export class ChatbotService {
         const limit = fullMenu(sender) ? MP_TOP : TOP;
         const body = await this.renderSection(choice, deps, limit, now);
         const rows = choice === 'visits' ? VISIT_BUTTONS : MAIN_BUTTONS;
-        await this.sendList(sender, body, rows, fetchImpl, env);
+        await this.deliverSection(sender, body, rows, fetchImpl, env);
       } else {
         const lead = opening ? `${openingLine(now, env)}\n\n${MENU_PROMPT}` : MAIN_MENU_TEXT;
         await this.sendMenu(sender, lead, fetchImpl, env);
@@ -312,7 +358,7 @@ export class ChatbotService {
     await this.sendList(sender, body, VISIT_BUTTONS, fetchImpl, env);
   }
 
-  /** Grievances as list rows, high priority first. The text stays in the database the website reads. */
+  /** Grievances as list rows, high priority first. Choosing one opens that issue. */
   private async sendMpGrievances(
     sender: string,
     pickedId: string | null,
@@ -320,14 +366,19 @@ export class ChatbotService {
     env: NodeJS.ProcessEnv,
     deps: ChatbotDeps,
   ): Promise<void> {
-    const items = await this.mpGrievances(deps);
-    const picked = pickedId ? items.find((item) => item.id === pickedId) : undefined;
-    const body = picked
-      ? grievanceBody(picked)
-      : items.length
-        ? '*Grievances*\n\nHigh priority first. Choose one.'
-        : '*Grievances*\nNothing saved yet.';
-    const rows: MenuRow[] = items.slice(0, GRIEVANCE_OPTIONS).map((item) => ({
+    const items = fullMenu(sender) ? await this.mpGrievances(deps) : await this.sectionRecords('grievances', deps, TOP);
+    const picked = pickedId ? items.find((item) => item.id === pickedId || item.title === pickedId) : undefined;
+    if (picked) {
+      await sendReplyButtons(sender, grievanceView(picked), [
+        { id: `gf:${picked.id || picked.title}`, title: 'Follow up' },
+        { id: 'home', title: 'More' },
+      ], fetchImpl, env);
+      return;
+    }
+    const body = items.length
+      ? '*Grievances*\n\nHigh priority first. Choose one.'
+      : '*Grievances*\nNothing saved yet.';
+    const rows: MenuRow[] = items.slice(0, fullMenu(sender) ? GRIEVANCE_OPTIONS : TOP).map((item) => ({
       id: `g:${item.id || item.title}`,
       title: clip(item.title, 24) || 'Grievance',
       description: priorityLabel(item.priority || 'normal'),
@@ -338,6 +389,34 @@ export class ChatbotService {
       return;
     }
     await this.sendList(sender, body, rows, fetchImpl, env);
+  }
+
+  /** Sends the issue to the department number and tells the leader it is being addressed. */
+  private async followGrievance(
+    sender: string,
+    pickedId: string,
+    fetchImpl: typeof fetch,
+    env: NodeJS.ProcessEnv,
+    deps: ChatbotDeps,
+  ): Promise<void> {
+    if (!deps.records) await this.ensureMockGrievances();
+    const loaded = await this.sectionRecords('grievances', deps, 40);
+    const picked = loaded.find((item) => item.id === pickedId || item.title === pickedId);
+    if (!picked) {
+      await this.sendMpGrievances(sender, null, fetchImpl, env, deps);
+      return;
+    }
+    const issue = issueOf(picked);
+    const desk = assignDesk(issue);
+    const phone = phoneForName('akshay');
+    if (!phone) {
+      await sendTextMessage(sender, 'Follow up was not sent. Akshay is not in the contact list.', fetchImpl, env);
+      return;
+    }
+    await sendTextMessage(phone, departmentOrder(issue, desk), fetchImpl, env);
+    await sendTextMessage(phone, leaderUpdate(messageLanguage(issue)), fetchImpl, env);
+    await sendReplyButtons(sender, 'Follow up sent.', [{ id: 'home', title: 'More' }], fetchImpl, env);
+    this.logger.log(`Grievance follow up sent to ${maskPhone(phone)}.`);
   }
 
   private async mpGrievances(deps: ChatbotDeps): Promise<MenuRecord[]> {
@@ -367,6 +446,35 @@ export class ChatbotService {
       }
     } catch (err) {
       this.logger.warn(`Chatbot could not store sample campaigns: ${err instanceof Error ? err.message : 'database error'}`);
+    }
+  }
+
+  private async ensureSamples(
+    section: 'projects' | 'people',
+    items: Array<{ title: string; detail: string; status: string }>,
+  ): Promise<void> {
+    if (!this.db) return;
+    try {
+      const ok = await this.db.ensureConnected();
+      if (!ok) return;
+      const existing = await this.db.collection(RECORDS).find({ section }).sort({ createdAt: -1 }).limit(200).toArray();
+      const titles = new Set(existing.map((row) => String(row.title || '').trim().toLowerCase()));
+      const missing = items.filter((item) => !titles.has(item.title.toLowerCase()));
+      if (!missing.length) return;
+      const start = Date.now();
+      for (const [index, item] of missing.entries()) {
+        await this.db.collection(RECORDS).insertOne({
+          section,
+          title: item.title,
+          detail: item.detail,
+          status: item.status,
+          createdAt: new Date(start + (missing.length - index) * 1000).toISOString(),
+          createdBy: 'Sample',
+          source: 'mock',
+        });
+      }
+    } catch (err) {
+      this.logger.warn(`Chatbot could not store sample ${section}: ${err instanceof Error ? err.message : 'database error'}`);
     }
   }
 
@@ -404,6 +512,24 @@ export class ChatbotService {
     await this.sendList(sender, lead, MAIN_BUTTONS, fetchImpl, env);
   }
 
+  /** A short answer stays in the menu message. A long news answer is sent in full, then the menu. */
+  private async deliverSection(
+    sender: string,
+    lead: string,
+    rows: MenuRow[],
+    fetchImpl: typeof fetch,
+    env: NodeJS.ProcessEnv,
+  ): Promise<void> {
+    if (lead.length <= LIST_BODY_LIMIT) {
+      await this.sendList(sender, lead, rows, fetchImpl, env);
+      return;
+    }
+    for (const part of completeParts(lead, TEXT_LIMIT)) {
+      await sendTextMessage(sender, part, fetchImpl, env);
+    }
+    await this.sendList(sender, MAIN_MENU_TEXT, rows, fetchImpl, env);
+  }
+
   /** One list. The person opens Menu, picks a row, then taps Send. */
   private async sendList(
     sender: string,
@@ -423,8 +549,10 @@ export class ChatbotService {
     const title = SECTION_TITLE[choice];
     const todayFirst = limit > TOP;
     if (choice === 'campaigns' && !deps.records) await this.ensureMockCampaigns();
+    if (choice === 'projects' && !deps.records) await this.ensureSamples('projects', MOCK_PROJECTS);
+    if (choice === 'constituency' && !deps.records) await this.ensureSamples('people', MOCK_CONSTITUENCY);
     if (choice === 'news') return formatSection(title, (await this.newsBriefs(deps, limit, todayFirst, now)).map(newsLine), limit);
-    if (choice === 'analytics') return formatSection(title, (await this.newsBriefs(deps, limit, todayFirst, now)).map(analyticsLine), limit);
+    if (choice === 'analytics') return formatSection(title, analyticsLines(await this.newsBriefs(deps, 200, false, now)), 4);
     const section = RECORD_SECTION[choice];
     const rows = section ? await this.sectionRecords(section, deps, limit, todayFirst, now) : [];
     return formatSection(title, rows.map(recordLine), limit);
@@ -457,6 +585,11 @@ export class ChatbotService {
         detail: [formatVisitTime(text(source.visitTime)), text(source.place), text(source.detail)].filter(Boolean).join(' – '),
         status: text(source.status),
         date: text(source.visitDate) || text(source.date) || text(source.createdAt),
+        issue: text(source.issue) || stripPriority(text(source.detail)) || text(source.title),
+        place: text(source.place),
+        department: text(source.department),
+        leader: text(source.leader),
+        language: source.language === 'te' || source.language === 'en' ? source.language : undefined,
         priority: source.priority === 'high' || source.priority === 'normal'
           ? source.priority
           : classifyGrievance(`${text(source.title)} ${text(source.detail)}`).priority,
@@ -516,10 +649,19 @@ export function chatbotEnabled(env: NodeJS.ProcessEnv): boolean {
 }
 
 export function grievancePick(event: WhatsAppEvent): string | null {
+  const id = replyId(event);
+  return id.toLowerCase().startsWith('g:') && !id.toLowerCase().startsWith('gf:') ? id.slice(2) : null;
+}
+
+export function grievanceFollow(event: WhatsAppEvent): string | null {
+  const id = replyId(event);
+  return id.toLowerCase().startsWith('gf:') ? id.slice(3) : null;
+}
+
+function replyId(event: WhatsAppEvent): string {
   const reply = event.interactive_response?.list_reply || event.interactive_response?.button_reply;
-  if (!reply || typeof reply !== 'object') return null;
-  const id = text((reply as Record<string, unknown>).id);
-  return id.toLowerCase().startsWith('g:') ? id.slice(2) : null;
+  if (!reply || typeof reply !== 'object') return '';
+  return text((reply as Record<string, unknown>).id);
 }
 
 export function menuChoice(event: WhatsAppEvent): MenuChoice | null {
@@ -550,16 +692,82 @@ export function formatSection(title: string, items: string[], limit = TOP): stri
 }
 
 function newsLine(brief: NewsBrief): string {
-  const meta = [plain(brief.place), shortWhen(brief.publishedAt || brief.collectedAt)].filter(Boolean).join(' · ');
-  return [bold(brief.title), plain(brief.summary), meta].filter(Boolean).join('\n');
+  const meta = [readable(brief.place), shortWhen(brief.publishedAt || brief.collectedAt)].filter(Boolean).join(' · ');
+  return [boldFull(brief.title), readable(brief.summary), meta].filter(Boolean).join('\n');
 }
 
-function analyticsLine(brief: NewsBrief): string {
-  const signal = [plain(brief.sentiment), plain(brief.category), brief.severity ? `severity ${plain(brief.severity)}` : '']
-    .filter(Boolean)
+function boldFull(value: string): string {
+  const cleaned = readable(value);
+  return cleaned ? `*${cleaned}*` : '';
+}
+
+function readable(value: string): string {
+  return value.replace(/https?:\/\/\S+/gi, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/** Keeps each news item whole. A piece is split only when one item is longer than a WhatsApp text. */
+export function completeParts(body: string, limit = TEXT_LIMIT): string[] {
+  const blocks = body.split(/\n\n/).map((block) => block.trim()).filter(Boolean);
+  const parts: string[] = [];
+  let current = '';
+  const push = (value: string) => {
+    const cleaned = value.trim();
+    if (cleaned) parts.push(cleaned);
+  };
+  for (const block of blocks) {
+    if (block.length > limit) {
+      push(current);
+      current = '';
+      let rest = block;
+      while (rest.length > limit) {
+        const cut = sentenceEnd(rest, limit);
+        push(rest.slice(0, cut));
+        rest = rest.slice(cut).trim();
+      }
+      current = rest;
+      continue;
+    }
+    const next = current ? `${current}\n\n${block}` : block;
+    if (next.length <= limit) {
+      current = next;
+      continue;
+    }
+    push(current);
+    current = block;
+  }
+  push(current);
+  return parts;
+}
+
+function sentenceEnd(value: string, limit: number): number {
+  const window = value.slice(0, limit);
+  const at = Math.max(window.lastIndexOf('. '), window.lastIndexOf('। '), window.lastIndexOf('\n'));
+  return at > 40 ? at + 1 : limit;
+}
+
+function analyticsLines(briefs: NewsBrief[]): string[] {
+  if (!briefs.length) return MOCK_ANALYTICS;
+  const placeOf = (place: string) => plain(place).split(',')[0]?.trim() || '';
+  return [
+    `*Narasaraopet constituency*\n${briefs.length} articles counted`,
+    `*Sentiment*\n${tally(briefs.map((brief) => plain(brief.sentiment)))}`,
+    `*Issues*\n${tally(briefs.map((brief) => plain(brief.category)))}`,
+    `*Places*\n${tally(briefs.map((brief) => placeOf(brief.place)))}`,
+  ];
+}
+
+function tally(values: string[]): string {
+  const counts = new Map<string, number>();
+  for (const value of values) {
+    const key = value.trim();
+    if (!key) continue;
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .slice(0, 4)
+    .map(([name, count]) => `${name} ${count}`)
     .join(' · ');
-  const meta = [plain(brief.place), shortWhen(brief.publishedAt || brief.collectedAt)].filter(Boolean).join(' · ');
-  return [bold(brief.title), signal, meta].filter(Boolean).join('\n');
 }
 
 function recordLine(row: MenuRecord): string {
@@ -596,9 +804,23 @@ function byPriority(rows: MenuRecord[]): MenuRecord[] {
   return [...rows].sort((left, right) => rank(left) - rank(right) || timeOf(right.date) - timeOf(left.date));
 }
 
-function grievanceBody(row: MenuRecord): string {
-  const meta = [plain(row.status), shortWhen(row.date)].filter(Boolean).join(' · ');
-  return [bold(row.title), priorityLabel(row.priority || 'normal'), plain(row.detail), meta].filter(Boolean).join('\n');
+function grievanceView(row: MenuRecord): string {
+  const issue = issueOf(row);
+  const desk = assignDesk(issue);
+  return [
+    boldFull(issue),
+    `Location: ${row.place || desk.place}`,
+    `Department: ${row.department || desk.department}`,
+    priorityLabel(row.priority || 'normal'),
+  ].filter(Boolean).join('\n');
+}
+
+function issueOf(row: MenuRecord): string {
+  return stripPriority(row.issue || row.detail || row.title);
+}
+
+function stripPriority(value: string): string {
+  return value.replace(/^(High priority|Normal)\s*[—-]\s*/i, '').trim();
 }
 
 function bold(value: string): string {

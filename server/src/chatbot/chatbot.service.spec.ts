@@ -204,6 +204,22 @@ describe('ChatbotService', () => {
     expect(sent.flatMap(replyButtons).map((button) => button.id)).toEqual(MAIN_BUTTONS.map((row) => row.id));
   });
 
+  it('sends a long news summary to the end instead of cutting it with an ellipsis', async () => {
+    const summary = 'Police completed the search at Pedda Cheruvu and recorded every statement from the families before closing the case. '.repeat(12).trim();
+    const sent: Array<Record<string, unknown>> = [];
+    const bot = new ChatbotService();
+    await bot.handle(buttonPayload('news', 'News', 'wamid.news-full'), {
+      env: env(),
+      fetchImpl: capture(sent),
+      news: [{ ...news[6], summary }],
+      now: () => new Date('2026-09-28T13:49:00Z'),
+    });
+    const texts = sent.filter((message) => message.type === 'text').map(messageText);
+    expect(texts.join('\n')).toContain(summary);
+    expect(texts.join('\n')).not.toContain('…');
+    expect(sent.some((message) => (message.interactive as { type?: string } | undefined)?.type === 'list')).toBe(true);
+  });
+
   it('returns to News, Visits, and More from the second More without another message', async () => {
     const sent: Array<Record<string, unknown>> = [];
     const bot = new ChatbotService();
@@ -255,15 +271,13 @@ describe('ChatbotService', () => {
       records,
       now: () => new Date('2026-09-28T04:00:00Z'),
     });
-    const body = messageText(sent[0]);
-    expect(body).toContain('*Grievances*');
-    expect(body).toContain('Ration card');
-    expect(body).toContain('Street light');
-    expect(body).not.toContain('Sixth grievance');
-    expect(body).not.toContain('Old drain');
-    expect(body).not.toContain('School building');
-    expect(body).not.toContain('http');
-    expect(body).not.toContain('example.com');
+    const titles = sent.flatMap(replyButtons).map((row) => row.title);
+    expect(titles).toEqual(expect.arrayContaining(['Ration card', 'Street light', 'Water tanker', 'Pension delay', 'Road patch']));
+    expect(titles).not.toContain('Sixth grievance');
+    expect(titles).not.toContain('Old drain');
+    expect(titles).not.toContain('School building');
+    expect(JSON.stringify(sent)).not.toContain('http');
+    expect(JSON.stringify(sent)).not.toContain('example.com');
   });
 
   it('opens each conversation with the greeting, but not every reply', async () => {
@@ -441,8 +455,12 @@ describe('ChatbotService', () => {
     });
     expect(rows).toEqual([expect.objectContaining({
       section: 'grievances',
-      title: 'Udatha Sravani',
-      detail: 'Normal — The road is broken',
+      title: 'The road is broken',
+      detail: 'The road is broken',
+      department: 'Roads and buildings',
+      leader: 'Lakshmi',
+      place: 'Narasaraopet',
+      language: 'en',
       priority: 'normal',
       status: 'Open',
       createdBy: 'Udatha Sravani',
@@ -486,9 +504,9 @@ describe('ChatbotService', () => {
       env: env(),
       fetchImpl: capture(sent),
     });
-    const body = messageText(sent[0]);
-    expect(body).toContain('Udatha Sravani');
-    expect(body).toContain('Street light is out');
+    const titles = sent.flatMap(replyButtons).map((row) => row.title);
+    expect(titles).toContain('Street light is out');
+    expect(JSON.stringify(sent)).not.toContain('Udatha Sravani');
     expect(sent).toHaveLength(1);
     expect(sent[0].type).toBe('interactive');
   });
@@ -501,12 +519,39 @@ describe('ChatbotService', () => {
       object: 'whatsapp_business_account',
       entry: [{ changes: [{ value: { messages: [{ from: '918919537879', id: 'wamid.photo', timestamp: '1', type: 'image', image: { id: 'media' } }] } }] }],
     }, { env: env(), fetchImpl: capture([]) });
-    expect(rows[0]).toMatchObject({ title: 'Balaji', detail: 'Normal — Sent a photo.', status: 'Open', priority: 'normal' });
+    expect(rows[0]).toMatchObject({ title: 'Sent a photo.', detail: 'Sent a photo.', status: 'Open', priority: 'normal', createdBy: 'Balaji' });
   });
 
   it('marks urgent grievance words as high priority', () => {
     expect(classifyGrievance('No drinking water in the colony').priority).toBe('high');
     expect(classifyGrievance('Please share the meeting time').priority).toBe('normal');
+    expect(classifyGrievance('maa gram lo neellu levu').priority).toBe('high');
+    expect(classifyGrievance('maa gram lo').priority).toBe('normal');
+  });
+
+  it('keeps romanized Telugu as typed when the MP opens it', async () => {
+    setStaffDirectory([
+      { phone: '918885230708', role: 'person', name: 'Udatha Sravani' },
+      { phone: '919553147457', role: 'mp' },
+    ]);
+    const { rows, db } = memoryRecords();
+    const bot = new ChatbotService(undefined, db as never);
+    await bot.handle(payload('maa gram lo neellu levu', 'wamid.roman', '918885230708'), {
+      env: env(),
+      fetchImpl: capture([]),
+    });
+    expect(rows[0]).toMatchObject({
+      detail: 'maa gram lo neellu levu',
+      priority: 'high',
+      department: 'Water supply',
+    });
+    const sent: Array<Record<string, unknown>> = [];
+    await bot.handle(buttonPayload('g:wamid.roman', 'maa gram lo neellu levu', 'wamid.mp-roman', '919553147457'), {
+      env: env(),
+      fetchImpl: capture(sent),
+    });
+    expect(messageText(sent[0])).toContain('maa gram lo neellu levu');
+    expect(messageText(sent[0])).not.toContain('No drinking water');
   });
 
   it('gives the MP six updated items and keeps an admin at five', async () => {
@@ -566,6 +611,56 @@ describe('ChatbotService', () => {
       },
     });
     expect(messageText(sent[1])).toContain('Colony has no water');
+    expect(replyButtons(sent[1]).map((row) => row.title)).toEqual(['Follow up', 'More']);
+    expect(replyButtons(sent[1]).map((row) => row.id)).toEqual(['gf:high-1', 'home']);
+  });
+
+  it('sends the grievance follow up to Akshay and hides who reported it', async () => {
+    setStaffDirectory([
+      { phone: '919876543210', role: 'admin', name: 'Akshay Guptha' },
+      { phone: '919553147457', role: 'mp' },
+    ]);
+    const sent: Array<Record<string, unknown>> = [];
+    const bot = new ChatbotService();
+    await bot.handle(buttonPayload('gf:high-1', 'Follow up', 'wamid.follow-g', '919553147457'), {
+      env: env(),
+      fetchImpl: capture(sent),
+      records: {
+        grievances: [{
+          id: 'high-1',
+          title: 'Udatha Sravani',
+          detail: 'No drinking water in Vinukonda. Call 918885230708.',
+          status: 'Open',
+          date: '2026-10-09T00:00:00Z',
+          priority: 'high',
+          createdBy: 'Udatha Sravani',
+        }],
+      },
+    });
+    const texts = sent.filter((message) => message.type === 'text');
+    expect(texts.map((message) => message.to)).toEqual(['919876543210', '919876543210']);
+    const order = messageText(texts[0]);
+    expect(order).toContain('Need to solve this immediately');
+    expect(order).toContain('Vinukonda');
+    expect(order).toContain('No drinking water');
+    expect(order).toContain('Leader to contact: Ramesh');
+    expect(order).not.toContain('Udatha');
+    expect(order).not.toContain('918885230708');
+    expect(messageText(texts[1])).toContain('as early as possible');
+    expect(messageText(texts[1])).toContain('Thank you');
+  });
+
+  it('answers a Telugu grievance in Telugu', async () => {
+    setStaffDirectory([{ phone: '918885230708', role: 'person', name: 'Udatha Sravani' }]);
+    const { rows, db } = memoryRecords();
+    const sent: Array<Record<string, unknown>> = [];
+    const bot = new ChatbotService(undefined, db as never);
+    await bot.handle(payload('రోడ్డు పాడైంది', 'wamid.te', '918885230708'), {
+      env: env(),
+      fetchImpl: capture(sent),
+    });
+    expect((sent[0].text as { body: string }).body).toBe('మీ సమస్య అందింది. దీనిని పరిశీలించి పరిష్కరిస్తాము.');
+    expect(rows[0]).toMatchObject({ language: 'te', department: 'రోడ్లు మరియు భవనాలు' });
   });
 
   it('tells the super admin when a person files a grievance', async () => {
@@ -580,7 +675,7 @@ describe('ChatbotService', () => {
       env: env(),
       fetchImpl: capture(sent),
     });
-    expect(rows[0]).toMatchObject({ priority: 'high', title: 'Udatha Sravani' });
+    expect(rows[0]).toMatchObject({ priority: 'high', title: 'No drinking water since morning', createdBy: 'Udatha Sravani' });
     expect(sent.map((message) => message.to)).toEqual(['918885230708', '916281168530']);
     expect((sent[1].text as { body: string }).body).toContain('Udatha Sravani');
     expect((sent[1].text as { body: string }).body).toContain('High priority');
@@ -616,6 +711,61 @@ describe('ChatbotService', () => {
     expect(rows.map((row) => row.title)).toEqual(['Door to door', 'Youth meeting', 'Rythu bharosa', 'Health camp']);
     expect(messageText(sent[0])).toContain('Door to door');
     expect(messageText(sent[0])).toContain('Health camp');
+  });
+
+  it('counts analytics instead of repeating news headlines', async () => {
+    setStaffDirectory([{ phone: '919876543210', role: 'admin' }]);
+    const sent: Array<Record<string, unknown>> = [];
+    const bot = new ChatbotService();
+    await bot.handle(buttonPayload('analytics', 'Analytics', 'wamid.analytics'), {
+      env: env(),
+      fetchImpl: capture(sent),
+      news,
+    });
+    const body = messageText(sent[0]);
+    expect(body).toContain('*Analytics*');
+    expect(body).toContain('7 articles counted');
+    expect(body).toContain('Positive 2');
+    expect(body).toContain('Negative 3');
+    expect(body).toContain('Narasaraopet 3');
+    expect(body).not.toContain('Cordon search');
+    expect(body).not.toContain('Water supply');
+  });
+
+  it('uses Narasaraopet sample counts when no articles are stored', async () => {
+    setStaffDirectory([{ phone: '919876543210', role: 'admin' }]);
+    const sent: Array<Record<string, unknown>> = [];
+    const bot = new ChatbotService();
+    await bot.handle(buttonPayload('analytics', 'Analytics', 'wamid.analytics-empty'), {
+      env: env(),
+      fetchImpl: capture(sent),
+      news: [],
+    });
+    const body = messageText(sent[0]);
+    expect(body).toContain('Narasaraopet constituency');
+    expect(body).toContain('Positive 19');
+    expect(body).not.toContain('Nothing saved yet');
+  });
+
+  it('stores Narasaraopet projects and constituency details when those sections are empty', async () => {
+    setStaffDirectory([{ phone: '919876543210', role: 'admin' }]);
+    const { rows, db } = memoryRecords();
+    const sent: Array<Record<string, unknown>> = [];
+    const bot = new ChatbotService(undefined, db as never);
+    await bot.handle(buttonPayload('projects', 'Projects & reports', 'wamid.projects'), {
+      env: env(),
+      fetchImpl: capture(sent),
+    });
+    expect(rows.filter((row) => row.section === 'projects').map((row) => row.title)).toContain('Vinukonda hospital');
+    expect(messageText(sent[0])).toContain('Narasaraopet municipal pipeline');
+    await bot.handle(buttonPayload('constituency', 'Constituency', 'wamid.constituency'), {
+      env: env(),
+      fetchImpl: capture(sent),
+    });
+    const people = rows.filter((row) => row.section === 'people').map((row) => row.title);
+    expect(people).toEqual(expect.arrayContaining(['Narasaraopet Lok Sabha', 'Chilakaluripet', 'Pedakurapadu']));
+    expect(messageText(sent[1])).toContain('Sri Lavu Sri Krishna Devarayalu');
+    expect(messageText(sent[1])).toContain('Gurazala');
   });
 
   it('caps a section at five lines', () => {

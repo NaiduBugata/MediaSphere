@@ -24,7 +24,10 @@ const CLASSIFICATION_PROMPT =
 const EXTRACTION_PROMPT =
   'Analyze this single OCR article and return JSON only.\nTITLE: {title}\nCONTENT: {content}\nReturn exactly this shape: {"location":{"village":"","town":"","mandal":"","district":"","state":"Andhra Pradesh"},"people":[],"entities":[],"keywords":[]}.';
 const SUMMARY_PROMPT =
-  'Analyze this single OCR article and return JSON only.\nTITLE: {title}\nCONTENT: {content}\nReturn exactly this shape: {"summary":""}.';
+  'Write a complete summary of this single news article and return JSON only.\n' +
+  'Finish the story in complete sentences. Do not stop mid-sentence and do not end with an ellipsis.\n' +
+  'Use 45 to 65 words.\n' +
+  'TITLE: {title}\nCONTENT: {content}\nReturn exactly this shape: {"summary":""}.';
 
 const ENTITY_PATTERNS: Array<[string, RegExp]> = [
   ['Organization', /(\S+(?:\s+\S+){0,4}(?:కార్యాలయం|యూనియన్|సంఘం|కళాశాల|పాఠశాల|డివిజన్|శాఖ|కమిటీ|విభాగం|పార్టీ|మండలి|సమాఖ్య|సంస్థ))/g],

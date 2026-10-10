@@ -10,6 +10,7 @@ let superAdmins = new Set<string>();
 let staff = new Set<string>();
 let mps = new Set<string>();
 let persons = new Map<string, string>();
+let staffNames = new Map<string, string>();
 
 function digits(value: string): string {
   return String(value || '').replace(/\D/g, '');
@@ -30,12 +31,14 @@ export function staffRole(value: unknown): StaffRole {
 export function setStaffDirectory(entries: Array<{ phone: string; role: ContactRole; name?: string }>): void {
   const best = new Map<string, StaffRole>();
   const people = new Map<string, string>();
+  const names = new Map<string, string>();
   for (const entry of entries) {
     const phone = digits(entry.phone);
     if (!phone) continue;
     const role = contactRole(entry.role);
+    const name = (entry.name || '').trim();
+    if (name) names.set(phone, name);
     if (role === 'person') {
-      const name = (entry.name || '').trim();
       if (!people.has(phone)) people.set(phone, name || 'Person');
       continue;
     }
@@ -49,6 +52,7 @@ export function setStaffDirectory(entries: Array<{ phone: string; role: ContactR
   superAdmins = new Set([...best].filter(([, role]) => role === 'superadmin').map(([phone]) => phone));
   staff = new Set([...best].filter(([, role]) => role !== 'user').map(([phone]) => phone));
   persons = people;
+  staffNames = names;
   loaded = true;
 }
 
@@ -58,6 +62,17 @@ export function clearStaffDirectory(): void {
   staff = new Set();
   mps = new Set();
   persons = new Map();
+  staffNames = new Map();
+}
+
+/** Phone of a saved contact whose name contains this word, such as Akshay. */
+export function phoneForName(part: string): string | null {
+  const needle = part.trim().toLowerCase();
+  if (!needle) return null;
+  for (const [phone, name] of staffNames) {
+    if (name.toLowerCase().includes(needle)) return phone;
+  }
+  return null;
 }
 
 /** Name of a person who can file a grievance, when the directory is loaded. */
