@@ -611,8 +611,11 @@ describe('ChatbotService', () => {
       },
     });
     expect(messageText(sent[1])).toContain('Colony has no water');
-    expect(replyButtons(sent[1]).map((row) => row.title)).toEqual(['Follow up', 'Menu']);
-    expect(replyButtons(sent[1]).map((row) => row.id)).toEqual(['gf:high-1', 'menu']);
+    const opened = sent[1].interactive as { type: string; action: { button: string } };
+    expect(opened.type).toBe('list');
+    expect(opened.action.button).toBe('Menu');
+    expect(replyButtons(sent[1]).map((row) => row.title)).toEqual(['Follow up', ...MAIN_BUTTONS.map((row) => row.title)]);
+    expect(replyButtons(sent[1])[0].id).toBe('gf:high-1');
   });
 
   it('sends the grievance follow up to Akshay and hides who reported it', async () => {
@@ -648,6 +651,10 @@ describe('ChatbotService', () => {
     expect(order).not.toContain('918885230708');
     expect(messageText(texts[1])).toContain('as early as possible');
     expect(messageText(texts[1])).toContain('Thank you');
+    const menu = sent.find((message) => message.type === 'interactive') as { interactive: { type: string; action: { button: string } } };
+    expect(menu.interactive.type).toBe('list');
+    expect(menu.interactive.action.button).toBe('Menu');
+    expect(replyButtons(menu).map((row) => row.id)).toEqual(MAIN_BUTTONS.map((row) => row.id));
   });
 
   it('answers a Telugu grievance in Telugu', async () => {

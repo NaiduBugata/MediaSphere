@@ -9,7 +9,7 @@ import { parseWebhookPayload, type WhatsAppEvent } from '../whatsapp/whatsapp.pa
 import { todayInIndia } from '../birthdays/birthdays';
 import { isMpPhone, isPersonPhone, isSuperAdminPhone, personName, phoneForName, replyRecipients, staffDirectoryLoaded } from '../whatsapp/whatsapp.audience';
 import { notifySuperAdminText } from '../whatsapp/whatsapp.notify';
-import { normalizePhone, sendReplyButtons, sendReplyList, sendTextMessage, type MenuRow } from '../whatsapp/whatsapp.send';
+import { normalizePhone, sendReplyList, sendTextMessage, type MenuRow } from '../whatsapp/whatsapp.send';
 import { assignDesk, classifyGrievance, departmentOrder, grievanceReceipt, leaderUpdate, messageLanguage, MOCK_GRIEVANCES, priorityLabel, type GrievanceLanguage, type GrievancePriority } from './grievance-priority';
 import { newestFirst, toBrief, type NewsBrief } from './news-context';
 
@@ -369,9 +369,9 @@ export class ChatbotService {
     const items = fullMenu(sender) ? await this.mpGrievances(deps) : await this.sectionRecords('grievances', deps, TOP);
     const picked = pickedId ? items.find((item) => item.id === pickedId || item.title === pickedId) : undefined;
     if (picked) {
-      await sendReplyButtons(sender, grievanceView(picked), [
+      await this.sendList(sender, grievanceView(picked), [
         { id: `gf:${picked.id || picked.title}`, title: 'Follow up' },
-        { id: 'menu', title: 'Menu' },
+        ...MAIN_BUTTONS,
       ], fetchImpl, env);
       return;
     }
@@ -415,7 +415,7 @@ export class ChatbotService {
     }
     await sendTextMessage(phone, departmentOrder(issue, desk), fetchImpl, env);
     await sendTextMessage(phone, leaderUpdate(messageLanguage(issue)), fetchImpl, env);
-    await sendReplyButtons(sender, 'Follow up sent.', [{ id: 'menu', title: 'Menu' }], fetchImpl, env);
+    await this.sendMenu(sender, 'Follow up sent.', fetchImpl, env);
     this.logger.log(`Grievance follow up sent to ${maskPhone(phone)}.`);
   }
 
