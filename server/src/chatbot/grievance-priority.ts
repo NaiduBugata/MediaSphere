@@ -96,9 +96,10 @@ export function departmentOrder(issue: string, desk: GrievanceDesk): string {
   return `Need to solve this immediately.\n\nDepartment: ${desk.department}\nLocation: ${desk.place}\nIssue: ${text}\nLeader to contact: ${desk.leader}`;
 }
 
-export const MOCK_GRIEVANCES: Array<{ title: string; detail: string; priority: GrievancePriority }> = [
-  { title: 'No drinking water', detail: 'Vinukonda colony has had no water for two days.', priority: 'high' },
-  { title: 'Road damage', detail: 'The main road near Narasaraopet bus stand is broken.', priority: 'high' },
-  { title: 'Street lights', detail: 'Lights are out on the Chilakaluripet market road.', priority: 'normal' },
-  { title: 'Pension delay', detail: 'A pension has not arrived in Sattenapalle this month.', priority: 'normal' },
+/** Sample issues. The person who raised each one is split between Bobby and Sravani. */
+export const MOCK_GRIEVANCES: Array<{ title: string; detail: string; priority: GrievancePriority; reporter: string }> = [
+  { title: 'No drinking water', detail: 'Vinukonda colony has had no water for two days.', priority: 'high', reporter: 'Bobby' },
+  { title: 'Road damage', detail: 'The main road near Narasaraopet bus stand is broken.', priority: 'high', reporter: 'Sravani' },
+  { title: 'Street lights', detail: 'Lights are out on the Chilakaluripet market road.', priority: 'normal', reporter: 'Bobby' },
+  { title: 'Pension delay', detail: 'A pension has not arrived in Sattenapalle this month.', priority: 'normal', reporter: 'Sravani' },
 ];

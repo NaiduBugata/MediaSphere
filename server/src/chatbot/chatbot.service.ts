@@ -150,6 +150,9 @@ export interface MenuRecord {
   department?: string;
   leader?: string;
   language?: GrievanceLanguage;
+  createdBy?: string;
+  reporterPhone?: string;
+  source?: string;
 }
 
 export interface ChatbotDeps {
@@ -270,6 +273,7 @@ export class ChatbotService {
       priority,
       createdAt: new Date().toISOString(),
       createdBy: name.slice(0, 80),
+      reporterPhone: digitsOf(event.sender_wa_id || ''),
       sourceMessageId: messageId,
     });
     return 'saved';
@@ -391,7 +395,7 @@ export class ChatbotService {
     await this.sendList(sender, body, rows, fetchImpl, env);
   }
 
-  /** Sends the issue to the department number and tells the leader it is being addressed. */
+  /** Sends the department order to Akshay and the progress note to the person who raised it. */
   private async followGrievance(
     sender: string,
     pickedId: string,
@@ -399,7 +403,10 @@ export class ChatbotService {
     env: NodeJS.ProcessEnv,
     deps: ChatbotDeps,
   ): Promise<void> {
-    if (!deps.records) await this.ensureMockGrievances();
+    if (!deps.records) {
+      await this.ensureMockGrievances();
+      await this.stampMockReporters();
+    }
     const loaded = await this.sectionRecords('grievances', deps, 40);
     const picked = loaded.find((item) => item.id === pickedId || item.title === pickedId);
     if (!picked) {
@@ -414,9 +421,16 @@ export class ChatbotService {
       return;
     }
     await sendTextMessage(phone, departmentOrder(issue, desk), fetchImpl, env);
-    await sendTextMessage(phone, leaderUpdate(messageLanguage(issue)), fetchImpl, env);
+    const raiser = raiserPhone(picked);
+    const language = picked.language || messageLanguage(issue);
+    if (!raiser) {
+      await this.sendMenu(sender, 'Follow up sent to the department. The person who raised it is not in the contact list.', fetchImpl, env);
+      this.logger.log(`Grievance follow up sent to ${maskPhone(phone)}. The person who raised it has no saved number.`);
+      return;
+    }
+    await sendTextMessage(raiser, leaderUpdate(language), fetchImpl, env);
     await this.sendMenu(sender, 'Follow up sent.', fetchImpl, env);
-    this.logger.log(`Grievance follow up sent to ${maskPhone(phone)}.`);
+    this.logger.log(`Grievance follow up sent to ${maskPhone(phone)} and ${maskPhone(raiser)}.`);
   }
 
   private async mpGrievances(deps: ChatbotDeps): Promise<MenuRecord[]> {
@@ -478,6 +492,30 @@ export class ChatbotService {
     }
   }
 
+  /** Existing sample issues keep their text and gain the person who raised them. */
+  private async stampMockReporters(): Promise<void> {
+    if (!this.db) return;
+    try {
+      const ok = await this.db.ensureConnected();
+      if (!ok) return;
+      const rows = await this.db.collection(RECORDS).find({ section: 'grievances', source: 'mock' }).toArray();
+      for (const row of rows) {
+        const title = text(row.title);
+        const item = MOCK_GRIEVANCES.find((sample) => sample.title.toLowerCase() === title.toLowerCase());
+        if (!item) continue;
+        const reporterPhone = phoneForName(item.reporter);
+        const language = row.language === 'te' || row.language === 'en' ? row.language : messageLanguage(text(row.detail) || title);
+        if (row.createdBy === item.reporter && row.language === language && (!reporterPhone || row.reporterPhone === reporterPhone)) continue;
+        await this.db.collection(RECORDS).updateOne(
+          { _id: row._id },
+          { $set: { createdBy: item.reporter, language, ...(reporterPhone ? { reporterPhone } : {}) } },
+        );
+      }
+    } catch (err) {
+      this.logger.warn(`Chatbot could not attach sample grievance contacts: ${err instanceof Error ? err.message : 'database error'}`);
+    }
+  }
+
   private async ensureMockGrievances(): Promise<void> {
     if (!this.db) return;
     try {
@@ -487,14 +525,17 @@ export class ChatbotService {
       if (existing.length) return;
       const createdAt = new Date().toISOString();
       for (const item of MOCK_GRIEVANCES) {
+        const reporterPhone = phoneForName(item.reporter);
         await this.db.collection(RECORDS).insertOne({
           section: 'grievances',
           title: item.title,
           detail: `${priorityLabel(item.priority)} — ${item.detail}`,
           status: 'Open',
           priority: item.priority,
+          language: messageLanguage(item.detail),
           createdAt,
-          createdBy: 'Sample',
+          createdBy: item.reporter,
+          ...(reporterPhone ? { reporterPhone } : {}),
           source: 'mock',
         });
       }
@@ -590,6 +631,9 @@ export class ChatbotService {
         department: text(source.department),
         leader: text(source.leader),
         language: source.language === 'te' || source.language === 'en' ? source.language : undefined,
+        createdBy: text(source.createdBy),
+        reporterPhone: text(source.reporterPhone),
+        source: text(source.source),
         priority: source.priority === 'high' || source.priority === 'normal'
           ? source.priority
           : classifyGrievance(`${text(source.title)} ${text(source.detail)}`).priority,
@@ -817,6 +861,24 @@ function grievanceView(row: MenuRecord): string {
 
 function issueOf(row: MenuRecord): string {
   return stripPriority(row.issue || row.detail || row.title);
+}
+
+/** The person who raised this issue. Sample rows use Bobby and Sravani when no number was stored. */
+function raiserPhone(row: MenuRecord): string | null {
+  const stored = digitsOf(row.reporterPhone || '');
+  if (stored) return stored;
+  const createdBy = (row.createdBy || '').trim();
+  if (createdBy && createdBy !== 'Sample' && !createdBy.includes('@')) {
+    const named = phoneForName(createdBy);
+    if (named) return named;
+  }
+  const sample = MOCK_GRIEVANCES.find((item) => item.title.toLowerCase() === row.title.trim().toLowerCase());
+  return sample ? phoneForName(sample.reporter) : null;
+}
+
+function digitsOf(value: string): string {
+  const digits = value.replace(/\D/g, '');
+  return digits.length >= 10 ? digits : '';
 }
 
 function stripPriority(value: string): string {

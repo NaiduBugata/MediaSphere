@@ -464,6 +464,7 @@ describe('ChatbotService', () => {
       priority: 'normal',
       status: 'Open',
       createdBy: 'Udatha Sravani',
+      reporterPhone: '918885230708',
       sourceMessageId: 'wamid.road',
     })]);
     expect(sent).toHaveLength(1);
@@ -618,9 +619,10 @@ describe('ChatbotService', () => {
     expect(replyButtons(sent[1])[0].id).toBe('gf:high-1');
   });
 
-  it('sends the grievance follow up to Akshay and hides who reported it', async () => {
+  it('sends the grievance follow up to Akshay and the progress note to the person who raised it', async () => {
     setStaffDirectory([
       { phone: '919876543210', role: 'admin', name: 'Akshay Guptha' },
+      { phone: '918885230708', role: 'person', name: 'Udatha Sravani' },
       { phone: '919553147457', role: 'mp' },
     ]);
     const sent: Array<Record<string, unknown>> = [];
@@ -641,7 +643,7 @@ describe('ChatbotService', () => {
       },
     });
     const texts = sent.filter((message) => message.type === 'text');
-    expect(texts.map((message) => message.to)).toEqual(['919876543210', '919876543210']);
+    expect(texts.map((message) => message.to)).toEqual(['919876543210', '918885230708']);
     const order = messageText(texts[0]);
     expect(order).toContain('Need to solve this immediately');
     expect(order).toContain('Vinukonda');
@@ -651,10 +653,76 @@ describe('ChatbotService', () => {
     expect(order).not.toContain('918885230708');
     expect(messageText(texts[1])).toContain('as early as possible');
     expect(messageText(texts[1])).toContain('Thank you');
+    expect(messageText(texts[1])).not.toContain('Need to solve this immediately');
     const menu = sent.find((message) => message.type === 'interactive') as { interactive: { type: string; action: { button: string } } };
     expect(menu.interactive.type).toBe('list');
     expect(menu.interactive.action.button).toBe('Menu');
     expect(replyButtons(menu).map((row) => row.id)).toEqual(MAIN_BUTTONS.map((row) => row.id));
+  });
+
+  it('tells the person who raised a Telugu issue in Telugu', async () => {
+    setStaffDirectory([
+      { phone: '919876543210', role: 'admin', name: 'Akshay Guptha' },
+      { phone: '918885230708', role: 'person', name: 'Udatha Sravani' },
+      { phone: '919553147457', role: 'mp' },
+    ]);
+    const sent: Array<Record<string, unknown>> = [];
+    const bot = new ChatbotService();
+    await bot.handle(buttonPayload('gf:te-1', 'Follow up', 'wamid.follow-te', '919553147457'), {
+      env: env(),
+      fetchImpl: capture(sent),
+      records: {
+        grievances: [{
+          id: 'te-1',
+          title: 'రోడ్డు పాడైంది',
+          detail: 'రోడ్డు పాడైంది',
+          status: 'Open',
+          date: '2026-10-10T00:00:00Z',
+          priority: 'normal',
+          language: 'te',
+          reporterPhone: '918885230708',
+          createdBy: 'Udatha Sravani',
+        }],
+      },
+    });
+    const texts = sent.filter((message) => message.type === 'text');
+    expect(texts.map((message) => message.to)).toEqual(['919876543210', '918885230708']);
+    expect(messageText(texts[1])).toBe('మీ సమస్యను పరిష్కరిస్తున్నాము. కొన్ని రోజుల్లో లేదా వీలైనంత త్వరగా పరిష్కారం అవుతుంది. ధన్యవాదాలు.');
+  });
+
+  it('splits sample grievances between Bobby and Sravani', async () => {
+    setStaffDirectory([
+      { phone: '919876543210', role: 'admin', name: 'Akshay Guptha' },
+      { phone: '919100000001', role: 'person', name: 'Bobby' },
+      { phone: '918885230708', role: 'person', name: 'Udatha Sravani' },
+      { phone: '919553147457', role: 'mp' },
+    ]);
+    const samples = {
+      grievances: [
+        { id: 'water', title: 'No drinking water', detail: 'Vinukonda colony has had no water for two days.', status: 'Open', date: '2026-10-09T00:00:00Z', priority: 'high' as const, source: 'mock', createdBy: 'Sample' },
+        { id: 'road', title: 'Road damage', detail: 'The main road near Narasaraopet bus stand is broken.', status: 'Open', date: '2026-10-09T00:00:00Z', priority: 'high' as const, source: 'mock', createdBy: 'Sample' },
+      ],
+    };
+    const bot = new ChatbotService();
+    const water: Array<Record<string, unknown>> = [];
+    await bot.handle(buttonPayload('gf:water', 'Follow up', 'wamid.follow-water', '919553147457'), {
+      env: env(),
+      fetchImpl: capture(water),
+      records: samples,
+    });
+    const waterTexts = water.filter((message) => message.type === 'text');
+    expect(waterTexts.map((message) => message.to)).toEqual(['919876543210', '919100000001']);
+    expect(messageText(waterTexts[1])).toContain('Thank you');
+    const road: Array<Record<string, unknown>> = [];
+    await bot.handle(buttonPayload('gf:road', 'Follow up', 'wamid.follow-road', '919553147457'), {
+      env: env(),
+      fetchImpl: capture(road),
+      records: samples,
+    });
+    const roadTexts = road.filter((message) => message.type === 'text');
+    expect(roadTexts.map((message) => message.to)).toEqual(['919876543210', '918885230708']);
+    expect(messageText(roadTexts[0])).toContain('Leader to contact: Lakshmi');
+    expect(messageText(roadTexts[1])).toContain('as early as possible');
   });
 
   it('answers a Telugu grievance in Telugu', async () => {
