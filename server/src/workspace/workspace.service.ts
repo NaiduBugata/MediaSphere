@@ -22,6 +22,7 @@ export interface WorkspaceRecord {
   status: string;
   date: string;
   createdBy: string;
+  followUpDepartment: string;
 }
 
 @Injectable()
@@ -165,5 +166,6 @@ function toRecord(doc: Record<string, unknown>): WorkspaceRecord {
     status: String(doc.status || 'Open'),
     date: String(doc.createdAt || ''),
     createdBy: String(doc.createdBy || ''),
+    followUpDepartment: String(doc.followUpDepartment || ''),
   };
 }

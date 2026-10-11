@@ -725,6 +725,34 @@ describe('ChatbotService', () => {
     expect(messageText(roadTexts[1])).toContain('as early as possible');
   });
 
+  it('drops a followed grievance from the WhatsApp list and marks it reviewed', async () => {
+    setStaffDirectory([
+      { phone: '919876543210', role: 'admin', name: 'Akshay Guptha' },
+      { phone: '918885230708', role: 'person', name: 'Udatha Sravani' },
+      { phone: '919553147457', role: 'mp' },
+    ]);
+    const grievances = [
+      { id: 'high-1', title: 'No drinking water', detail: 'Colony has no water', status: 'Open', date: '2026-10-09T00:00:00Z', priority: 'high' as const },
+      { id: 'normal-1', title: 'Street lights', detail: 'Lights are out', status: 'Open', date: '2026-10-10T00:00:00Z', priority: 'normal' as const },
+    ];
+    const bot = new ChatbotService();
+    await bot.handle(buttonPayload('gf:high-1', 'Follow up', 'wamid.review', '919553147457'), {
+      env: env(),
+      fetchImpl: capture([]),
+      records: { grievances },
+    });
+    expect(grievances[0]).toMatchObject({ status: 'Reviewed', followUpDepartment: 'Water supply' });
+    expect(grievances[1].status).toBe('Open');
+    const listed: Array<Record<string, unknown>> = [];
+    await bot.handle(buttonPayload('grievances', 'Grievances', 'wamid.review-list', '919553147457'), {
+      env: env(),
+      fetchImpl: capture(listed),
+      records: { grievances },
+    });
+    expect(listed.flatMap(replyButtons).map((row) => row.id)).toEqual(['g:normal-1', 'home']);
+    expect(JSON.stringify(listed)).not.toContain('No drinking water');
+  });
+
   it('answers a Telugu grievance in Telugu', async () => {
     setStaffDirectory([{ phone: '918885230708', role: 'person', name: 'Udatha Sravani' }]);
     const { rows, db } = memoryRecords();

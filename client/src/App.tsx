@@ -28,7 +28,7 @@ import NewsDesk from "@/news/NewsDesk.tsx";
 
 type Section = "overview" | "grievances" | "projects" | "news" | "people" | "campaigns" | "analytics";
 type StoredSection = "grievances" | "projects" | "people" | "campaigns";
-type RecordItem = { id: string; title: string; detail: string; status: string; date: string };
+type RecordItem = { id: string; title: string; detail: string; status: string; date: string; followUpDepartment?: string };
 type Session = { token: string; email: string; name: string };
 type Summary = { counts: Record<StoredSection, number>; open: number; news: number; mongo: boolean };
 type NewsStats = { total?: number; positive_count?: number; negative_count?: number; problem_count?: number };
@@ -356,7 +356,11 @@ function Workspace({ section, records, summary, stats, onAdd }: { section: Secti
         <div className="overflow-hidden rounded-xl border bg-card">
           {records.map((item) => (
             <div key={item.id} className="flex flex-col gap-3 border-b p-5 last:border-0 sm:flex-row sm:items-center sm:justify-between">
-              <div><h2 className="font-medium">{item.title}</h2><p className="mt-1 text-sm text-muted-foreground">{item.detail}</p></div>
+              <div>
+                <h2 className="font-medium">{item.title}</h2>
+                <p className="mt-1 text-sm text-muted-foreground">{item.detail}</p>
+                {item.status === "Reviewed" && item.followUpDepartment ? <p className="mt-1 text-sm">Reviewed. Follow up sent to {item.followUpDepartment}.</p> : null}
+              </div>
               <div className="flex items-center gap-4 text-sm"><span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">{item.status}</span><span className="text-muted-foreground">{formatWhen(item.date)}</span></div>
             </div>
           ))}

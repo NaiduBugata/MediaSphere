@@ -153,6 +153,7 @@ export interface MenuRecord {
   createdBy?: string;
   reporterPhone?: string;
   source?: string;
+  followUpDepartment?: string;
 }
 
 export interface ChatbotDeps {
@@ -370,7 +371,7 @@ export class ChatbotService {
     env: NodeJS.ProcessEnv,
     deps: ChatbotDeps,
   ): Promise<void> {
-    const items = fullMenu(sender) ? await this.mpGrievances(deps) : await this.sectionRecords('grievances', deps, TOP);
+    const items = (fullMenu(sender) ? await this.mpGrievances(deps) : await this.sectionRecords('grievances', deps, TOP)).filter(isOpenGrievance);
     const picked = pickedId ? items.find((item) => item.id === pickedId || item.title === pickedId) : undefined;
     if (picked) {
       await this.sendList(sender, grievanceView(picked), [
@@ -421,6 +422,7 @@ export class ChatbotService {
       return;
     }
     await sendTextMessage(phone, departmentOrder(issue, desk), fetchImpl, env);
+    await this.markGrievanceReviewed(picked, desk.department, deps);
     const raiser = raiserPhone(picked);
     const language = picked.language || messageLanguage(issue);
     if (!raiser) {
@@ -436,7 +438,33 @@ export class ChatbotService {
   private async mpGrievances(deps: ChatbotDeps): Promise<MenuRecord[]> {
     if (!deps.records) await this.ensureMockGrievances();
     const loaded = await this.sectionRecords('grievances', deps, 40);
-    return byPriority(loaded).slice(0, GRIEVANCE_OPTIONS);
+    return byPriority(loaded.filter(isOpenGrievance)).slice(0, GRIEVANCE_OPTIONS);
+  }
+
+  /** After a follow-up, the grievance leaves the WhatsApp list and shows as reviewed on the website. */
+  private async markGrievanceReviewed(picked: MenuRecord, department: string, deps: ChatbotDeps): Promise<void> {
+    const patch = { status: 'Reviewed', followUpDepartment: department, followUpAt: new Date().toISOString() };
+    for (const row of deps.records?.grievances || []) {
+      if (sameGrievance(row, picked)) Object.assign(row, patch);
+    }
+    if (!this.db || deps.records) return;
+    try {
+      const ok = await this.db.ensureConnected();
+      if (!ok) return;
+      const coll = this.db.collection(RECORDS);
+      const id = picked.id || '';
+      if (/^[a-f0-9]{24}$/i.test(id)) {
+        const saved = await coll.updateOne({ section: 'grievances', _id: id }, { $set: patch });
+        if (saved.matchedCount) return;
+      }
+      if (id) {
+        const saved = await coll.updateOne({ section: 'grievances', sourceMessageId: id }, { $set: patch });
+        if (saved.matchedCount) return;
+      }
+      if (picked.title) await coll.updateOne({ section: 'grievances', title: picked.title, status: 'Open' }, { $set: patch });
+    } catch (err) {
+      this.logger.warn(`Grievance was not marked reviewed: ${err instanceof Error ? err.message : 'database error'}`);
+    }
   }
 
   private async ensureMockCampaigns(): Promise<void> {
@@ -641,7 +669,7 @@ export class ChatbotService {
     };
     if (deps.records) {
       const mapped = (deps.records[section] || []).map((row) => mapRow(row));
-      const unique = uniqueRecords(mapped);
+      const unique = section === 'grievances' ? uniqueRecords(mapped).filter(isOpenGrievance) : uniqueRecords(mapped);
       if (section === 'grievances' && limit > TOP) return unique;
       return preferToday(latestRecords(unique, limit * 4), (row) => row.date, limit, todayFirst, now);
     }
@@ -651,8 +679,9 @@ export class ChatbotService {
       if (!ok) return [];
       const rows = await this.db.collection(RECORDS).find({ section }).sort({ createdAt: -1 }).limit(Math.max(limit, TOP) * 4).toArray();
       const unique = uniqueRecords(rows.map((row) => mapRow(row)));
-      if (section === 'grievances' && limit > TOP) return unique;
-      return preferToday(latestRecords(unique, limit * 4), (row) => row.date, limit, todayFirst, now);
+      const visible = section === 'grievances' ? unique.filter(isOpenGrievance) : unique;
+      if (section === 'grievances' && limit > TOP) return visible;
+      return preferToday(latestRecords(visible, limit * 4), (row) => row.date, limit, todayFirst, now);
     } catch (err) {
       this.logger.warn(`Chatbot could not load ${section}: ${err instanceof Error ? err.message : 'database error'}`);
       return [];
@@ -861,6 +890,15 @@ function grievanceView(row: MenuRecord): string {
 
 function issueOf(row: MenuRecord): string {
   return stripPriority(row.issue || row.detail || row.title);
+}
+
+function isOpenGrievance(row: MenuRecord): boolean {
+  return row.status.trim().toLowerCase() !== 'reviewed';
+}
+
+function sameGrievance(row: MenuRecord, picked: MenuRecord): boolean {
+  if (picked.id && (row.id === picked.id)) return true;
+  return Boolean(picked.title) && row.title === picked.title;
 }
 
 /** The person who raised this issue. Sample rows use Bobby and Sravani when no number was stored. */
