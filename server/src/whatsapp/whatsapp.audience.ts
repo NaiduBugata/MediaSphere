@@ -32,6 +32,7 @@ export function setStaffDirectory(entries: Array<{ phone: string; role: ContactR
   const best = new Map<string, StaffRole>();
   const people = new Map<string, string>();
   const names = new Map<string, string>();
+  mps = new Set();
   for (const entry of entries) {
     const phone = digits(entry.phone);
     if (!phone) continue;

@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
+import { isDemoDataEnabled, isDemoDoc } from '../admin/demo-data';
 import { DatabaseService } from '../database/database.service';
 import { normalizeContactPhone } from '../birthdays/birthdays';
 import { parseVisitTime, readVisitRows, type ImportedVisitRow, type RejectedRow } from './visits-import';
@@ -131,7 +132,8 @@ export class VisitsService {
   private async rows(): Promise<Array<Record<string, unknown>>> {
     await this.ready();
     const rows = await this.db.collection(RECORDS).find({ section: SECTION }).toArray();
-    return rows.sort((a, b) => sortKey(toVisit(b)).localeCompare(sortKey(toVisit(a))));
+    const visible = isDemoDataEnabled() ? rows : rows.filter((row) => !isDemoDoc(row));
+    return visible.sort((a, b) => sortKey(toVisit(b)).localeCompare(sortKey(toVisit(a))));
   }
 
   /** A single visit typed in by hand; the attachment is optional. */

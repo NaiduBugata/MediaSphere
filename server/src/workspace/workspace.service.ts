@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { createHmac, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { ObjectId } from 'mongodb';
 import { DatabaseService } from '../database/database.service';
+import { isDemoDataEnabled, isDemoDoc } from '../admin/demo-data';
 import { WORKSPACE_SECTIONS, type WorkspaceSection } from './workspace.dto';
 
 const USERS = 'jv_users';
@@ -70,7 +71,8 @@ export class WorkspaceService {
   async list(section: WorkspaceSection): Promise<WorkspaceRecord[]> {
     await this.ready();
     const rows = await this.db.collection(RECORDS).find({ section }).sort({ createdAt: -1 }).limit(200).toArray();
-    return rows.map(toRecord);
+    const visible = isDemoDataEnabled() ? rows : rows.filter((row) => !isDemoDoc(row));
+    return visible.map(toRecord);
   }
 
   async create(input: { section: WorkspaceSection; title: string; detail?: string; status?: string; createdBy: string }): Promise<WorkspaceRecord> {

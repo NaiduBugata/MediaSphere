@@ -1,3 +1,4 @@
+import { setDemoDataEnabled } from '../admin/demo-data';
 import { FOLLOW_UP_SENT } from '../visits/visit-followup';
 import { clearStaffDirectory, setStaffDirectory } from '../whatsapp/whatsapp.audience';
 import { classifyGrievance } from './grievance-priority';
@@ -119,7 +120,10 @@ const news = [
 ];
 
 describe('ChatbotService', () => {
-  afterEach(() => clearStaffDirectory());
+  afterEach(() => {
+    clearStaffDirectory();
+    setDemoDataEnabled(true);
+  });
 
   it('shows the six reply buttons and ignores a second delivery of the same message', async () => {
     const calls: string[] = [];
@@ -583,6 +587,26 @@ describe('ChatbotService', () => {
     expect(adminBody).not.toContain('Sixth item');
   });
 
+  it('hides mock rows when demo data is off', async () => {
+    setDemoDataEnabled(false);
+    setStaffDirectory([{ phone: '919553147457', role: 'mp' }]);
+    const sent: Array<Record<string, unknown>> = [];
+    const bot = new ChatbotService();
+    await bot.handle(buttonPayload('grievances', 'Grievances', 'wamid.demo-off', '919553147457'), {
+      env: env(),
+      fetchImpl: capture(sent),
+      records: {
+        grievances: [
+          { id: 'mock-1', title: 'Road damage', detail: 'MOCK-VISIT', status: 'Open', date: '2026-10-12T00:00:00Z', source: 'mock' },
+          { id: 'real-1', title: 'Broken drain', detail: 'Ward 2 drain is blocked', status: 'Open', date: '2026-10-12T01:00:00Z' },
+        ],
+      },
+    });
+    const ids = sent.flatMap(replyButtons).map((row) => row.id);
+    expect(ids).toContain('g:real-1');
+    expect(ids).not.toContain('g:mock-1');
+  });
+
   it('shows the MP grievances as options with high priority first', async () => {
     setStaffDirectory([{ phone: '919553147457', role: 'mp' }]);
     const sent: Array<Record<string, unknown>> = [];
@@ -643,7 +667,7 @@ describe('ChatbotService', () => {
       },
     });
     const texts = sent.filter((message) => message.type === 'text');
-    expect(texts.map((message) => message.to)).toEqual(['919876543210', '918885230708']);
+    expect(texts.map((message) => message.to)).toEqual(['919876543210', '919876543210', '918885230708']);
     const order = messageText(texts[0]);
     expect(order).toContain('Need to solve this immediately');
     expect(order).toContain('Vinukonda');
@@ -651,9 +675,10 @@ describe('ChatbotService', () => {
     expect(order).toContain('Leader to contact: Ramesh');
     expect(order).not.toContain('Udatha');
     expect(order).not.toContain('918885230708');
-    expect(messageText(texts[1])).toContain('as early as possible');
-    expect(messageText(texts[1])).toContain('Thank you');
-    expect(messageText(texts[1])).not.toContain('Need to solve this immediately');
+    expect(messageText(texts[1])).toContain('leader to contact for this issue: Ramesh');
+    expect(messageText(texts[2])).toContain('as early as possible');
+    expect(messageText(texts[2])).toContain('Thank you');
+    expect(messageText(texts[2])).not.toContain('Need to solve this immediately');
     const menu = sent.find((message) => message.type === 'interactive') as { interactive: { type: string; action: { button: string } } };
     expect(menu.interactive.type).toBe('list');
     expect(menu.interactive.action.button).toBe('Menu');
@@ -686,8 +711,9 @@ describe('ChatbotService', () => {
       },
     });
     const texts = sent.filter((message) => message.type === 'text');
-    expect(texts.map((message) => message.to)).toEqual(['919876543210', '918885230708']);
-    expect(messageText(texts[1])).toBe('మీ సమస్యను పరిష్కరిస్తున్నాము. కొన్ని రోజుల్లో లేదా వీలైనంత త్వరగా పరిష్కారం అవుతుంది. ధన్యవాదాలు.');
+    expect(texts.map((message) => message.to)).toEqual(['919876543210', '919876543210', '918885230708']);
+    expect(messageText(texts[1])).toContain('Lakshmi');
+    expect(messageText(texts[2])).toBe('మీ సమస్యను పరిష్కరిస్తున్నాము. కొన్ని రోజుల్లో లేదా వీలైనంత త్వరగా పరిష్కారం అవుతుంది. ధన్యవాదాలు.');
   });
 
   it('splits sample grievances between Bobby and Sravani', async () => {
@@ -711,8 +737,9 @@ describe('ChatbotService', () => {
       records: samples,
     });
     const waterTexts = water.filter((message) => message.type === 'text');
-    expect(waterTexts.map((message) => message.to)).toEqual(['919876543210', '919100000001']);
-    expect(messageText(waterTexts[1])).toContain('Thank you');
+    expect(waterTexts.map((message) => message.to)).toEqual(['919876543210', '919876543210', '919100000001']);
+    expect(messageText(waterTexts[0])).toContain('Need to solve this immediately');
+    expect(messageText(waterTexts[2])).toContain('Thank you');
     const road: Array<Record<string, unknown>> = [];
     await bot.handle(buttonPayload('gf:road', 'Follow up', 'wamid.follow-road', '919553147457'), {
       env: env(),
@@ -720,9 +747,10 @@ describe('ChatbotService', () => {
       records: samples,
     });
     const roadTexts = road.filter((message) => message.type === 'text');
-    expect(roadTexts.map((message) => message.to)).toEqual(['919876543210', '918885230708']);
+    expect(roadTexts.map((message) => message.to)).toEqual(['919876543210', '919876543210', '918885230708']);
     expect(messageText(roadTexts[0])).toContain('Leader to contact: Lakshmi');
-    expect(messageText(roadTexts[1])).toContain('as early as possible');
+    expect(messageText(roadTexts[1])).toContain('leader to contact for this issue: Lakshmi');
+    expect(messageText(roadTexts[2])).toContain('as early as possible');
   });
 
   it('drops a followed grievance from the WhatsApp list and marks it reviewed', async () => {

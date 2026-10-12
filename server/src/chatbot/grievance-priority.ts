@@ -46,7 +46,7 @@ const PLACES = ['Narasaraopet', 'Chilakaluripet', 'Sattenapalle', 'Vinukonda', '
 
 const DESKS: Array<{ words: string[]; name: string; nameTe: string; leader: string; place: string }> = [
   { words: ['water', 'drinking', 'నీళ', 'నీరు'], name: 'Water supply', nameTe: 'నీటి సరఫరా', leader: 'Ramesh', place: 'Narasaraopet' },
-  { words: ['road', 'రోడ్డు'], name: 'Roads and buildings', nameTe: 'రోడ్లు మరియు భవనాలు', leader: 'Lakshmi', place: 'Narasaraopet' },
+  { words: ['road', 'రోడ్డు', 'drain'], name: 'Roads and buildings', nameTe: 'రోడ్లు మరియు భవనాలు', leader: 'Lakshmi', place: 'Narasaraopet' },
   { words: ['light', 'electric', 'power', 'current', 'కరెంట్', 'లైట్'], name: 'Electricity', nameTe: 'విద్యుత్', leader: 'Srinivas', place: 'Chilakaluripet' },
   { words: ['hospital', 'health', 'ambulance', 'ఆసుపత్రి', 'వైద్య'], name: 'Medical and health', nameTe: 'వైద్యం మరియు ఆరోగ్యం', leader: 'Padma', place: 'Vinukonda' },
   { words: ['pension', 'ration', 'పెన్షన్'], name: 'Revenue', nameTe: 'రెవెన్యూ', leader: 'Koteswara Rao', place: 'Sattenapalle' },
@@ -68,6 +68,15 @@ export function leaderUpdate(language: GrievanceLanguage): string {
   return language === 'te'
     ? 'మీ సమస్యను పరిష్కరిస్తున్నాము. కొన్ని రోజుల్లో లేదా వీలైనంత త్వరగా పరిష్కారం అవుతుంది. ధన్యవాదాలు.'
     : 'Your problem is being addressed. It will be solved in a few days, or as early as possible. Thank you.';
+}
+
+/** Sent to the named leader. When that leader has no number, it goes to the department number. */
+export function leaderNotice(issue: string, desk: GrievanceDesk): string {
+  const text = issue.replace(/\+?\d[\d\s-]{7,}\d/g, ' ').replace(/\s+/g, ' ').trim();
+  if (messageLanguage(issue) === 'te') {
+    return `మీరు ఈ సమస్యకు సంప్రదించాల్సిన నాయకుడు: ${desk.leader}. దీన్ని వీలైనంత త్వరగా పరిష్కరించండి.\n\nశాఖ: ${desk.department}\nప్రాంతం: ${desk.place}\nసమస్య: ${text}`;
+  }
+  return `You are the leader to contact for this issue: ${desk.leader}. Please solve it as early as possible.\n\nDepartment: ${desk.department}\nLocation: ${desk.place}\nIssue: ${text}`;
 }
 
 export interface GrievanceDesk {

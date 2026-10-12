@@ -125,6 +125,31 @@ export async function uploadAdminFile(kind, file) {
   return { status: response.status, data: response.data };
 }
 
+export async function getMpAccess() {
+  const { data } = await api.get('/admin/desk/mp', { headers: adminHeaders() });
+  return data;
+}
+
+export async function grantMpAccess(phone) {
+  const { data } = await api.put('/admin/desk/mp', { phone }, { headers: adminHeaders() });
+  return data;
+}
+
+export async function revokeMpAccess(id) {
+  const { data } = await api.delete(`/admin/desk/mp/${encodeURIComponent(id)}`, { headers: adminHeaders() });
+  return data;
+}
+
+export async function getDemoData() {
+  const { data } = await api.get('/admin/desk/demo', { headers: adminHeaders() });
+  return data;
+}
+
+export async function setDemoData(enabled) {
+  const { data } = await api.put('/admin/desk/demo', { enabled }, { headers: adminHeaders() });
+  return data;
+}
+
 export async function getAdminHealth() {
   const { data } = await api.get('/admin/health', {
     headers: adminHeaders(),

@@ -10,7 +10,8 @@ import { todayInIndia } from '../birthdays/birthdays';
 import { isMpPhone, isPersonPhone, isSuperAdminPhone, personName, phoneForName, replyRecipients, staffDirectoryLoaded } from '../whatsapp/whatsapp.audience';
 import { notifySuperAdminText } from '../whatsapp/whatsapp.notify';
 import { normalizePhone, sendReplyList, sendTextMessage, type MenuRow } from '../whatsapp/whatsapp.send';
-import { assignDesk, classifyGrievance, departmentOrder, grievanceReceipt, leaderUpdate, messageLanguage, MOCK_GRIEVANCES, priorityLabel, type GrievanceLanguage, type GrievancePriority } from './grievance-priority';
+import { isDemoDataEnabled, isDemoDoc } from '../admin/demo-data';
+import { assignDesk, classifyGrievance, departmentOrder, grievanceReceipt, leaderNotice, leaderUpdate, messageLanguage, MOCK_GRIEVANCES, priorityLabel, type GrievanceLanguage, type GrievancePriority } from './grievance-priority';
 import { newestFirst, toBrief, type NewsBrief } from './news-context';
 
 const RECORDS = 'jv_records';
@@ -396,7 +397,7 @@ export class ChatbotService {
     await this.sendList(sender, body, rows, fetchImpl, env);
   }
 
-  /** Sends the department order to Akshay and the progress note to the person who raised it. */
+  /** Department order to Akshay, a notice to the leader, and the progress note to the person who raised it. */
   private async followGrievance(
     sender: string,
     pickedId: string,
@@ -416,23 +417,42 @@ export class ChatbotService {
     }
     const issue = issueOf(picked);
     const desk = assignDesk(issue);
-    const phone = phoneForName('akshay');
-    if (!phone) {
+    const departmentPhone = phoneForName('akshay');
+    if (!departmentPhone) {
       await sendTextMessage(sender, 'Follow up was not sent. Akshay is not in the contact list.', fetchImpl, env);
       return;
     }
-    await sendTextMessage(phone, departmentOrder(issue, desk), fetchImpl, env);
-    await this.markGrievanceReviewed(picked, desk.department, deps);
+    const leaderPhone = phoneForName(desk.leader) || departmentPhone;
     const raiser = raiserPhone(picked);
     const language = picked.language || messageLanguage(issue);
-    if (!raiser) {
-      await this.sendMenu(sender, 'Follow up sent to the department. The person who raised it is not in the contact list.', fetchImpl, env);
-      this.logger.log(`Grievance follow up sent to ${maskPhone(phone)}. The person who raised it has no saved number.`);
+    const departmentSent = await this.sendNotice(departmentPhone, departmentOrder(issue, desk), fetchImpl, env);
+    const leaderSent = await this.sendNotice(leaderPhone, leaderNotice(issue, desk), fetchImpl, env);
+    const raiserSent = raiser ? await this.sendNotice(raiser, leaderUpdate(language), fetchImpl, env) : false;
+    if (!departmentSent && !leaderSent) {
+      await sendTextMessage(sender, 'Follow up was not sent to the department or the leader.', fetchImpl, env);
       return;
     }
-    await sendTextMessage(raiser, leaderUpdate(language), fetchImpl, env);
-    await this.sendMenu(sender, 'Follow up sent.', fetchImpl, env);
-    this.logger.log(`Grievance follow up sent to ${maskPhone(phone)} and ${maskPhone(raiser)}.`);
+    await this.markGrievanceReviewed(picked, desk.department, deps);
+    const lead = raiser && !raiserSent
+      ? 'Follow up sent to the department and the leader. The person who raised it is not in the contact list.'
+      : 'Follow up sent.';
+    await this.sendMenu(sender, lead, fetchImpl, env);
+    this.logger.log(`Grievance follow up sent to department ${maskPhone(departmentPhone)} and leader ${maskPhone(leaderPhone)}.`);
+  }
+
+  private async sendNotice(
+    phone: string,
+    body: string,
+    fetchImpl: typeof fetch,
+    env: NodeJS.ProcessEnv,
+  ): Promise<boolean> {
+    try {
+      await sendTextMessage(phone, body, fetchImpl, env);
+      return true;
+    } catch (err) {
+      this.logger.warn(`Grievance notice was not sent to ${maskPhone(phone)}: ${err instanceof Error ? err.message : 'send failed'}`);
+      return false;
+    }
   }
 
   private async mpGrievances(deps: ChatbotDeps): Promise<MenuRecord[]> {
@@ -668,7 +688,7 @@ export class ChatbotService {
       };
     };
     if (deps.records) {
-      const mapped = (deps.records[section] || []).map((row) => mapRow(row));
+      const mapped = (deps.records[section] || []).filter((row) => isDemoDataEnabled() || !isDemoDoc(row)).map((row) => mapRow(row));
       const unique = section === 'grievances' ? uniqueRecords(mapped).filter(isOpenGrievance) : uniqueRecords(mapped);
       if (section === 'grievances' && limit > TOP) return unique;
       return preferToday(latestRecords(unique, limit * 4), (row) => row.date, limit, todayFirst, now);
@@ -677,7 +697,8 @@ export class ChatbotService {
     try {
       const ok = await this.db.ensureConnected();
       if (!ok) return [];
-      const rows = await this.db.collection(RECORDS).find({ section }).sort({ createdAt: -1 }).limit(Math.max(limit, TOP) * 4).toArray();
+      const rows = (await this.db.collection(RECORDS).find({ section }).sort({ createdAt: -1 }).limit(Math.max(limit, TOP) * 4).toArray())
+        .filter((row) => isDemoDataEnabled() || !isDemoDoc(row));
       const unique = uniqueRecords(rows.map((row) => mapRow(row)));
       const visible = section === 'grievances' ? unique.filter(isOpenGrievance) : unique;
       if (section === 'grievances' && limit > TOP) return visible;

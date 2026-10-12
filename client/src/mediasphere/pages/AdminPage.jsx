@@ -19,6 +19,7 @@ import AdminVisits from '../components/visits/AdminVisits';
 import AdminBirthdays from '../components/birthdays/AdminBirthdays';
 import AdminMessages from '../components/birthdays/AdminMessages';
 import AdminUpload from '../components/upload/AdminUpload';
+import AdminAccess from '../components/desk/AdminAccess';
 
 const VIEWS = [
   { id: 'fetch', label: 'Fetch monitoring' },
@@ -26,6 +27,7 @@ const VIEWS = [
   { id: 'visits', label: 'Visits' },
   { id: 'birthdays', label: 'Birthdays' },
   { id: 'messages', label: 'Send WhatsApp' },
+  { id: 'access', label: 'MP access' },
 ];
 
 const HEADLINE_META = {
@@ -444,6 +446,15 @@ function AdminDashboard({ onLogout }) {
       ) : view === 'messages' ? (
         <main className="mx-auto max-w-7xl px-4 py-6">
           <AdminMessages
+            onUnauthorized={() => {
+              clearAdminToken();
+              onLogout();
+            }}
+          />
+        </main>
+      ) : view === 'access' ? (
+        <main className="mx-auto max-w-7xl px-4 py-6">
+          <AdminAccess
             onUnauthorized={() => {
               clearAdminToken();
               onLogout();
