@@ -210,8 +210,8 @@ describe('ChatbotService', () => {
     expect(sent.flatMap(replyButtons).map((button) => button.id)).toEqual(MAIN_BUTTONS.map((row) => row.id));
   });
 
-  it('sends a long news summary to the end instead of cutting it with an ellipsis', async () => {
-    const summary = 'Police completed the search at Pedda Cheruvu and recorded every statement from the families before closing the case. '.repeat(12).trim();
+  it('keeps long news in the same Menu message and drops a leftover Read more', async () => {
+    const summary = `${'Police completed the search at Pedda Cheruvu and recorded every statement from the families before closing the case. '.repeat(12).trim()} ... Read more`;
     const sent: Array<Record<string, unknown>> = [];
     const bot = new ChatbotService();
     await bot.handle(buttonPayload('news', 'News', 'wamid.news-full'), {
@@ -220,10 +220,14 @@ describe('ChatbotService', () => {
       news: [{ ...news[6], summary }],
       now: () => new Date('2026-09-28T13:49:00Z'),
     });
-    const texts = sent.filter((message) => message.type === 'text').map(messageText);
-    expect(texts.join('\n')).toContain(summary);
-    expect(texts.join('\n')).not.toContain('…');
-    expect(sent.some((message) => (message.interactive as { type?: string } | undefined)?.type === 'list')).toBe(true);
+    expect(sent).toHaveLength(1);
+    expect((sent[0].interactive as { type: string }).type).toBe('list');
+    const body = messageText(sent[0]);
+    expect(body).toContain('*News*');
+    expect(body).toContain('Police completed the search at Pedda Cheruvu');
+    expect(body.toLowerCase()).not.toContain('read more');
+    expect(body).not.toBe(MAIN_MENU_TEXT);
+    expect(sent.flatMap(replyButtons).map((row) => row.id)).toEqual(MAIN_BUTTONS.map((row) => row.id));
   });
 
   it('returns to News, Visits, and More from the second More without another message', async () => {
