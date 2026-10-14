@@ -2,9 +2,10 @@ import { BadRequestException, ConflictException, Injectable, Logger, NotFoundExc
 import { DatabaseService } from '../../database/database.service';
 import { applyContactDirectory } from '../../birthdays/birthdays.service';
 import { normalizeContactPhone } from '../../birthdays/birthdays';
-import { isDemoDataEnabled, setDemoDataEnabled } from '../demo-data';
+import { demoProjectDocs, isDemoDataEnabled, isDemoDoc, setDemoDataEnabled } from '../demo-data';
 
 const CONTACTS = 'birthday_contacts';
+const RECORDS = 'jv_records';
 const SETTINGS = 'app_settings';
 const DEMO_KEY = 'demo-data';
 export const MP_NAME = 'Sri Lavu Sri Krishna Devarayulu';
@@ -27,6 +28,20 @@ export class AdminDeskService implements OnModuleInit {
 
   demo() {
     return { enabled: isDemoDataEnabled() };
+  }
+
+  /** Sample rows for the admin switch. Empty while the switch is off. */
+  async snapshot(): Promise<{ enabled: boolean; rows: DemoRow[] }> {
+    const enabled = isDemoDataEnabled();
+    if (!enabled) return { enabled, rows: [] };
+    await this.ready();
+    const stored = await this.db.collection(RECORDS).find({}).toArray();
+    const docs = [...(Array.isArray(stored) ? stored : [])];
+    if (!docs.some((row) => String(row.section || '') === 'projects' && isDemoDoc(row))) {
+      docs.push(...demoProjectDocs());
+    }
+    const rows = docs.filter((row) => isDemoDoc(row)).map(toDemoRow);
+    return { enabled, rows };
   }
 
   async setDemo(enabled: boolean): Promise<{ enabled: boolean }> {
@@ -106,6 +121,24 @@ export class AdminDeskService implements OnModuleInit {
   private async ready(): Promise<void> {
     if (!(await this.db.ensureConnected())) throw new ServiceUnavailableException('Database is not connected');
   }
+}
+
+export interface DemoRow {
+  section: string;
+  title: string;
+  detail: string;
+  place: string;
+  date: string;
+}
+
+function toDemoRow(row: Record<string, unknown>): DemoRow {
+  return {
+    section: String(row.section || ''),
+    title: String(row.title || ''),
+    detail: String(row.detail || '').slice(0, 180),
+    place: String(row.place || ''),
+    date: String(row.visitDate || row.createdAt || ''),
+  };
 }
 
 function digits(value: unknown): string {

@@ -2,6 +2,7 @@ import { setDemoDataEnabled } from '../admin/demo-data';
 import { FOLLOW_UP_SENT } from '../visits/visit-followup';
 import { clearStaffDirectory, setStaffDirectory } from '../whatsapp/whatsapp.audience';
 import { classifyGrievance } from './grievance-priority';
+import { FOLLOWUP_PHONE, FOLLOWUP_PHONE_LABEL, followupBucket, followupContactsIn, resetFollowupContacts } from './followup-contacts';
 import { ChatbotService, GRIEVANCE_RECEIPT, MAIN_BUTTONS, MAIN_MENU_TEXT, VISIT_BUTTONS, formatSection, isGreetingOnly, openingLine, timeGreeting, toWhatsAppFormat } from './chatbot.service';
 
 function payload(body: string, id = 'wamid.1', from = '919876543210') {
@@ -123,6 +124,7 @@ describe('ChatbotService', () => {
   afterEach(() => {
     clearStaffDirectory();
     setDemoDataEnabled(true);
+    resetFollowupContacts();
   });
 
   it('shows the six reply buttons and ignores a second delivery of the same message', async () => {
@@ -250,7 +252,7 @@ describe('ChatbotService', () => {
     expect(interactive.type).toBe('list');
     expect(interactive.body.text).toBe(MAIN_MENU_TEXT);
     const buttons = sent.flatMap(replyButtons);
-    expect(buttons.map((button) => button.id)).toEqual(['news', 'visits', 'grievances', 'projects', 'constituency', 'campaigns', 'analytics']);
+    expect(buttons.map((button) => button.id)).toEqual(['news', 'visits', 'followups', 'grievances', 'projects', 'constituency', 'campaigns', 'analytics']);
     expect(buttons.some((button) => button.id === 'more')).toBe(false);
   });
 
@@ -897,6 +899,73 @@ describe('ChatbotService', () => {
     expect(people).toEqual(expect.arrayContaining(['Narasaraopet Lok Sabha', 'Chilakaluripet', 'Pedakurapadu']));
     expect(messageText(sent[1])).toContain('Sri Lavu Sri Krishna Devarayalu');
     expect(messageText(sent[1])).toContain('Gurazala');
+  });
+
+  it('opens Followup with recent, frequent, and not followed up lists', async () => {
+    const sent: Array<Record<string, unknown>> = [];
+    const bot = new ChatbotService();
+    await bot.handle(buttonPayload('followups', 'Followup', 'wamid.followups'), {
+      env: env(),
+      fetchImpl: capture(sent),
+    });
+    expect(replyButtons(sent[0]).map((row) => row.id)).toEqual(['fu:recent', 'fu:frequent', 'fu:pending', 'home']);
+    expect(messageText(sent[0])).toContain('Followup');
+  });
+
+  it('lists all recent follow-up contacts with the shared number', async () => {
+    const sent: Array<Record<string, unknown>> = [];
+    const bot = new ChatbotService();
+    await bot.handle(buttonPayload('fu:recent', 'Recent Follow-ups', 'wamid.fu-recent'), {
+      env: env(),
+      fetchImpl: capture(sent),
+    });
+    const rows = sent.flatMap(replyButtons).filter((row) => row.id.startsWith('fu:c:'));
+    expect(rows).toHaveLength(25);
+    expect(sent.length).toBeGreaterThanOrEqual(3);
+    expect(JSON.stringify(sent)).toContain(FOLLOWUP_PHONE_LABEL);
+    expect(rows.map((row) => row.title)).toEqual(expect.arrayContaining(['Ravi Teja', 'Vikram Singh']));
+    expect(replyButtons(sent[sent.length - 1]).some((row) => row.id === 'home')).toBe(true);
+  });
+
+  it('lists all frequently followed contacts and the pending names on the same number', async () => {
+    const frequent: Array<Record<string, unknown>> = [];
+    const pending: Array<Record<string, unknown>> = [];
+    const bot = new ChatbotService();
+    await bot.handle(buttonPayload('fu:frequent', 'Frequently Followed Up', 'wamid.fu-frequent'), {
+      env: env(),
+      fetchImpl: capture(frequent),
+    });
+    await bot.handle(buttonPayload('fu:pending', 'Not followed up', 'wamid.fu-pending'), {
+      env: env(),
+      fetchImpl: capture(pending),
+    });
+    expect(frequent.flatMap(replyButtons).filter((row) => row.id.startsWith('fu:c:'))).toHaveLength(25);
+    const pendingRows = pending.flatMap(replyButtons).filter((row) => row.id.startsWith('fu:c:'));
+    expect(pendingRows.length).toBeGreaterThanOrEqual(5);
+    expect(pendingRows.length).toBeLessThanOrEqual(10);
+    expect(JSON.stringify(pending)).toContain(FOLLOWUP_PHONE_LABEL);
+  });
+
+  it('sends a follow-up to the contact number and moves them to Recent, then Frequent', async () => {
+    const sent: Array<Record<string, unknown>> = [];
+    const bot = new ChatbotService();
+    await bot.handle(buttonPayload('fu:c:n01', 'Balaji Rao', 'wamid.fu-n01'), {
+      env: env(),
+      fetchImpl: capture(sent),
+    });
+    const texts = sent.filter((message) => message.type === 'text');
+    expect(texts[0].to).toBe(FOLLOWUP_PHONE);
+    expect(messageText(texts[0])).toContain('Balaji Rao');
+    expect(messageText(texts[1])).toContain('Recent Follow-ups');
+    expect(followupBucket(followupContactsIn('recent').find((row) => row.id === 'n01')!)).toBe('recent');
+    sent.length = 0;
+    await bot.handle(buttonPayload('fu:c:n01', 'Balaji Rao', 'wamid.fu-n01-again'), {
+      env: env(),
+      fetchImpl: capture(sent),
+    });
+    expect(messageText(sent.find((message) => message.type === 'text' && message.to === '919876543210') || {})).toContain('Frequently Followed Up');
+    expect(followupContactsIn('frequent').some((row) => row.id === 'n01')).toBe(true);
+    expect(followupContactsIn('pending').some((row) => row.id === 'n01')).toBe(false);
   });
 
   it('caps a section at five lines', () => {

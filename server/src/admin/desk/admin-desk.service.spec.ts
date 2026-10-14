@@ -6,6 +6,7 @@ function memoryDb() {
   const docs: Record<string, Array<Record<string, unknown>>> = {
     birthday_contacts: [],
     app_settings: [],
+    jv_records: [],
   };
   const collection = (name: string) => ({
     find: () => ({ toArray: async () => docs[name] }),
@@ -66,5 +67,22 @@ describe('AdminDeskService', () => {
     expect((await desk.setDemo(false)).enabled).toBe(false);
     expect(isDemoDataEnabled()).toBe(false);
     expect((await desk.setDemo(true)).enabled).toBe(true);
+  });
+
+  it('lists sample rows while the switch is on and none while it is off', async () => {
+    const { docs, db } = memoryDb();
+    docs.jv_records.push(
+      { _id: 'mock-visit', section: 'visits', title: 'MOCK Morning review', detail: 'MOCK-VISIT', source: 'manual', visitDate: '2026-10-12' },
+      { _id: 'real-visit', section: 'visits', title: 'Narasaraopet visit', detail: '', source: 'manual' },
+    );
+    const desk = new AdminDeskService(db as never);
+    const on = await desk.snapshot();
+    const titles = on.rows.map((row) => row.title);
+    expect(on.enabled).toBe(true);
+    expect(titles).toContain('MOCK Morning review');
+    expect(titles).not.toContain('Narasaraopet visit');
+    expect(on.rows.some((row) => row.section === 'projects' && row.title === 'Drinking water supply')).toBe(true);
+    await desk.setDemo(false);
+    expect((await desk.snapshot()).rows).toEqual([]);
   });
 });

@@ -10,7 +10,16 @@ import { todayInIndia } from '../birthdays/birthdays';
 import { isMpPhone, isPersonPhone, isSuperAdminPhone, personName, phoneForName, replyRecipients, staffDirectoryLoaded } from '../whatsapp/whatsapp.audience';
 import { notifySuperAdminText } from '../whatsapp/whatsapp.notify';
 import { normalizePhone, sendReplyList, sendTextMessage, type MenuRow } from '../whatsapp/whatsapp.send';
-import { isDemoDataEnabled, isDemoDoc } from '../admin/demo-data';
+import { DEMO_PROJECTS, isDemoDataEnabled, isDemoDoc } from '../admin/demo-data';
+import {
+  FOLLOWUP_PHONE_LABEL,
+  findFollowupContact,
+  followupBucket,
+  followupContactsIn,
+  followupMessage,
+  recordFollowup,
+  type FollowupBucket,
+} from './followup-contacts';
 import { assignDesk, classifyGrievance, departmentOrder, grievanceReceipt, leaderNotice, leaderUpdate, messageLanguage, MOCK_GRIEVANCES, priorityLabel, type GrievanceLanguage, type GrievancePriority } from './grievance-priority';
 import { newestFirst, toBrief, type NewsBrief } from './news-context';
 
@@ -26,15 +35,6 @@ const MOCK_CAMPAIGNS: Array<{ title: string; detail: string; status: string }> =
   { title: 'Youth meeting', detail: 'Chilakaluripet youth meeting on Sunday.', status: 'Open' },
   { title: 'Rythu bharosa', detail: 'Sattenapalle camp for farmers.', status: 'In progress' },
   { title: 'Health camp', detail: 'Vinukonda medical camp.', status: 'Open' },
-];
-
-const MOCK_PROJECTS: Array<{ title: string; detail: string; status: string }> = [
-  { title: 'Drinking water supply', detail: 'Narasaraopet municipal pipeline replacement in ward 12.', status: 'In progress' },
-  { title: 'Chilakaluripet road', detail: 'Widening the market road inside Chilakaluripet.', status: 'Open' },
-  { title: 'Vinukonda hospital', detail: 'New ward block at the Vinukonda area hospital.', status: 'In progress' },
-  { title: 'Sattenapalle classrooms', detail: 'Extra classrooms at the government high school.', status: 'Open' },
-  { title: 'Gurazala canal', detail: 'Repair of the irrigation channel before the crop season.', status: 'Open' },
-  { title: 'Macherla health camp report', detail: 'Weekly camp report for Macherla mandal.', status: 'Open' },
 ];
 
 const MOCK_CONSTITUENCY: Array<{ title: string; detail: string; status: string }> = [
@@ -74,6 +74,7 @@ export const FOLLOW_UP_ROW: MenuRow = { id: 'follow_up', title: 'Follow up' };
 export const MAIN_BUTTONS: MenuRow[] = [
   { id: 'news', title: 'News' },
   { id: 'visits', title: 'Visits' },
+  { id: 'followups', title: 'Followup' },
   { id: 'grievances', title: 'Grievances' },
   { id: 'projects', title: 'Projects & reports' },
   { id: 'constituency', title: 'Constituency' },
@@ -85,12 +86,15 @@ export const VISIT_BUTTONS: MenuRow[] = [FOLLOW_UP_ROW, ...MAIN_BUTTONS];
 const CHOICE_BUTTONS: MenuRow[] = [
   ...MAIN_BUTTONS,
   FOLLOW_UP_ROW,
+  { id: 'fu:recent', title: 'Recent Follow-ups' },
+  { id: 'fu:frequent', title: 'Frequently Followed Up' },
+  { id: 'fu:pending', title: 'Not followed up' },
   { id: 'menu', title: 'Menu' },
   { id: 'home', title: 'Main menu' },
 ];
 
-export type MenuId = 'grievances' | 'projects' | 'news' | 'constituency' | 'campaigns' | 'analytics' | 'visits';
-export type MenuChoice = MenuId | 'home' | 'menu' | 'follow_up';
+export type MenuId = 'grievances' | 'projects' | 'news' | 'constituency' | 'campaigns' | 'analytics' | 'visits' | 'followups';
+export type MenuChoice = MenuId | 'home' | 'menu' | 'follow_up' | 'fu:recent' | 'fu:frequent' | 'fu:pending';
 
 const RECORD_SECTION: Partial<Record<MenuId, 'grievances' | 'projects' | 'people' | 'campaigns' | 'visits'>> = {
   grievances: 'grievances',
@@ -108,6 +112,7 @@ const SECTION_TITLE: Record<MenuId, string> = {
   campaigns: 'Campaigns',
   analytics: 'Analytics',
   visits: 'Visits',
+  followups: 'Followup',
 };
 
 const TEXT_ALIASES: Record<string, MenuChoice> = {
@@ -129,7 +134,12 @@ const TEXT_ALIASES: Record<string, MenuChoice> = {
   'main menu': 'home',
   menu: 'home',
   'follow up': 'follow_up',
-  followup: 'follow_up',
+  followup: 'followups',
+  followups: 'followups',
+  'recent follow ups': 'fu:recent',
+  'recent follow-ups': 'fu:recent',
+  'frequently followed up': 'fu:frequent',
+  'not followed up': 'fu:pending',
   constituency: 'constituency',
   people: 'constituency',
   more: 'home',
@@ -293,9 +303,16 @@ export class ChatbotService {
     try {
       const followId = grievanceFollow(event);
       const picked = grievancePick(event);
-      const choice = followId || picked ? null : menuChoice(event);
+      const followupId = followupContactId(event);
+      const choice = followId || picked || followupId ? null : menuChoice(event);
       if (followId) {
         await this.followGrievance(sender, followId, fetchImpl, env, deps);
+      } else if (followupId) {
+        await this.sendContactFollowup(sender, followupId, fetchImpl, env);
+      } else if (choice === 'followups') {
+        await this.sendFollowupMenu(sender, fetchImpl, env);
+      } else if (choice === 'fu:recent' || choice === 'fu:frequent' || choice === 'fu:pending') {
+        await this.sendFollowupBucket(sender, choice.slice(3) as FollowupBucket, fetchImpl, env);
       } else if (picked || choice === 'grievances') {
         await this.sendMpGrievances(sender, picked, fetchImpl, env, deps);
       } else if (choice === 'follow_up') {
@@ -362,6 +379,73 @@ export class ChatbotService {
     }
     const body = await this.renderSection('visits', deps, fullMenu(sender) ? MP_TOP : TOP);
     await this.sendList(sender, body, VISIT_BUTTONS, fetchImpl, env);
+  }
+
+  private async sendFollowupMenu(
+    sender: string,
+    fetchImpl: typeof fetch,
+    env: NodeJS.ProcessEnv,
+  ): Promise<void> {
+    await this.sendList(sender, '*Followup*\nChoose a list.', [
+      { id: 'fu:recent', title: 'Recent Follow-ups' },
+      { id: 'fu:frequent', title: 'Frequently Followed Up' },
+      { id: 'fu:pending', title: 'Not followed up' },
+      { id: 'home', title: 'Main menu' },
+    ], fetchImpl, env);
+  }
+
+  private async sendFollowupBucket(
+    sender: string,
+    bucket: FollowupBucket,
+    fetchImpl: typeof fetch,
+    env: NodeJS.ProcessEnv,
+  ): Promise<void> {
+    const contacts = followupContactsIn(bucket);
+    const title = FOLLOWUP_BUCKET_TITLE[bucket];
+    if (!contacts.length) {
+      await this.sendList(sender, `*${title}*\nNothing saved yet.`, [{ id: 'followups', title: 'Followup' }, { id: 'home', title: 'Main menu' }], fetchImpl, env);
+      return;
+    }
+    const rows = contacts.map((contact) => ({
+      id: `fu:c:${contact.id}`,
+      title: clip(contact.name, 24) || contact.name,
+      description: FOLLOWUP_PHONE_LABEL,
+    }));
+    const pages = chunkRows(rows, 10);
+    for (const [index, page] of pages.entries()) {
+      const last = index === pages.length - 1;
+      const list = last && page.length < 10 ? [...page, { id: 'home', title: 'Main menu' }] : page;
+      const range = pages.length === 1
+        ? `${contacts.length} contacts`
+        : `${index * 10 + 1}–${Math.min((index + 1) * 10, contacts.length)} of ${contacts.length}`;
+      await this.sendList(sender, `*${title}*\n${range}. Tap a name to send a follow-up.`, list, fetchImpl, env);
+    }
+  }
+
+  private async sendContactFollowup(
+    sender: string,
+    id: string,
+    fetchImpl: typeof fetch,
+    env: NodeJS.ProcessEnv,
+  ): Promise<void> {
+    const contact = findFollowupContact(id);
+    if (!contact) {
+      await this.sendFollowupMenu(sender, fetchImpl, env);
+      return;
+    }
+    const sent = await this.sendNotice(contact.phone, followupMessage(contact.name), fetchImpl, env);
+    if (!sent) {
+      await sendTextMessage(sender, `Follow-up was not sent to ${contact.name}.`, fetchImpl, env);
+      await this.sendFollowupMenu(sender, fetchImpl, env);
+      return;
+    }
+    const updated = recordFollowup(id);
+    const bucket = updated ? followupBucket(updated) : 'recent';
+    const moved = bucket === 'frequent'
+      ? 'Moved to Frequently Followed Up.'
+      : 'Moved to Recent Follow-ups.';
+    await sendTextMessage(sender, `Follow-up sent to ${contact.name} (${FOLLOWUP_PHONE_LABEL}). ${moved}`, fetchImpl, env);
+    await this.sendFollowupMenu(sender, fetchImpl, env);
   }
 
   /** Grievances as list rows, high priority first. Choosing one opens that issue. */
@@ -638,7 +722,7 @@ export class ChatbotService {
     const title = SECTION_TITLE[choice];
     const todayFirst = limit > TOP;
     if (choice === 'campaigns' && !deps.records) await this.ensureMockCampaigns();
-    if (choice === 'projects' && !deps.records) await this.ensureSamples('projects', MOCK_PROJECTS);
+    if (choice === 'projects' && !deps.records) await this.ensureSamples('projects', DEMO_PROJECTS);
     if (choice === 'constituency' && !deps.records) await this.ensureSamples('people', MOCK_CONSTITUENCY);
     if (choice === 'news') return formatSection(title, (await this.newsBriefs(deps, limit, todayFirst, now)).map(newsLine), limit);
     if (choice === 'analytics') return formatSection(title, analyticsLines(await this.newsBriefs(deps, 200, false, now)), 4);
@@ -750,6 +834,23 @@ export function grievancePick(event: WhatsAppEvent): string | null {
 export function grievanceFollow(event: WhatsAppEvent): string | null {
   const id = replyId(event);
   return id.toLowerCase().startsWith('gf:') ? id.slice(3) : null;
+}
+
+export function followupContactId(event: WhatsAppEvent): string | null {
+  const id = replyId(event);
+  return id.toLowerCase().startsWith('fu:c:') ? id.slice(5) : null;
+}
+
+const FOLLOWUP_BUCKET_TITLE: Record<FollowupBucket, string> = {
+  recent: 'Recent Follow-ups',
+  frequent: 'Frequently Followed Up',
+  pending: 'Not followed up',
+};
+
+function chunkRows<T>(rows: T[], size: number): T[][] {
+  const pages: T[][] = [];
+  for (let index = 0; index < rows.length; index += size) pages.push(rows.slice(index, index + size));
+  return pages;
 }
 
 function replyId(event: WhatsAppEvent): string {

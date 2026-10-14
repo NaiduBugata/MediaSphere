@@ -37,7 +37,7 @@ export class AdminDeskController {
 
   @Get('demo')
   demo() {
-    return this.desk.demo();
+    return this.desk.snapshot();
   }
 
   @Put('demo')
