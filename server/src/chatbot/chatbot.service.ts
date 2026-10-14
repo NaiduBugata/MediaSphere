@@ -685,7 +685,7 @@ export class ChatbotService {
     await this.sendList(sender, lead, MAIN_BUTTONS, fetchImpl, env);
   }
 
-  /** News and the Menu stay in one list. WhatsApp caps the body at 1024 characters. */
+  /** A short answer stays in the menu message. A long news answer is sent in full, then the menu. */
   private async deliverSection(
     sender: string,
     lead: string,
@@ -693,7 +693,14 @@ export class ChatbotService {
     fetchImpl: typeof fetch,
     env: NodeJS.ProcessEnv,
   ): Promise<void> {
-    await this.sendList(sender, fitListBody(lead), rows, fetchImpl, env);
+    if (lead.length <= LIST_BODY_LIMIT) {
+      await this.sendList(sender, lead, rows, fetchImpl, env);
+      return;
+    }
+    for (const part of completeParts(lead, TEXT_LIMIT)) {
+      await sendTextMessage(sender, part, fetchImpl, env);
+    }
+    await this.sendList(sender, MAIN_MENU_TEXT, rows, fetchImpl, env);
   }
 
   /** One list. The person opens Menu, picks a row, then taps Send. */
@@ -890,36 +897,7 @@ function boldFull(value: string): string {
 }
 
 function readable(value: string): string {
-  return value
-    .replace(/https?:\/\/\S+/gi, ' ')
-    .replace(/(?:\.{3}|…)?\s*read more\.?/gi, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-/** Keeps whole news items that fit in one WhatsApp list body. */
-export function fitListBody(lead: string, limit = LIST_BODY_LIMIT): string {
-  const trimmed = lead.trim();
-  if (trimmed.length <= limit) return trimmed;
-  const blocks = trimmed.split(/\n\n/).map((block) => block.trim()).filter(Boolean);
-  const header = blocks[0] || '';
-  let body = header.slice(0, limit);
-  for (const item of blocks.slice(1)) {
-    const next = `${body}\n\n${item}`;
-    if (next.length <= limit) {
-      body = next;
-      continue;
-    }
-    if (body === header) {
-      const room = limit - header.length - 2;
-      if (room > 40) {
-        const piece = item.slice(0, sentenceEnd(item, room)).trim();
-        if (piece) body = `${header}\n\n${piece}`.slice(0, limit);
-      }
-    }
-    break;
-  }
-  return body;
+  return value.replace(/https?:\/\/\S+/gi, ' ').replace(/\s+/g, ' ').trim();
 }
 
 /** Keeps each news item whole. A piece is split only when one item is longer than a WhatsApp text. */
